@@ -12,10 +12,14 @@ enum NotchOfficeMomentsTests {
         batteryContracts(suite)
         connectContracts(suite)
         channelContracts(suite)
+        falsePositiveContracts(suite)
+        controlContracts(suite)
         roleContracts(suite)
         calendarContracts(suite)
+        backToBackContracts(suite)
         captionContracts(suite)
         measureContracts(suite)
+        capsuleContracts(suite)
     }
 
     private static func content(_ app: String, _ title: String = "Jane", subtitle: String = "",
@@ -106,9 +110,15 @@ enum NotchOfficeMomentsTests {
                      && channel(content("Slack", "Jane", "Jane invited you to a huddle")) == .call
                      && channel(content("Discord", "Jane", "Ringing\u{2026}")) == .call,
                      "a messaging app's ringing call is a call")
-        suite.expect(channel(content("zoom.us", "Incoming call from Jane")) == .call
-                     && channel(content("", "Jane", "Incoming FaceTime Audio")) == .call,
-                     "any app whose words say a call is ringing is a call")
+        suite.expect(channel(content("zoom.us", "Incoming call from Jane")) == .call,
+                     "an app that rings and says so is a call")
+        suite.expect(channel(content("WhatsApp", "Jane", "Llamada entrante")) == .call
+                     && channel(content("WhatsApp", "Jane", "Appel vidéo entrant")) == .call
+                     && channel(content("Telegram", "Jane", "Eingehender Anruf")) == .call
+                     && channel(content("Discord", "Jane started a call")) == .call
+                     && channel(content("Microsoft Teams", "Jane Levinson is calling you from Weekly Sales Sync "
+                                        + "(Scranton branch, all hands)")) == .call,
+                     "a ringing call reads in other languages, in Discord's words and at any length")
         for app in ["Messages", "WHATSAPP", "whatsapp", "Telegram Desktop", "Signal", "Slack", "Discord PTB",
                     "Microsoft Teams", "Microsoft Teams (work or school)", "Messenger"] {
             suite.expect(channel(content(app, "Jane", "See you at four")) == .message, "\(app) is a message, in any case")
@@ -129,6 +139,59 @@ enum NotchOfficeMomentsTests {
         suite.expect(message?.kind == .message && message.map { NotchOfficeMoments.roles.contains($0.caption ?? "") } == true
                      && message?.opensCard == false,
                      "a message stays a banner and its sender gets a role")
+    }
+
+    /// Only an app that can ring is read for a call; a message that only
+    /// mentions one stays what it is.
+    private static func falsePositiveContracts(_ suite: TestSuite) {
+        func channel(_ content: NotchNotificationContent) -> NotchOfficeChannel? { NotchOfficeMoments.channel(for: content) }
+        suite.expect(channel(content("Mail", "Program Committee", subtitle: "Incoming call for papers",
+                                     "Submissions close Friday")) == nil,
+                     "a mail about an incoming call for papers is not a call")
+        suite.expect(channel(content("Messages", "Jane", "mom is calling")) == .message
+                     && channel(content("Messages", "Mom is calling")) == .message,
+                     "a text saying someone is calling is a message: Messages does not ring")
+        suite.expect(channel(content("Slack", "Jane", "come to a huddle")) == .message
+                     && channel(content("Slack", "Jane", "Jane is inviting you to a huddle")) == .call
+                     && channel(content("Discord", "Jane", "Jane invited you to a huddle")) == .message,
+                     "only Slack's own invitation to a huddle rings, and only in Slack")
+        suite.expect(channel(content("Calendar", "Incoming call with the board", "In 5 minutes")) == nil
+                     && channel(content("Mail", "Jane is calling you")) == nil
+                     && channel(content("", "Jane", "Incoming FaceTime Audio")) == nil,
+                     "mail, calendars and an unnamed app are never read for a call")
+        for (title, body) in [("Llamada perdida de FaceTime", "Jane"), ("Appel FaceTime manqué", "Jane"),
+                              ("Verpasster FaceTime-Anruf", "Jane"), ("Chiamata FaceTime persa", "Jane"),
+                              ("Chamada perdida do FaceTime", "Jane"), ("Jane", "Buzón de voz (0:12)"),
+                              ("Jane", "Call Ended"), ("FaceTime Video", "Declined"), ("不在着信", "Jane")] {
+            suite.expect(channel(content("FaceTime", title, body)) == nil,
+                         "\(title) / \(body) is a call that is over, in its own language")
+        }
+        suite.expect(channel(content("FaceTime", "Jane", "FaceTime Video")) == .call
+                     && channel(content("WhatsApp", "Jane", "I missed you")) == .message
+                     && channel(content("WhatsApp", "Jane", "Llamada perdida")) == nil,
+                     "missing someone is a message; a missed call keeps its plain banner")
+    }
+
+    /// The original banner's own buttons, read by the notification reader,
+    /// say a call is ringing in any words.
+    private static func controlContracts(_ suite: TestSuite) {
+        func channel(_ content: NotchNotificationContent, _ controls: [String]) -> NotchOfficeChannel? {
+            NotchOfficeMoments.channel(for: content, controls: controls)
+        }
+        suite.expect(channel(content("WhatsApp", "Jane", "Jane"), ["Accept", "Decline"]) == .call
+                     && channel(content("Signal", "Jane", "Signal"), ["Rechazar", "Aceptar"]) == .call
+                     && channel(content("Slack", "Jane", "Huddle in #sales"), ["Join", "Decline"]) == .call,
+                     "a call app's banner that offers to answer is ringing")
+        suite.expect(channel(content("FaceTime", "Jane", "FaceTime"), ["Call Back", "Message"]) == nil
+                     && channel(content("Phone", "Jane", "Mobile"), ["Rappeler"]) == nil,
+                     "a banner that offers to call back is a call that is over")
+        suite.expect(channel(content("Telegram", "Jane", "See you"), ["Reply", "Mark as Read"]) == .message
+                     && channel(content("Mail", "Jane", "Lunch?"), ["Accept"]) == nil
+                     && channel(content("Messages", "Jane", "Hi"), ["Accept"]) == .message,
+                     "buttons only say a call where the app can ring")
+        let cue = NotchOfficeMoments.communicationCue(for: content("WhatsApp", "Jane", "Jane"),
+                                                      controls: ["Answer"], language: .enUS)
+        suite.expect(cue?.kind == .call && cue?.opensCard == true, "an answerable banner opens the call card")
     }
 
     private static func roleContracts(_ suite: TestSuite) {
@@ -158,10 +221,29 @@ enum NotchOfficeMomentsTests {
                      && !NotchOfficeMoments.meetingSoon(ongoing, now: start.addingTimeInterval(-60))
                      && !NotchOfficeMoments.meetingSoon(nil, now: start),
                      "the countdown earns its caption in the last five minutes before a start")
-        suite.expect(NotchOfficeMoments.meetingSoonBegins(upcoming, now: start.addingTimeInterval(-3600))
+        suite.expect(NotchOfficeMoments.meeting(in: [event], now: start.addingTimeInterval(-3600)) == nil
+                     && NotchOfficeMoments.meeting(in: [event], now: start.addingTimeInterval(-300)) == upcoming
+                     && NotchOfficeMoments.meeting(in: [event], now: start) == nil,
+                     "the moments follow an event from the calendar itself, in its five minutes, strip or not")
+        suite.expect(NotchOfficeMoments.meetingTransition(in: [event], now: start.addingTimeInterval(-3600))
                         == start.addingTimeInterval(-300)
-                     && NotchOfficeMoments.meetingSoonBegins(upcoming, now: start.addingTimeInterval(-60)) == nil,
-                     "the strip is measured again when the caption is due, never in the past")
+                     && NotchOfficeMoments.meetingTransition(in: [event], now: start.addingTimeInterval(-60)) == start,
+                     "the calendar is read again as the five minutes open and as the event starts")
+        suite.expect(Defaults.registeredDefaults[DefaultsKey.notchCalendarCountdown] as? Bool == false
+                     && NotchOfficeMoments.meeting(in: [event], now: start.addingTimeInterval(-120)) != nil,
+                     "with the countdown strip off by default, the moments still have their meeting")
+        let allDay = NotchCalendarEvent(id: "holiday", title: "Holiday", calendar: "Home", start: start,
+                                        end: start.addingTimeInterval(86_400), allDay: true, location: "")
+        suite.expect(NotchOfficeMoments.meeting(in: [allDay], now: start.addingTimeInterval(-60)) == nil,
+                     "an all-day event never calls anyone to the conference room")
+        suite.expect(NotchOfficeMoments.meetingSoonArrived(from: nil, to: upcoming, at: start.addingTimeInterval(-299))
+                        == event
+                     && NotchOfficeMoments.meetingSoonArrived(from: upcoming, to: upcoming,
+                                                              at: start.addingTimeInterval(-290)) == nil
+                     && NotchOfficeMoments.meetingSoonArrived(from: nil, to: upcoming,
+                                                              at: start.addingTimeInterval(-200)) == nil
+                     && NotchOfficeMoments.meetingSoonArrived(from: upcoming, to: nil, at: start) == nil,
+                     "a strip-less island says five minutes once, as they open, and never late")
         let halves = NotchOfficeMoments.meetingSoonHalves(upcoming, now: start.addingTimeInterval(-120), language: .enUS)
         suite.expect(halves?.leading == "Conference room," && halves?.trailing == "five minutes.",
                      "the caption splits at its comma, either side of the camera")
@@ -187,6 +269,49 @@ enum NotchOfficeMomentsTests {
         let hours = NotchOfficeMoments.meetingHours(event, locale: Locale(identifier: "en_GB"))
         suite.expect(hours.contains("\u{2013}") && hours.split(separator: "\u{2013}").count == 2,
                      "the hours read start to end")
+    }
+
+    /// One meeting ending as the next begins: the next is announced, and its
+    /// five minutes are told while the first is still under way.
+    private static func backToBackContracts(_ suite: TestSuite) {
+        let nine = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let first = NotchCalendarEvent(id: "a", title: "Sales call", calendar: "Work", start: nine,
+                                       end: nine.addingTimeInterval(3600), allDay: false, location: "")
+        let second = NotchCalendarEvent(id: "b", title: "Conference room", calendar: "Work",
+                                        start: first.end, end: first.end.addingTimeInterval(1800), allDay: false,
+                                        location: "")
+        let events = [first, second]
+        let ten = first.end
+        // A countdown that follows ends prefers the event under way at the tie.
+        let strip = NotchCalendarSupport.countdown(events, now: ten.addingTimeInterval(-120), starts: true, ends: true,
+                                                   leadTime: 15 * 60)
+        suite.expect(strip == NotchCalendarCountdown(event: first, ongoing: true),
+                     "the strip keeps the event under way as the next is about to start")
+        let afterStrip = NotchCalendarSupport.countdown(events, now: ten.addingTimeInterval(1), starts: true, ends: true,
+                                                        leadTime: 15 * 60)
+        suite.expect(NotchOfficeMoments.meetingThatBegan(from: strip, to: afterStrip, at: ten.addingTimeInterval(1))
+                        == second
+                     && NotchOfficeMoments.meetingThatBegan(from: strip, to: afterStrip, at: ten.addingTimeInterval(90))
+                        == nil
+                     && NotchOfficeMoments.meetingThatBegan(from: NotchCalendarCountdown(event: second, ongoing: true),
+                                                            to: NotchCalendarCountdown(event: second, ongoing: true),
+                                                            at: ten.addingTimeInterval(1)) == nil,
+                     "a countdown moving from one event under way to the next announces the next, once and only then")
+        let watched = NotchOfficeMoments.meeting(in: events, now: ten.addingTimeInterval(-120))
+        suite.expect(watched == NotchCalendarCountdown(event: second, ongoing: false)
+                     && NotchOfficeMoments.meetingSoonHalves(watched, now: ten.addingTimeInterval(-120),
+                                                             language: .enUS) != nil,
+                     "the next meeting's five minutes are told while the first is still under way")
+        let afterWatch = NotchOfficeMoments.meeting(in: events, now: ten.addingTimeInterval(1))
+        suite.expect(afterWatch == nil
+                     && NotchOfficeMoments.meetingThatBegan(from: watched, to: afterWatch, at: ten.addingTimeInterval(1))
+                        == second,
+                     "the meeting the moments follow begins as the first ends, and opens its card")
+        suite.expect(NotchOfficeMoments.meetingThatBegan(from: watched, to: afterWatch, at: ten.addingTimeInterval(-1.5))
+                        == second
+                     && NotchOfficeMoments.meetingThatBegan(from: watched, to: afterWatch, at: ten.addingTimeInterval(-3))
+                        == nil,
+                     "a refresh a second early still counts, one any earlier does not")
     }
 
     private static func captionContracts(_ suite: TestSuite) {
@@ -256,5 +381,69 @@ enum NotchOfficeMomentsTests {
                      && NotchOfficeMoments.captionWidth("Head of Sending", rule: false)
                         < NotchOfficeMoments.captionWidth("Head of Sending"),
                      "the rule's room is only taken with the rule")
+
+        let role = "Assistant to the Regional Texter"
+        let icon = NotchNotificationBannerLayout.iconSize
+        let needed = icon + NotchNotificationBannerLayout.spacing + NotchOfficeMoments.captionWidth(role) + 8
+        suite.expect(NotchOfficeMoments.bannerCaptionFits(role, wing: needed, inset: 8, icon: icon)
+                     && !NotchOfficeMoments.bannerCaptionFits(role, wing: needed - 1, inset: 8, icon: icon)
+                     && !NotchOfficeMoments.bannerCaptionFits(role, wing: 120, inset: 8, icon: icon),
+                     "a side too narrow for the role leaves it out, so the icon and sender stay whole")
+        let soon = NotchCalendarEvent(id: "s", title: "Standup", calendar: "Work", start: Date(),
+                                      end: Date().addingTimeInterval(900), allDay: false, location: "")
+        let soonNotice = NotchNotice(event: .calendar, title: "Standup", detail: "10:00 – 10:15", symbol: "calendar",
+                                     office: NotchOfficeMoments.meetingSoonCue(soon, language: .enUS))
+        suite.expect(soonNotice.office?.caption == NotchOfficeMoments.meetingSoonCaption
+                     && soonNotice.office?.opensCard == false && soonNotice.previewContentHeight(width: width) == 0
+                     && soonNotice.wings(in: geometry).leading
+                        >= NotchOfficeMoments.captionWidth(NotchOfficeMoments.meetingSoonCaption),
+                     "five minutes out without a strip, the event's notice stays in the strip with the caption under it")
+        suite.expect(NotchOfficeMoments.meetingSoonCue(soon, language: .fr).caption == nil,
+                     "and only English gets the joke")
+    }
+
+    /// A capsule's single row takes the mug and the caption after the real
+    /// information, sized to its body, and only where it can grow to hold them.
+    private static func capsuleContracts(_ suite: TestSuite) {
+        func capsule(bar: CGFloat, room: CGFloat? = 600) -> NotchGeometry {
+            NotchGeometry(screen: CGRect(x: 0, y: 0, width: 1920, height: 1080), safeAreaTop: 0, cameraWidth: 0,
+                          layout: .spacious, menuBarHeight: bar, compactSideRoom: room, silhouette: .capsule)
+        }
+        typealias Layout = NotchCapsuleLayout
+        let standard = capsule(bar: 24)
+        let cue = NotchOfficeMoments.batteryCue(.charging, percent: 64, language: .enUS)
+        let base = Layout.noticeContent(title: "Charging", detail: "64%", level: false)
+        let mug = NotchOfficeMoments.capsuleMugWidth(cue, geometry: standard)
+        suite.expect(mug > 0 && NotchOfficeMoments.mugHeight * NotchOfficeMoments.capsuleMugScale(standard)
+                        <= standard.stripBodyHeight
+                     && NotchOfficeMoments.capsuleMugWidth(nil, geometry: standard) == 0,
+                     "the mug fits the capsule's body, and only a battery moment brings it")
+        suite.expect(NotchOfficeMoments.capsuleCaption(cue, content: base + mug, maximum: Layout.Maximum.notice,
+                                                       geometry: standard) == "Refilling the mug."
+                     && NotchOfficeMoments.capsuleContent(cue, base: base, maximum: Layout.Maximum.notice,
+                                                          geometry: standard)
+                        == base + mug + Layout.groupSpacing
+                        + NotchOfficeMoments.captionWidth("Refilling the mug.", font: NotchOfficeMoments.stripCaptionFont),
+                     "a standard bar's capsule reads the caption after the reading, at the strip's size")
+        suite.expect(NotchOfficeMoments.capsuleCaptionFont(standard) === NotchOfficeMoments.stripCaptionFont
+                     && NotchOfficeMoments.capsuleCaptionFont(capsule(bar: 34))
+                        === NotchOfficeMoments.cardCaptionFont,
+                     "a capsule in a taller bar takes the card's caption size")
+        let crowded = capsule(bar: 24, room: 20)
+        suite.expect(NotchOfficeMoments.capsuleCaption(cue, content: base + mug, maximum: Layout.Maximum.notice,
+                                                       geometry: crowded) == nil
+                     && NotchOfficeMoments.capsuleContent(cue, base: base, maximum: Layout.Maximum.notice,
+                                                          geometry: crowded) == base + mug,
+                     "where the menus leave no room, the caption is left out and the reading stays whole")
+        let message = content("Messages", "Pam Beesly", "Did you take my yogurt? It had my name on it, Michael.")
+        let role = NotchOfficeMoments.communicationCue(for: message, language: .enUS)
+        let long = Layout.notificationContent(title: message.compactTitle,
+                                              message: String(repeating: message.compactDetail, count: 3),
+                                              geometry: standard)
+        suite.expect(NotchOfficeMoments.capsuleCaption(role, content: long, maximum: Layout.Maximum.notification,
+                                                       geometry: standard) == nil,
+                     "a message that already fills the capsule is never cut for the role")
+        let plain = NotchOfficeMoments.capsuleContent(nil, base: base, maximum: Layout.Maximum.notice, geometry: standard)
+        suite.expect(plain == base, "a notice without a moment measures as it always has")
     }
 }

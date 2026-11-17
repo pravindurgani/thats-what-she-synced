@@ -94,6 +94,48 @@ struct NotchCapsuleNoticeView: View {
         .accessibilityLabel(notice.accessibilityText)
     }
 
+    // MARK: The Office moment
+
+    /// The Office caption, after the real information and only where the
+    /// capsule can grow to hold it, measured as the service measures the
+    /// capsule (NotchOfficeMoments.capsuleContent).
+    private var officeCaption: String? {
+        guard notice.office?.caption != nil else { return nil }
+        if let content = notice.notification {
+            let row = CapsuleLayout.notificationContent(title: content.compactTitle, message: content.compactDetail,
+                                                        geometry: geometry)
+            return NotchOfficeMoments.capsuleCaption(notice.office, content: row,
+                                                     maximum: CapsuleLayout.Maximum.notification, geometry: geometry)
+        }
+        let base = CapsuleLayout.noticeContent(title: notice.title, detail: notice.detail, level: notice.level != nil)
+            + NotchOfficeMoments.capsuleMugWidth(notice.office, geometry: geometry)
+        return NotchOfficeMoments.capsuleCaption(notice.office, content: base, maximum: CapsuleLayout.Maximum.notice,
+                                                 geometry: geometry)
+    }
+
+    /// Changes once per moment, so a new reading of the same one does not play it again.
+    private var officeKey: String? {
+        notice.office.map { "\($0.kind)|\(notice.title)|\(notice.notificationID?.uuidString ?? "")" }
+    }
+
+    /// The lower third at the row's end, at the size the capsule's height allows.
+    private func lowerThird(_ caption: String) -> some View {
+        let card = NotchOfficeMoments.capsuleCaptionFont(geometry) === NotchOfficeMoments.cardCaptionFont
+        let low = notice.office?.kind == .battery(.low)
+        return NotchLowerThird(caption: caption, size: card ? .card : .strip,
+                               accent: low ? NotchOfficeInk.beet : NotchOfficeInk.mustard, trigger: officeKey)
+            .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+    }
+
+    /// The mug filled to the charge, scaled to the capsule's body.
+    private func mug(_ state: NotchOfficeBattery, level: Double) -> some View {
+        let scale = NotchOfficeMoments.capsuleMugScale(geometry)
+        return NotchOfficeMug(state: state, level: level, coffee: NotchOfficeInk.coffee(), trigger: officeKey ?? "")
+            .scaleEffect(scale, anchor: .topLeading)
+            .frame(width: (NotchOfficeMoments.mugSide * scale).rounded(.up),
+                   height: NotchOfficeMoments.mugHeight * scale, alignment: .topLeading)
+    }
+
     private func banner(_ content: NotchNotificationContent) -> some View {
         HStack(spacing: CapsuleLayout.spacing) {
             NotchNotificationAppIcon(app: content.app, size: CapsuleLayout.notificationIconSide(geometry))
@@ -102,6 +144,7 @@ struct NotchCapsuleNoticeView: View {
                 Text(content.compactDetail).capsuleDetail()
                     .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
             }
+            if let officeCaption { lowerThird(officeCaption) }
         }
     }
 
@@ -129,11 +172,17 @@ struct NotchCapsuleNoticeView: View {
             // A timer's notice keeps the orange its strip wears.
             Text(notice.title).capsuleTitle().layoutPriority(1)
                 .foregroundStyle(notice.event == .timer ? Color.orange : .white)
+            // A battery's Office moment fills the mug beside its reading.
+            if let cue = notice.office, case .battery(let state) = cue.kind {
+                mug(state, level: cue.level ?? 0)
+                    .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+            }
             if !notice.detail.isEmpty {
                 Text(notice.detail).capsuleDetail()
                     .truncationMode(notice.event == .accessory ? .middle : .tail)
-                    .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+                    .padding(.leading, notice.office?.showsMug == true ? 0 : CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
             }
+            if let officeCaption { lowerThird(officeCaption) }
         }
     }
 

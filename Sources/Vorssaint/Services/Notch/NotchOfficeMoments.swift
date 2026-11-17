@@ -28,6 +28,9 @@ struct NotchOfficeCue: Equatable {
         case message
         case call
         case meeting
+        /// An event starting in five minutes, where no countdown strip
+        /// carries the caption: a notice in the strip, never a card.
+        case meetingSoon
     }
 
     let kind: Kind
@@ -152,22 +155,42 @@ enum NotchOfficeMoments {
     /// Desktop" count and "iPhone Mirroring" is not the Phone app.
     static let messageApps = ["messages", "imessage", "whatsapp", "telegram", "signal", "slack", "discord",
                               "microsoft teams", "teams", "messenger", "skype", "wechat", "viber", "beeper"]
-    /// Apps whose notifications are a call, unless they say it was missed.
+    /// Apps that only ring: every notification is a call unless it says
+    /// the call is over.
     static let callApps = ["facetime", "phone"]
+    /// Apps that also ring, whose notifications are a call only when their
+    /// buttons answer one or their words say it is ringing. Mail, calendars
+    /// and every other app never are, whatever their words.
+    static let ringingApps = ["whatsapp", "telegram", "signal", "discord", "microsoft teams", "teams", "slack",
+                              "skype", "messenger", "zoom", "webex", "wechat", "viber"]
 
-    /// A ringing call from a call app or from any app whose words say so, or
-    /// a message from a messaging app; nil for everything else. A call that
-    /// was missed, declined or ended is not ringing, and keeps the plain banner.
-    static func channel(for content: NotchNotificationContent) -> NotchOfficeChannel? {
+    /// A ringing call, or a message from a messaging app; nil for everything
+    /// else. Only an app that can ring is read for a call: one of `callApps`
+    /// rings unless its words say the call was missed, declined, ended or
+    /// went to voicemail; one of `ringingApps` rings when the original
+    /// banner's own buttons answer it (`controls`, read by the notification
+    /// reader) or its words say it is ringing. A call that is over keeps the
+    /// plain banner.
+    static func channel(for content: NotchNotificationContent, controls: [String] = []) -> NotchOfficeChannel? {
         let app = words(content.app)
-        let fields = [content.title, content.subtitle, content.body].map(normalized)
-        if fields.contains(where: saysCallIsOver) { return nil }
-        if callApps.contains(where: { app.containsWords($0) }) || fields.contains(where: saysRinging) { return .call }
-        return messageApps.contains(where: { app.containsWords($0) }) ? .message : nil
+        let messages = messageApps.contains { app.containsWords($0) }
+        let dedicated = callApps.contains { app.containsWords($0) }
+        guard dedicated || ringingApps.contains(where: { app.containsWords($0) }) else {
+            return messages ? .message : nil
+        }
+        let fields = [content.title, content.subtitle, content.body].map(folded).filter { !$0.isEmpty }
+        let labels = controls.map(folded)
+        // Read across the fields: "FaceTime Video" over "Declined" is over.
+        if saysCallIsOver(fields.joined(separator: " \u{00B7} ")) || labels.contains(where: callsBack) { return nil }
+        if dedicated || labels.contains(where: answers) { return .call }
+        let slack = app.containsWords("slack")
+        if fields.contains(where: { saysRinging($0) || slack && saysHuddle($0) }) { return .call }
+        return messages ? .message : nil
     }
 
-    static func communicationCue(for content: NotchNotificationContent, language: AppLanguage) -> NotchOfficeCue? {
-        guard let channel = channel(for: content) else { return nil }
+    static func communicationCue(for content: NotchNotificationContent, controls: [String] = [],
+                                 language: AppLanguage) -> NotchOfficeCue? {
+        guard let channel = channel(for: content, controls: controls) else { return nil }
         let captions = showsCaptions(in: language)
         switch channel {
         case .call: return NotchOfficeCue(kind: .call, caption: captions ? callCaption : nil)
@@ -201,51 +224,116 @@ enum NotchOfficeMoments {
         text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
     }
 
-    /// Only a short line is read as a call's label: a long message that
-    /// mentions a call is still a message.
-    private static let callLabelLength = 48
+    /// Lowercased and without accents, so "Appel manqué" and "appel manque"
+    /// read alike and the phrases below are written once.
+    static func folded(_ text: String) -> String {
+        normalized(text).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
 
+    /// Words that name a call, in the languages the phrases below cover.
+    private static let callWords = ["call", "facetime", "llamada", "appel", "anruf", "chiamata", "chamada", "ligacao",
+                                    "oproep", "gesprek", "звонок", "вызов", "전화"]
+
+    /// A call still ringing, in its own words. Any length, since some apps
+    /// name the meeting or channel too; only apps that ring are read.
     private static func saysRinging(_ field: String) -> Bool {
-        guard !field.isEmpty, field.count <= callLabelLength else { return false }
         if field.hasPrefix("incoming"), field.contains("call") || field.contains("facetime") { return true }
         if field.contains("is calling you") || field.hasSuffix(" is calling") || field.hasSuffix(" is calling\u{2026}")
             || field.hasSuffix(" is calling...") { return true }
         if field == "calling" || field.hasPrefix("calling\u{2026}") || field.hasPrefix("calling...") { return true }
         if field.contains("wants to facetime") || field.contains("would like to facetime") { return true }
-        if field.contains("to a huddle") { return true }
+        // Discord's ringing line names who started the call.
+        if ["started a call", "started a voice call", "started a video call", "started a group call"]
+            .contains(where: field.contains) { return true }
+        // "Llamada entrante", "Appel vidéo entrant", "Eingehender Anruf"...
+        // both words of the pair, in either order.
+        let pairs = [("llamada", "entrante"), ("appel", "entrant"), ("anruf", "eingehend"), ("chiamata", "in arrivo"),
+                     ("chamada", "recebida"), ("oproep", "inkomend"), ("gesprek", "inkomend"), ("звонок", "входящ"),
+                     ("вызов", "входящ")]
+        if pairs.contains(where: { field.contains($0.0) && field.contains($0.1) }) { return true }
+        if ["te esta llamando", "vous appelle", "ruft dich an", "ruft sie an", "ti sta chiamando", "esta ligando",
+            "belt je", "着信中", "来电", "전화 수신"].contains(where: field.contains) { return true }
         // A line that is only the label, as some apps title a ringing call;
         // "Video call later?" is a message.
         let label = field.trimmingCharacters(in: CharacterSet(charactersIn: ".!\u{2026} "))
-        return ["voice call", "video call", "audio call", "group call", "facetime audio", "facetime video", "ringing"]
-            .contains(label)
+        return ["voice call", "video call", "audio call", "group call", "facetime audio", "facetime video", "ringing",
+                "llamada", "videollamada", "appel vocal", "appel video", "sprachanruf", "videoanruf",
+                "chiamata vocale", "videochiamata", "chamada de voz", "chamada de video"].contains(label)
     }
 
-    /// A call that is no longer ringing, said in its own short line. "I
-    /// missed you" is still a message.
-    private static func saysCallIsOver(_ field: String) -> Bool {
-        guard !field.isEmpty, field.count <= callLabelLength else { return false }
-        if field.contains("voicemail") || field.contains("call ended") || field.contains("call failed") { return true }
-        guard field.contains("call") || field.contains("facetime") else { return false }
-        return field.contains("missed") || field.contains("declined") || field.contains("no answer")
+    /// Slack rings for a huddle it invites the person to; "come to a
+    /// huddle" from a colleague is a message.
+    private static func saysHuddle(_ field: String) -> Bool {
+        ["you to a huddle", "huddle invite", "huddle invitation"].contains(where: field.contains)
+    }
+
+    /// A call that is no longer ringing: missed, declined, unanswered, ended
+    /// or gone to voicemail, in English and in the common localised forms.
+    /// "I missed you" is still a message: the missing needs a call beside it.
+    private static func saysCallIsOver(_ text: String) -> Bool {
+        let over = ["voicemail", "call ended", "call failed", "buzon de voz", "messagerie vocale",
+                    "segreteria telefonica", "correio de voz", "llamada finalizada", "appel termine", "anruf beendet",
+                    "chiamata terminata", "chamada encerrada", "chamada terminada", "不在着信", "未接"]
+        if over.contains(where: text.contains) { return true }
+        guard callWords.contains(where: text.contains) else { return false }
+        return ["missed", "declined", "no answer", "unanswered", "perdida", "rechazada", "manque", "refuse",
+                "verpasst", "abgelehnt", "persa", "rifiutata", "recusada", "gemist", "geweigerd", "пропущен",
+                "отклонен", "부재중"]
+            .contains(where: text.contains)
+    }
+
+    /// A button that picks up or turns down a ringing call.
+    private static func answers(_ label: String) -> Bool {
+        let parts = Set(words(label))
+        return !parts.isDisjoint(with: ["accept", "answer", "decline", "join", "aceptar", "contestar", "rechazar",
+                                        "accepter", "decrocher", "refuser", "annehmen", "ablehnen", "accetta",
+                                        "rifiuta", "aceitar", "atender", "recusar", "aannemen", "weigeren",
+                                        "принять", "отклонить"])
+            || ["pick up", "応答", "拒否", "接听", "拒绝", "수락", "거절"].contains(where: label.contains)
+    }
+
+    /// A button that returns a call, which only a call that is over offers.
+    private static func callsBack(_ label: String) -> Bool {
+        ["call back", "callback", "return call", "rappeler", "devolver llamada", "zuruckrufen", "richiama",
+         "retornar", "terugbellen"].contains(where: label.contains)
     }
 
     // MARK: - Calendar
 
-    /// How long before an event its countdown earns its caption.
+    /// How long before an event it earns its caption.
     static let meetingSoonLead: TimeInterval = 5 * 60
 
+    /// The meeting the Office moments follow: the next timed event starting
+    /// within five minutes, read from the calendar's own events whenever
+    /// the moments and the calendar are on. Not the countdown strip's: that
+    /// is off by default, and it prefers an event under way to the one
+    /// starting as it ends.
+    static func meeting(in events: [NotchCalendarEvent], now: Date) -> NotchCalendarCountdown? {
+        NotchCalendarSupport.countdown(events, now: now, starts: true, ends: false, leadTime: meetingSoonLead)
+    }
+
+    /// When `meeting(in:now:)` next changes: five minutes before a start,
+    /// and the start.
+    static func meetingTransition(in events: [NotchCalendarEvent], now: Date) -> Date? {
+        NotchCalendarSupport.countdownTransition(events, now: now, starts: true, ends: false, leadTime: meetingSoonLead)
+    }
+
     /// An event that has not begun, starting within five minutes.
-    static func meetingSoon(_ countdown: NotchCalendarCountdown?, now: Date) -> Bool {
-        guard let countdown, !countdown.ongoing else { return false }
-        let left = countdown.event.start.timeIntervalSince(now)
+    static func meetingSoon(_ meeting: NotchCalendarCountdown?, now: Date) -> Bool {
+        guard let meeting, !meeting.ongoing else { return false }
+        let left = meeting.event.start.timeIntervalSince(now)
         return left > 0 && left <= meetingSoonLead
     }
 
-    /// When the caption should appear for the countdown, if that is still ahead.
-    static func meetingSoonBegins(_ countdown: NotchCalendarCountdown?, now: Date) -> Date? {
-        guard let countdown, !countdown.ongoing else { return nil }
-        let begins = countdown.event.start.addingTimeInterval(-meetingSoonLead)
-        return begins > now ? begins : nil
+    /// The event whose five minutes just opened as the meeting followed went
+    /// from `before` to `after`, which an island without a countdown strip
+    /// announces with a notice. Only in the first minute of the five, so an
+    /// event added just before it starts, or a Mac that wakes late, is no news.
+    static func meetingSoonArrived(from before: NotchCalendarCountdown?, to after: NotchCalendarCountdown?,
+                                   at now: Date) -> NotchCalendarEvent? {
+        guard let after, meetingSoon(after, now: now), before?.event.id != after.event.id,
+              after.event.start.timeIntervalSince(now) > meetingSoonLead - 60 else { return nil }
+        return after.event
     }
 
     /// The countdown's caption, in two halves that sit either side of the
@@ -269,25 +357,45 @@ enum NotchOfficeMoments {
         return (String(characters[..<cut]), String(characters[(cut + 1)...]))
     }
 
-    /// Whether the event the island counted down to, as `before`, began as
-    /// the countdown became `after` at `now`. Only just begun, so a Mac that
-    /// slept through the start, or an event moved or removed before it, is
-    /// no news. Kept here, apart from the companion's own reading of the
-    /// same moment, so either can change without the other.
+    /// The event that began as a countdown went from `before` to `after` at
+    /// `now`, if one just did. Only just begun, so a Mac that slept through
+    /// the start, or an event moved or removed before it, is no news. Kept
+    /// here, apart from the companion's own reading of the same moment, so
+    /// either can change without the other.
+    static func meetingThatBegan(from before: NotchCalendarCountdown?, to after: NotchCalendarCountdown?,
+                                 at now: Date) -> NotchCalendarEvent? {
+        guard let before else { return nil }
+        // Its refresh may come a second early.
+        func justBegan(_ event: NotchCalendarEvent) -> Bool {
+            let since = now.timeIntervalSince(event.start)
+            return since >= -2 && since < 60
+        }
+        if !before.ongoing, justBegan(before.event), after?.event.id != before.event.id || after?.ongoing == true {
+            return before.event
+        }
+        // Back to back: a countdown that follows ends prefers the event under
+        // way when the next starts as it ends, so it moves from one under way
+        // to the next under way, and the next is the one that began.
+        if let after, after.ongoing, after.event.id != before.event.id, justBegan(after.event) { return after.event }
+        return nil
+    }
+
     static func meetingBegan(from before: NotchCalendarCountdown?, to after: NotchCalendarCountdown?,
                              at now: Date) -> Bool {
-        guard let before, !before.ongoing else { return false }
-        let since = now.timeIntervalSince(before.event.start)
-        // Its refresh may come a second early.
-        guard since >= -2, since < 60 else { return false }
-        guard let after else { return true }
-        return after.event.id != before.event.id || after.ongoing
+        meetingThatBegan(from: before, to: after, at: now) != nil
     }
 
     static func meetingCue(_ event: NotchCalendarEvent, language: AppLanguage) -> NotchOfficeCue {
         let place = event.location.trimmingCharacters(in: .whitespacesAndNewlines)
         return NotchOfficeCue(kind: .meeting, caption: showsCaptions(in: language) ? meetingCaption : nil,
                               accent: event.color, place: place.isEmpty ? nil : place)
+    }
+
+    /// Five minutes out with no countdown strip to carry the caption: the
+    /// event's own notice, its title with the caption under it.
+    static func meetingSoonCue(_ event: NotchCalendarEvent, language: AppLanguage) -> NotchOfficeCue {
+        NotchOfficeCue(kind: .meetingSoon, caption: showsCaptions(in: language) ? meetingSoonCaption : nil,
+                       accent: event.color)
     }
 
     /// The meeting's hours, as the island's other times are written.
@@ -306,6 +414,8 @@ enum NotchOfficeMoments {
     /// The mug beside a battery's percentage, and the air between them.
     static let mugSide: CGFloat = 18
     static let mugGap: CGFloat = 5
+    /// The mug's box is taller than wide: room above the brim for the steam.
+    static let mugHeight: CGFloat = 22
     /// A banner's sender side may reach this far for its role, a little past
     /// the plain banner's widest, since the role is what the moment is about.
     static let bannerWingLimit: CGFloat = 214
@@ -347,10 +457,65 @@ enum NotchOfficeMoments {
         return NotchNoticeWings(leading: max(fitted.leading, min(bannerWingLimit, side)), trailing: fitted.trailing)
     }
 
+    /// Whether a banner's caption fits under the sender in a side `wing`
+    /// wide, beside the app's icon `icon` across. A narrow side keeps the
+    /// icon and the sender whole and leaves the caption out.
+    static func bannerCaptionFits(_ caption: String, wing: CGFloat, inset: CGFloat, icon: CGFloat) -> Bool {
+        icon + NotchNotificationBannerLayout.spacing + captionWidth(caption) + inset <= wing
+    }
+
     /// The held preview's extra height for the role under the sender's
     /// name, which a message without one leaves out.
     static func previewExtraHeight(_ cue: NotchOfficeCue?, title: String) -> CGFloat {
         cue?.kind == .message && cue?.caption != nil && !title.isEmpty ? 3 + captionHeight(cardCaptionFont) : 0
+    }
+}
+
+// MARK: - The capsule
+
+/// A capsule's body is a single row, too short for a second line under the
+/// title on a standard bar, so its Office caption reads after the real
+/// information, beside its rule, and only where the capsule can grow to hold
+/// it: the real information is never cut for the joke.
+extension NotchOfficeMoments {
+    /// The strip's caption size in a standard bar, the card's in a capsule
+    /// in a taller bar.
+    static func capsuleCaptionFont(_ geometry: NotchGeometry) -> NSFont {
+        geometry.stripBodyHeight >= 28 ? cardCaptionFont : stripCaptionFont
+    }
+
+    /// The mug, no taller than the capsule's body leaves.
+    static func capsuleMugScale(_ geometry: NotchGeometry) -> CGFloat {
+        min(1, max(0, geometry.stripBodyHeight - 2) / mugHeight)
+    }
+
+    /// The mug and its air before a battery's reading.
+    static func capsuleMugWidth(_ cue: NotchOfficeCue?, geometry: NotchGeometry) -> CGFloat {
+        cue?.showsMug == true ? (mugSide * capsuleMugScale(geometry)).rounded(.up) + NotchCapsuleLayout.spacing : 0
+    }
+
+    /// The caption a capsule notice shows after a row `content` wide, mug
+    /// included, or nil where the row with it would pass `maximum` or the
+    /// room the menu bar leaves.
+    static func capsuleCaption(_ cue: NotchOfficeCue?, content: CGFloat, maximum: CGFloat,
+                               geometry: NotchGeometry) -> String? {
+        guard let caption = cue?.caption else { return nil }
+        let layout = NotchCapsuleLayout.self
+        let side = layout.side(geometry)
+        let wanted = content + layout.groupSpacing + captionWidth(caption, font: capsuleCaptionFont(geometry))
+        let limit = min(maximum + side * 2, layout.availableWidth(geometry)).rounded(.down)
+        return wanted + layout.endPadding * 2 + side * 2 <= limit ? caption : nil
+    }
+
+    /// A capsule notice's row: `base` as it always measured, then the mug
+    /// and the caption where they show.
+    static func capsuleContent(_ cue: NotchOfficeCue?, base: CGFloat, maximum: CGFloat,
+                               geometry: NotchGeometry) -> CGFloat {
+        let content = base + capsuleMugWidth(cue, geometry: geometry)
+        guard let caption = capsuleCaption(cue, content: content, maximum: maximum, geometry: geometry) else {
+            return content
+        }
+        return content + NotchCapsuleLayout.groupSpacing + captionWidth(caption, font: capsuleCaptionFont(geometry))
     }
 }
 

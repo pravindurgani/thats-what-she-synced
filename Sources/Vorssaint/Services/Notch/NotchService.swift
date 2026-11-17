@@ -396,10 +396,9 @@ final class NotchService: ObservableObject {
     private var mascotSawAgents: Bool?
     /// The calendar countdown the island showed when the companion last looked.
     private var mascotSawCountdown: NotchCalendarCountdown?
-    /// The countdown the Office moments last saw, and the moment its strip
-    /// earns a caption, five minutes before the event.
-    private var officeSawCountdown: NotchCalendarCountdown?
-    private var officeSoonTimer: Timer?
+    /// The meeting the Office moments last saw coming, from the calendar's
+    /// events rather than its countdown strip.
+    private var officeSawMeeting: NotchCalendarCountdown?
     private var lastMascotAgentStart: CFTimeInterval = -.infinity
     /// The companion is out in the Command Bar's drop, and the island rests without it.
     @Published private(set) var mascotInBar = false
@@ -767,9 +766,12 @@ final class NotchService: ObservableObject {
             + NotchCalendarSupport.stripClockSpacing
             + width(NotchCalendarSupport.timeText(countdown, locale: language.formattingLocale()),
                     .monospacedDigitSystemFont(ofSize: 11, weight: .medium))
-        // Five minutes out, the Office caption splits under both sides.
+        // Five minutes before the next start, the Office caption splits
+        // under both sides, whichever event the strip counts down: an event
+        // under way that ends as the next begins keeps the strip.
         let caption = NotchOfficeMoments.isEnabled()
-            ? NotchOfficeMoments.meetingSoonHalves(countdown, now: Date(), language: language) : nil
+            ? NotchOfficeMoments.meetingSoonHalves(NotchCalendarService.shared.meeting, now: Date(),
+                                                   language: language) : nil
         let captionSide = caption.map { max(NotchOfficeMoments.captionWidth($0.leading),
                                             NotchOfficeMoments.captionWidth($0.trailing, rule: false)) } ?? 0
         return inset + max(titleSide, clockSide, captionSide)
@@ -1083,13 +1085,17 @@ final class NotchService: ObservableObject {
     /// A notice's own capsule, which it keeps while the island closes around it.
     func capsuleNoticeSurface(_ notice: NotchNotice) -> CGSize {
         let layout = NotchCapsuleLayout.self
+        // An Office moment adds its mug and caption where the capsule can hold them.
         guard let content = notice.notification else {
-            return layout.surface(content: layout.noticeContent(title: notice.title, detail: notice.detail,
-                                                                level: notice.level != nil),
+            let base = layout.noticeContent(title: notice.title, detail: notice.detail, level: notice.level != nil)
+            return layout.surface(content: NotchOfficeMoments.capsuleContent(
+                                    notice.office, base: base, maximum: layout.Maximum.notice, geometry: geometry),
                                   maximum: layout.Maximum.notice, geometry: geometry)
         }
-        return layout.surface(content: layout.notificationContent(title: content.compactTitle, message: content.compactDetail,
-                                                                 geometry: geometry),
+        let base = layout.notificationContent(title: content.compactTitle, message: content.compactDetail,
+                                              geometry: geometry)
+        return layout.surface(content: NotchOfficeMoments.capsuleContent(
+                                notice.office, base: base, maximum: layout.Maximum.notification, geometry: geometry),
                               maximum: layout.Maximum.notification, geometry: geometry)
     }
 
@@ -4370,8 +4376,17 @@ final class NotchService: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.syncMascotCalendar()
-                    self?.syncOfficeCalendar()
                     self?.syncMenuSpaceMonitoring()
+                    self?.objectWillChange.send()
+                    self?.refreshPresentation()
+                }.store(in: &subscriptions)
+            // The Office moments follow the calendar's events, countdown strip
+            // or not: five minutes out, the strip is measured again for its
+            // caption, or a notice says so; at the start, the meeting card.
+            NotchCalendarService.shared.$meeting.removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.syncOfficeCalendar()
                     self?.objectWillChange.send()
                     self?.refreshPresentation()
                 }.store(in: &subscriptions)
@@ -4417,7 +4432,8 @@ final class NotchService: ObservableObject {
             NotchNotificationService.shared.received.sink { [weak self] item in
                 guard let self else { return }
                 let office = NotchOfficeMoments.isEnabled()
-                    ? NotchOfficeMoments.communicationCue(for: item.content, language: L10n.shared.language) : nil
+                    ? NotchOfficeMoments.communicationCue(for: item.content, controls: item.controls,
+                                                          language: L10n.shared.language) : nil
                 let notice = NotchNotice(event: .systemNotification, title: item.content.title,
                                          detail: item.content.body, symbol: "bell.fill", notification: item.content,
                                          notificationID: item.id, office: office)
@@ -4425,8 +4441,14 @@ final class NotchService: ObservableObject {
                 let shown = office?.opensCard == true ? self.showOfficeCard(notice) : self.show(notice)
                 // A ringing call keeps its own banner: only that one holds
                 // Accept and Decline, and the island cannot answer for it.
+                // The reader already keeps every banner with the app's own
+                // buttons in sight, read from its structure in any language
+                // (NotchNotificationReaderCore.hideNative); a call app's
+                // words saying it rings are a second guard. Both hold with
+                // the Office moments off, a deliberate safety deviation from
+                // upstream, which hid any banner the island showed.
                 if shown, !self.expanded, self.captureControls == nil, !self.dragPlaceholder,
-                   NotchOfficeMoments.channel(for: item.content) != .call {
+                   NotchOfficeMoments.channel(for: item.content, controls: item.controls) != .call {
                     NotchNotificationService.shared.hideNative(item.id)
                 }
             }.store(in: &subscriptions)
@@ -4681,35 +4703,35 @@ final class NotchService: ObservableObject {
 // MARK: - Office moments
 
 extension NotchService {
-    /// The event the island counted down to begins: with the Office moments
-    /// on, the island opens into its meeting card. Five minutes before an
-    /// event, its countdown strip is measured again for the caption it earns;
-    /// a timer on the wall clock, so a Mac that slept wakes to it on time.
+    /// The Office moments follow the next timed event from the calendar's
+    /// own events (`NotchCalendarService.meeting`), whether or not the
+    /// countdown strip is on, and it is off by default. Five minutes before
+    /// it, a strip counting down carries the caption (NotchCalendarStrip);
+    /// with no strip, the event's own notice says it, as a short notice in
+    /// the strip like the island's other ones, never a card that would take
+    /// over the island five minutes early. As it begins, the island opens
+    /// into its meeting card.
     fileprivate func syncOfficeCalendar() {
-        let countdown = NotchCalendarService.shared.countdown
-        let saw = officeSawCountdown
-        officeSawCountdown = countdown
-        officeSoonTimer?.invalidate(); officeSoonTimer = nil
-        guard NotchOfficeMoments.isEnabled() else { return }
+        let meeting = NotchCalendarService.shared.meeting
+        let saw = officeSawMeeting
+        officeSawMeeting = meeting
+        guard NotchOfficeMoments.isEnabled(), NotchSupport.routes(.calendar) else { return }
         let now = Date()
-        if let begins = NotchOfficeMoments.meetingSoonBegins(countdown, now: now) {
-            let timer = Timer(fire: begins, interval: 0, repeats: false) { [weak self] _ in
-                guard let self, self.running else { return }
-                self.officeSoonTimer = nil
-                self.objectWillChange.send()
-                self.refreshPresentation()
-            }
-            timer.tolerance = 1
-            RunLoop.main.add(timer, forMode: .common)
-            officeSoonTimer = timer
-        }
-        guard NotchOfficeMoments.meetingBegan(from: saw, to: countdown, at: now), let event = saw?.event,
-              NotchSupport.routes(.calendar) else { return }
         let language = L10n.shared.language
-        let title = NotchCalendarStrip.displayTitle(event, untitled: FeatureStrings.notchCalendar(language).untitled)
-        showOfficeCard(NotchNotice(event: .calendar, title: title,
-                                   detail: NotchOfficeMoments.meetingHours(event, locale: language.formattingLocale()),
-                                   symbol: "calendar", office: NotchOfficeMoments.meetingCue(event, language: language)))
+        let untitled = FeatureStrings.notchCalendar(language).untitled
+        let locale = language.formattingLocale()
+        func notice(_ event: NotchCalendarEvent, _ office: NotchOfficeCue) -> NotchNotice {
+            NotchNotice(event: .calendar, title: NotchCalendarStrip.displayTitle(event, untitled: untitled),
+                        detail: NotchOfficeMoments.meetingHours(event, locale: locale), symbol: "calendar",
+                        office: office)
+        }
+        if let event = NotchOfficeMoments.meetingThatBegan(from: saw, to: meeting, at: now) {
+            showOfficeCard(notice(event, NotchOfficeMoments.meetingCue(event, language: language)))
+            return
+        }
+        guard NotchCalendarService.shared.countdown == nil,
+              let event = NotchOfficeMoments.meetingSoonArrived(from: saw, to: meeting, at: now) else { return }
+        show(notice(event, NotchOfficeMoments.meetingSoonCue(event, language: language)))
     }
 }
 

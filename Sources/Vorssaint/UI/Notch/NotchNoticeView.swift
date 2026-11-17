@@ -184,6 +184,12 @@ struct NotchNoticeView: View {
     /// around its app's icon. The message keeps the far side, whole.
     private func officeBanner(_ content: NotchNotificationContent) -> some View {
         let iconSize = min(NotchNotificationBannerLayout.iconSize, geometry.stripHeight - 4)
+        // The caption keeps its whole width, so a side too narrow for it
+        // leaves it out rather than pushing the icon and sender off the end.
+        let caption = officeCaption.flatMap { caption in
+            NotchOfficeMoments.bannerCaptionFits(caption, wing: wings.leading, inset: notice.inset(wing: wings.leading),
+                                                 icon: iconSize) ? caption : nil
+        }
         return HStack(spacing: NotchNotificationBannerLayout.spacing) {
             NotchNotificationAppIcon(app: content.app, size: iconSize)
                 .background {
@@ -196,13 +202,16 @@ struct NotchNoticeView: View {
                 Text(content.compactTitle)
                     .font(Font(NotchNotificationBannerLayout.titleFont as CTFont))
                     .lineLimit(1)
-                if let officeCaption {
-                    NotchLowerThird(caption: officeCaption, trigger: officeKey)
+                if let caption {
+                    NotchLowerThird(caption: caption, trigger: officeKey)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .notchPunchIn(officeKey)
         }
+        // Anything still too wide runs off toward the camera, never past the
+        // icon at the island's end.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var trailing: some View {
