@@ -155,6 +155,10 @@ enum NotchOfficeMomentsTests {
                      && channel(content("Slack", "Jane", "Jane is inviting you to a huddle")) == .call
                      && channel(content("Discord", "Jane", "Jane invited you to a huddle")) == .message,
                      "only Slack's own invitation to a huddle rings, and only in Slack")
+        suite.expect(channel(content("WhatsApp", "Jane", "so I told her that Jane is calling you later")) == .message
+                     && channel(content("Discord", "Jane", "so yesterday the two of us finally started a call about it")) == .message
+                     && channel(content("WhatsApp", "Jane Levinson Gould is calling you")) == .call,
+                     "a chat that mentions a call further in is a message; a caller's name may come first")
         suite.expect(channel(content("Calendar", "Incoming call with the board", "In 5 minutes")) == nil
                      && channel(content("Mail", "Jane is calling you")) == nil
                      && channel(content("", "Jane", "Incoming FaceTime Audio")) == nil,

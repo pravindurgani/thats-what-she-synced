@@ -220,6 +220,15 @@ enum NotchOfficeMoments {
         text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
+    /// A ringing line names the caller first, if anyone: the phrase opens
+    /// the line or follows a name of a few words, however long the rest.
+    /// A chat that only mentions a call further in ("so I told her Jane is
+    /// calling you later") stays a message.
+    private static func opens(_ field: String, with phrase: String) -> Bool {
+        guard let range = field.range(of: phrase) else { return false }
+        return words(String(field[..<range.lowerBound])).count <= 3
+    }
+
     private static func words(_ text: String) -> [String] {
         text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
     }
@@ -238,13 +247,13 @@ enum NotchOfficeMoments {
     /// name the meeting or channel too; only apps that ring are read.
     private static func saysRinging(_ field: String) -> Bool {
         if field.hasPrefix("incoming"), field.contains("call") || field.contains("facetime") { return true }
-        if field.contains("is calling you") || field.hasSuffix(" is calling") || field.hasSuffix(" is calling\u{2026}")
+        if opens(field, with: "is calling you") || field.hasSuffix(" is calling") || field.hasSuffix(" is calling\u{2026}")
             || field.hasSuffix(" is calling...") { return true }
         if field == "calling" || field.hasPrefix("calling\u{2026}") || field.hasPrefix("calling...") { return true }
-        if field.contains("wants to facetime") || field.contains("would like to facetime") { return true }
+        if opens(field, with: "wants to facetime") || opens(field, with: "would like to facetime") { return true }
         // Discord's ringing line names who started the call.
         if ["started a call", "started a voice call", "started a video call", "started a group call"]
-            .contains(where: field.contains) { return true }
+            .contains(where: { opens(field, with: $0) }) { return true }
         // "Llamada entrante", "Appel vidéo entrant", "Eingehender Anruf"...
         // both words of the pair, in either order.
         let pairs = [("llamada", "entrante"), ("appel", "entrant"), ("anruf", "eingehend"), ("chiamata", "in arrivo"),
@@ -252,7 +261,7 @@ enum NotchOfficeMoments {
                      ("вызов", "входящ")]
         if pairs.contains(where: { field.contains($0.0) && field.contains($0.1) }) { return true }
         if ["te esta llamando", "vous appelle", "ruft dich an", "ruft sie an", "ti sta chiamando", "esta ligando",
-            "belt je", "着信中", "来电", "전화 수신"].contains(where: field.contains) { return true }
+            "belt je", "着信中", "来电", "전화 수신"].contains(where: { opens(field, with: $0) }) { return true }
         // A line that is only the label, as some apps title a ringing call;
         // "Video call later?" is a message.
         let label = field.trimmingCharacters(in: CharacterSet(charactersIn: ".!\u{2026} "))

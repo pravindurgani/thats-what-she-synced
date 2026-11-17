@@ -105,6 +105,14 @@ enum NotchDancerTests {
         var blank = NotchDanceShuffle()
         suite.expect(blank.routine(for: nil, at: 0, pick: { _ in 2 }) == NotchDanceRoutine.allCases[2],
                      "the first song is dealt a dance at once, named or not")
+        var skipped = NotchDanceShuffle()
+        let kept = skipped.routine(for: "a", at: 0, pick: { _ in 0 })
+        _ = skipped.routine(for: "b", at: 1, pick: { _ in 0 })
+        let back = skipped.routine(for: "a", at: 1 + wait / 2, pick: { _ in 0 })
+        let waiting = skipped.settle.due != nil
+        let after = skipped.routine(for: "a", at: 1 + wait * 2, pick: { _ in 0 })
+        suite.expect(back == kept && waiting && after == kept && skipped.settle.due == nil,
+                     "a song skipped past before it settles is dropped once its time is up, so nothing asks again")
     }
 
     private static func loopContracts(_ suite: TestSuite) {

@@ -208,13 +208,15 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
     /// when a slow read or a second window outlasts the initial arrival grace.
     /// Returns the shown banners that could not be hidden.
     ///
-    /// A window whose banner offers the app's own buttons (a call's Accept
-    /// and Decline, a message's Reply) or holds a persistent alert always
-    /// stays in sight, whatever the island shows and whatever its words
-    /// say: the island cannot press those buttons for the person. This is
-    /// read from the banner's structure, so it holds in every language and
-    /// with the Office moments off. It is a deliberate safety deviation from
-    /// upstream, which hid any transient banner the island showed.
+    /// A window whose banner offers two of the app's own buttons (a call's
+    /// Accept and Decline), reads as a call, or holds a persistent alert
+    /// always stays in sight, whatever the island shows: the island cannot
+    /// press those buttons for the person. A message's lone Reply does not
+    /// hold its banner back (see `NotchNotificationSupport.keepsOwnBanner`).
+    /// The buttons are read from the banner's structure, so this holds in
+    /// every language and with the Office moments off. It is a deliberate
+    /// safety deviation from upstream, which hid any transient banner the
+    /// island showed.
     func hideNative(_ shown: Set<UUID>, holding: Set<UUID> = []) -> Set<UUID> {
         // A failed rollback is still ours to restore, even when no complete
         // read ever produced a notification target for that window.

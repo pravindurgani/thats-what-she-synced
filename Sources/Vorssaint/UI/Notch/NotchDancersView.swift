@@ -71,7 +71,9 @@ final class NotchDanceSelection: ObservableObject {
         askWork?.cancel()
         askWork = nil
         askAt = due
-        guard let due else { return }
+        // Only a song still settling is worth asking about again; a time
+        // already past belongs to a song that is no longer playing.
+        guard let due, due > now else { askAt = nil; return }
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.askWork = nil
@@ -138,6 +140,9 @@ final class NotchDancersView: NSView {
         self.moves = moves
         self.height = height
         if fresh {
+            // A new dance opens on its loop's first count, even when one
+            // song runs straight into the next without a pause.
+            if self.routine != nil, routine != self.routine { NotchDanceConductor.shared.restartCount() }
             self.routine = routine
             generation &+= 1
             // A new song's dance mid-song starts in its groove; the next
@@ -279,6 +284,9 @@ final class NotchDanceConductor {
         // The first step comes as the groove settles in, beats or not.
         scheduleStandIn(after: NotchSongMotion.beatReturn)
     }
+
+    /// The next beat is the loop's first: a new dance starts at the top.
+    func restartCount() { beat = -1 }
 
     func leave(_ view: NotchDancersView) {
         dancers.remove(view)

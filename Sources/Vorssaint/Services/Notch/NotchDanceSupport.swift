@@ -107,7 +107,13 @@ struct NotchDanceShuffle: Equatable {
     /// waiting.
     mutating func routine(for song: String?, at now: TimeInterval, pick: (Int) -> Int) -> NotchDanceRoutine {
         if let routine {
-            guard let song, song != self.song else { return routine }
+            guard let song, song != self.song else {
+                // A song that came and went before it settled, as on
+                // skipping straight back, is dropped once its time has
+                // passed, so nothing keeps asking after it.
+                if let due = settle.due, due <= now { settle.forget() }
+                return routine
+            }
             guard settle.hears(song, at: now) else { return routine }
         }
         let choices = NotchDanceRoutine.allCases.filter { $0 != routine }
