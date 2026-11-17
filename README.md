@@ -25,7 +25,7 @@ Everything below sits on top of Vorssaint's Dynamic Island and only touches musi
 | **🎨 Album-art aurora** | Open the island while music plays, and it fills with soft pools of colour taken from the album cover. They drift and breathe on slow loops that never visibly repeat. A new song cross-fades in with a brief bloom; pausing settles and dims it. |
 | **🥁 Moves with the beat** | It listens for onsets (kicks, snares, chord hits), not just loudness. On each one the light jumps up, swells and bursts in the cover's colours, then falls back like a VU meter. |
 | **🎚️ Your volume is the dial** | Louder raises the light and lets it hit harder; quieter calms it to a glow. Muted, it rests. |
-| **🎸 Genre sets the character** | Apple Music's genre picks the motion. Calm music (classical, jazz, ambient) drifts slowly. Groove (hip-hop, R&B, funk) follows the bass. Drive (rock, metal, indie) hits harder. Pulse (electronic, dance, pop) is fastest. |
+| **🎸 Genre and mood set the character** | Apple Music's genre picks the motion: calm music (classical, jazz, ambient) drifts slowly, groove (hip-hop, R&B, funk) follows the bass, drive (rock, metal, indie) hits harder, and pulse (electronic, dance, pop) is fastest. Every song also gets a mood from its cover, on any player: dark, muted covers move calmer, and bright, vivid ones livelier. |
 | **💿 The whole island wears it** | While a song plays, every page (calendar, agents, clipboard, the explorer and the rest) and every button around the island take the same colours. The buttons turn slowly like records, stop when you pause, pulse on the beat, and melt back into the island as it closes. |
 | **🔤 Words in the song's colours** | Text across the island takes a tint of the cover: a near-white for headlines, and a brighter, coloured tone for the softer lines, which reads better over the colour than plain grey. No song, no change. |
 | **🤖 Your companion dances** | The robot (or whichever companion you picked) wears the cover's colours while a song plays and bops and sways to the beat, swinging the other way on every hit. |
@@ -96,6 +96,21 @@ Play a song, hover over the notch, and turn it up. 🎶
 - **The beat** follows whatever your Mac is playing.
 - **Genre-aware motion** is Apple Music only. The first time you press play from the island, allow it to control **Music**.
 
+### Choose your look
+
+<p align="center">
+  <img src="docs/thats-what-she-synced/duotone.jpg" width="70%" alt="Duotone: the island in charcoal with one orange accent from Pink Floyd's The Dark Side of the Moon">
+</p>
+
+- **Vivid** (the default) uses the cover's whole palette, everywhere.
+- **Duotone** takes just the cover's lead colour as one accent, with a soft neutral for everything else. It has the same motion, with much less colour.
+
+```bash
+defaults write com.vorssaint.utils.dev notchSongLook -string duotone
+```
+
+Quit and reopen the app. Use `vivid` to switch back.
+
 ### Already use Vorssaint?
 
 This installs as a separate app, with its own settings, next to the official one. Quit the official app, or turn off its Dynamic Island, so you don't get two islands.
@@ -114,7 +129,7 @@ This installs as a separate app, with its own settings, next to the official one
 | Colours, but no beat | Allow **System Audio Recording** (step 2) and turn on **Bars follow the music**, then quit and reopen the app. |
 | Every genre moves the same | Allow Vorssaint (Developer) to control Music in **System Settings → Privacy & Security → Automation**. |
 | No card when headphones connect | Turn on **Accessory alerts**. The card skips devices that were already connected when the app started, and stays quiet over full-screen apps. |
-| Too much colour on busy pages | Turn on **Increase Contrast** (System Settings → Accessibility → Display) for calmer pages, or switch song mode off (below). |
+| Too much colour | Try **Duotone** (see *Choose your look*). For calmer pages only, turn on **Increase Contrast** (System Settings → Accessibility → Display). |
 
 For more, see Vorssaint's own [troubleshooting](docs/TROUBLESHOOTING.md), [permissions](docs/PERMISSIONS.md) and [build](CONTRIBUTING.md) notes.
 
