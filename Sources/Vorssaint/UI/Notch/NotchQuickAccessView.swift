@@ -86,7 +86,7 @@ struct NotchQuickAccessView: View {
     /// keep it as they slide back into a closed island still glowing with it.
     private var songColors: [NSColor]? {
         guard NotchSongMode.wearsSong(service, music) || NotchSongMode.glowsClosed(service, music) else { return nil }
-        return NotchArtworkPalette.of(music.artwork)?.glow
+        return NotchArtworkPalette.song(music.artwork)?.glow
     }
 
     var body: some View {

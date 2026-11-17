@@ -81,17 +81,16 @@ enum NotchMusicGenre {
     static func mood(for track: RadialNowPlayingSnapshot) async -> NotchMusicMood {
         guard track.appBundleIdentifier == musicBundleID else { return .neutral }
         let key = [track.title, track.artist, track.album].map { $0 ?? "" }.joined(separator: "\u{1F}")
-        lock.lock(); let known = cache[key]; lock.unlock()
-        if let known { return known }
+        if let known = lock.withLock({ cache[key] }) { return known }
         guard let reading = await read() else { return .neutral }
         // The reply names the song it read. A skip between the ask and the
         // answer must not file one song's genre under another.
         guard reading.title == (track.title ?? "") else { return .neutral }
         let mood = reading.genre.isEmpty ? .neutral : NotchMusicMood.from(genre: reading.genre)
-        lock.lock()
-        if cache.count > 256 { cache.removeAll() }
-        cache[key] = mood
-        lock.unlock()
+        lock.withLock {
+            if cache.count > 256 { cache.removeAll() }
+            cache[key] = mood
+        }
         return mood
     }
 

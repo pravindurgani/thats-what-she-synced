@@ -170,7 +170,7 @@ private struct NotchTrackArtwork: View {
     @State private var arrived = false
 
     var body: some View {
-        let glow = NotchArtworkPalette.of(music.artwork)?.marks.first.map { Color(nsColor: $0) } ?? .clear
+        let glow = NotchArtworkPalette.song(music.artwork)?.marks.first.map { Color(nsColor: $0) } ?? .clear
         NotchArtwork(image: music.artwork, size: size, source: music.playback?.track)
             .shadow(color: glow.opacity(arrived ? 0.7 : 0), radius: arrived ? 5 : 0)
             .scaleEffect(arrived || reduceMotion ? 1 : 0.4)
