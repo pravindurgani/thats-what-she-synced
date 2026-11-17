@@ -2,69 +2,64 @@
 
 <p align="center"><strong>Your MacBook's notch, in sync with your music.</strong></p>
 
-<p align="center">
-  <img src="docs/thats-what-she-synced/vivid-genesis.jpg" width="49%" alt="The island and its buttons in the warm colours of Genesis' self-titled album">
-  <img src="docs/thats-what-she-synced/vivid-pinkfloyd.jpg" width="49%" alt="The island and its buttons in the prism colours of Pink Floyd's The Dark Side of the Moon">
-</p>
+| Genesis · Vivid | Pink Floyd · Vivid | Pink Floyd · Duotone |
+|:---:|:---:|:---:|
+| <img src="docs/thats-what-she-synced/vivid-genesis.jpg" alt="The island in the warm colours of Genesis' album"> | <img src="docs/thats-what-she-synced/vivid-pinkfloyd.jpg" alt="The island in the prism colours of The Dark Side of the Moon"> | <img src="docs/thats-what-she-synced/duotone-look.jpg" alt="Duotone: one orange accent on a calm neutral"> |
 
-> **Unofficial.** A personal fork of **[Vorssaint](https://github.com/vorssaint/vorssaint-utils)**, not affiliated with or endorsed by it. Source only, no builds. Get the official app at [vorssaint.com](https://vorssaint.com).
+> **Unofficial** fork of [Vorssaint](https://github.com/vorssaint/vorssaint-utils), not affiliated with it. Source only; the official app is at [vorssaint.com](https://vorssaint.com).
 
 ## What it does
 
-- 🎨 **Takes the album art's colours.** The island, its buttons and its text glow in the cover's palette.
-- 🥁 **Moves to the music.** It jumps on every beat, rises with your volume, and takes its character from the genre and the cover's mood.
-- 🌙 **Even when closed.** The resting notch glows softly with the song.
-- 🤖 **Your companion dances.** It wears the song's colours and bops to the beat.
-- 🎧 **Connect moment.** Plugging in or pairing headphones opens the island into an animated card.
+- 🎨 **Album-art colours** on the island, its buttons and its text
+- 🥁 **Moves with the music:** the beat, your volume, the genre and the cover's mood
+- 🌙 **Glows when closed,** too
+- 🤖 **Your companion dances** to the beat
+- 🎧 **Headphones connect** with an animated card
 
-It works with Apple Music, Spotify, Safari, Chrome and Firefox. Text stays readable, it respects Reduce Motion, and nothing leaves your Mac.
+Works with Apple Music, Spotify, and music in Safari, Chrome or Firefox.
 
 ## Install
 
-You need an Apple silicon Mac on macOS 14.4 or later, with Apple's Command Line Tools (`xcode-select --install`).
+You need an Apple silicon Mac on macOS 14.4 or later, plus Apple's Command Line Tools (`xcode-select --install`).
 
-```bash
-git clone https://github.com/pravindurgani/thats-what-she-synced.git
-cd thats-what-she-synced
-VORSSAINT_DEV_OPTIMIZE=1 ./build.sh --dev --install
-```
+1. **Build it:**
+   ```bash
+   git clone https://github.com/pravindurgani/thats-what-she-synced.git
+   cd thats-what-she-synced
+   VORSSAINT_DEV_OPTIMIZE=1 ./build.sh --dev --install
+   ```
+2. **Let it hear the beat:** System Settings → Privacy & Security → Screen & System Audio Recording → under *System Audio Recording Only*, turn on **Vorssaint (Developer)**.
+3. **Switch on**, in the app's Settings: **Dynamic Island**, **Bars follow the music** and **Accessory alerts**.
+4. **Play a song** and hover over the notch.
 
-Then:
-
-1. Open **System Settings → Privacy & Security → Screen & System Audio Recording**. Under **System Audio Recording Only**, allow **Vorssaint (Developer)**. This lets it hear the beat.
-2. In the app's Settings, turn on **Dynamic Island**, **Bars follow the music** and **Accessory alerts**.
-3. Play a song and hover over the notch.
-
-It installs alongside the official Vorssaint as a separate app, so quit that one to avoid two islands. To update, run `git pull` and the build command again.
+Also running the official Vorssaint? Quit it, so you don't get two islands.
 
 ## Options
 
+**Duotone:** one accent colour from the cover, plus a neutral.
 ```bash
-# Duotone: one accent colour from the cover plus a neutral
-defaults write com.vorssaint.utils.dev notchSongLook -string duotone   # back: vivid
-
-# Song mode off entirely
-defaults write com.vorssaint.utils.dev notchSongModeEnabled -bool false  # back: true
+defaults write com.vorssaint.utils.dev notchSongLook -string duotone
 ```
 
-Quit and reopen the app after changing either one.
+**Song mode off:**
+```bash
+defaults write com.vorssaint.utils.dev notchSongModeEnabled -bool false
+```
 
-<p align="center"><img src="docs/thats-what-she-synced/duotone-look.jpg" width="60%" alt="Duotone look"></p>
+Reopen the app after either change. To undo, use `vivid` or `true`.
 
 ## Not working?
 
-- **No beat:** allow System Audio Recording (step 1) and turn on **Bars follow the music**, then reopen the app.
-- **No colours:** black-and-white covers stay neutral on purpose. Try a colourful album.
-- **Firefox shows plain colours:** it shares no cover art with macOS. Turn on **Find covers for Firefox and Zen** in the app's music settings.
+- **No beat?** Check step 2, then reopen the app.
+- **No colours?** Black-and-white covers stay neutral; try a colourful album.
+- **Firefox?** Turn on *Find covers for Firefox and Zen* in the app's music settings.
 
-More in Vorssaint's [troubleshooting guide](docs/TROUBLESHOOTING.md).
+## Update
+
+```bash
+git pull && VORSSAINT_DEV_OPTIMIZE=1 ./build.sh --dev --install
+```
 
 ## Credits
 
-- **[Vorssaint](https://github.com/vorssaint/vorssaint-utils)** by [@vorssaint](https://github.com/vorssaint), the app this is built on. ⭐ the original.
-- Inspired by the Mac notch community, especially [Atoll](https://github.com/Ebullioscopic/Atoll) and [boring.notch](https://github.com/TheBoredTeam/boring.notch). No code was taken from either.
-- The name is a nod to Michael Scott. Made with [Claude Code](https://claude.com/claude-code).
-
-## Licence
-
-[GPL-3.0-or-later](LICENSE), like Vorssaint. The Vorssaint name and look belong to the Vorssaint project; see [TRADEMARKS.md](TRADEMARKS.md).
+Built on **[Vorssaint](https://github.com/vorssaint/vorssaint-utils)** by [@vorssaint](https://github.com/vorssaint). ⭐ the original. It's inspired by [Atoll](https://github.com/Ebullioscopic/Atoll) and [boring.notch](https://github.com/TheBoredTeam/boring.notch), with no code taken from either. The name is a nod to Michael Scott, and it was made with [Claude Code](https://claude.com/claude-code). Licensed [GPL-3.0-or-later](LICENSE), like Vorssaint, whose name and look belong to the Vorssaint project ([TRADEMARKS.md](TRADEMARKS.md)).
