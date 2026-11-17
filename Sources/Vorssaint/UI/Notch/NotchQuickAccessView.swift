@@ -84,7 +84,7 @@ struct NotchQuickAccessView: View {
 
     /// While the open island wears the song, its bubbles wear it too.
     private var songColors: [NSColor]? {
-        guard NotchSongMode.wearsSong(service), music.playback != nil else { return nil }
+        guard NotchSongMode.wearsSong(service, music) else { return nil }
         return NotchArtworkPalette.of(music.artwork)?.glow
     }
 
@@ -156,9 +156,9 @@ struct NotchQuickAccessView: View {
                 // the window server does not count as the window's own pixels:
                 // a faint fill keeps the whole circle from passing clicks to
                 // the app behind, not just the glyph.
-                .background(followsGlass ? Color.black.opacity(0.02) : Color.black, in: Circle())
                 .background {
                     ZStack {
+                        Circle().fill(followsGlass ? Color.black.opacity(0.02) : Color.black)
                         if let song {
                             NotchAuroraBubble(colors: song, playing: playing, phase: phase)
                                 .clipShape(Circle())

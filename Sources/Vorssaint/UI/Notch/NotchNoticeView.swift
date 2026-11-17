@@ -150,7 +150,8 @@ struct NotchNoticeView: View {
         } else {
             Text(notice.detail)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(textTint.opacity(0.8))
+                // Brighter over a new song's colour, to keep its contrast.
+                .foregroundStyle(textTint.opacity(notice.event == .track ? 0.92 : 0.8))
                 .lineLimit(1)
                 .truncationMode(notice.event == .accessory ? .middle : .tail)
                 .frame(maxWidth: .infinity, alignment: .trailing)

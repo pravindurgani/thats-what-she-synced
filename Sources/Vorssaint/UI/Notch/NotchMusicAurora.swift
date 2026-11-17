@@ -24,11 +24,15 @@ struct NotchMusicBackdrop: View {
         if !box.isNull, box.width > 0, box.height > 0,
            let playback = music.playback, let palette = NotchArtworkPalette.of(music.artwork) {
             let track = playback.track
-            let page = NotchSongMode.wearsSong(notch)
+            let page = NotchSongMode.wearsSong(notch, music)
             let strip = !page && NotchSongMode.announcesSong(notch)
+            let genreKey = page || strip ? [track.title, track.artist, track.album, track.appBundleIdentifier]
+                .map { $0 ?? "" }.joined(separator: "\u{1F}") : ""
             NotchMusicAurora(palette: palette, isPlaying: playback.isPlaying, mood: mood,
-                             // The gallery's small labels, lyrics and the queue want a calmer ground.
-                             deepVeil: contrast == .increased || notch.musicDetailVisible || (page && notch.showingSections),
+                             // Every page but the player itself, with lyrics and the queue,
+                             // has smaller and softer text: a calmer ground.
+                             deepVeil: contrast == .increased || notch.musicDetailVisible
+                                || (page && !NotchSongMode.onMusicPage(notch)),
                              shown: page || strip)
                 // The open island's camera row stays black, meeting the
                 // housing as the resting island does, and the colour rises
@@ -45,11 +49,13 @@ struct NotchMusicBackdrop: View {
                 .mask(NotchBackdropShape(contour: presentation.contour.offsetBy(dx: -box.minX, dy: -box.minY)))
                 .padding(EdgeInsets(top: box.minY, leading: box.minX, bottom: 0, trailing: 0))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .opacity(page ? presentation.openness : 1)
-                // Only the showing and hiding ease; the shape follows the island frame by frame.
+                // Only the showing and hiding ease; the shape follows the island
+                // frame by frame. Its own ground keeps it whole over glass, so it
+                // needs no part of the glass's fade.
                 .animation(NotchSongMode.fade) { $0.opacity(page || strip ? 1 : 0) }
-                .task(id: [track.title, track.artist, track.album, track.appBundleIdentifier]
-                        .map { $0 ?? "" }.joined(separator: "\u{1F}")) {
+                // The genre is read only for a song the island shows.
+                .task(id: genreKey) {
+                    guard !genreKey.isEmpty else { return }
                     let next = await NotchMusicGenre.mood(for: track)
                     // A reply that arrives after the song changed belongs to the old song.
                     guard !Task.isCancelled else { return }
@@ -67,13 +73,21 @@ enum NotchSongMode {
     /// How everything that wears the song arrives and leaves.
     static let fade = Animation.easeOut(duration: 0.3)
 
-    static func wearsSong(_ notch: NotchService) -> Bool {
-        notch.expanded && notch.selectedMetric == nil && !notch.showingAppPanel && !notch.modules.isEmpty
-            && (notch.showingSections || notch.selected == .music)
+    /// The open island wears the song on every page while it plays, and on
+    /// the player itself while paused too, dimmed and still.
+    static func wearsSong(_ notch: NotchService, _ music: NotchMusicService) -> Bool {
+        guard notch.expanded, !notch.modules.isEmpty, music.playback != nil else { return false }
+        return music.playback?.isPlaying == true || onMusicPage(notch)
     }
 
+    static func onMusicPage(_ notch: NotchService) -> Bool {
+        notch.selected == .music && notch.selectedMetric == nil && !notch.showingSections && !notch.showingAppPanel
+    }
+
+    /// The strip naming a new song, only where it is actually on screen.
     static func announcesSong(_ notch: NotchService) -> Bool {
         !notch.expanded && !notch.noticeExpanded && notch.notice?.event == .track
+            && notch.captureControls == nil && !notch.dragPlaceholder && !notch.peeking && !notch.fullscreenCompact
     }
 }
 
@@ -266,9 +280,22 @@ final class NotchMusicAuroraView: NSView {
         }
         if newShown != shown {
             shown = newShown
-            // A song that arrived while hidden blooms as it is first seen.
-            if shown, unseenSong { bloom() }
-            if shown { unseenSong = false } else { settleResponse() }
+            if shown {
+                // A song that arrived while hidden blooms as it is first seen.
+                if unseenSong { bloom() }
+                unseenSong = false
+                // The drift is made afresh once the island settles, from rest
+                // at the size it will run at, so the pools never jump.
+                scheduleMotion(keepingPhase: false)
+            } else {
+                settleResponse()
+                reinstall?.cancel(); reinstall = nil
+                for blob in blobs {
+                    blob.removeAnimation(forKey: "drift")
+                    blob.removeAnimation(forKey: "breath")
+                }
+                motionInstalled = false
+            }
             syncClock()
         }
         if newDeepVeil != deepVeil {
@@ -605,7 +632,7 @@ final class NotchMusicAuroraView: NSView {
             blob.removeAnimation(forKey: "breath")
         }
         motionInstalled = false
-        guard moves, window != nil, size.width > 1, size.height > 1 else { syncClock(); return }
+        guard moves, shown, window != nil, size.width > 1, size.height > 1 else { syncClock(); return }
         motionInstalled = true
         installedSize = size
         let reachX = size.width * 0.14, reachY = size.height * 0.26
@@ -669,6 +696,8 @@ final class NotchMusicAuroraView: NSView {
             blob.position = CGPoint(x: size.width * rest.x, y: size.height * rest.y)
         }
         CATransaction.commit()
+        // Hidden, the island's resizes need no drift.
+        guard shown else { return }
         // The island opening, or lyrics unfolding, resizes the view frame by
         // frame. The drift is made, or its reach re-made, once that settles,
         // so it starts from rest at the size it will run at.
