@@ -31,6 +31,7 @@ enum NotchMascotTests {
         centeringContracts(suite)
         castContracts(suite)
         shuffleContracts(suite)
+        settleContracts(suite)
     }
 
     /// Placed by its box, a minimal body sat below the middle it was given,
@@ -223,12 +224,62 @@ enum NotchMascotTests {
                      && NotchMascotShuffle(stored: nil, now: start) == nil
                      && ahead?.dealt == hand.dealt.addingTimeInterval(-600) && ahead?.member == hand.member,
                      "a relaunch keeps the member out until the next deal, and a clock set back never delays it")
-        let boogie = NotchMascotShuffle.songKey(title: "Boogie", artist: "A", album: nil)
-        suite.expect(NotchMascotShuffle.songKey(title: nil, artist: " ", album: "") == nil
-                     && boogie == NotchMascotShuffle.songKey(title: " Boogie ", artist: "A", album: "")
-                     && boogie != NotchMascotShuffle.songKey(title: "Wonderland", artist: "A", album: nil)
+        let boogie = NotchMascotShuffle.songKey(title: "Boogie", artist: "A")
+        suite.expect(NotchMascotShuffle.songKey(title: nil, artist: " ") == nil
+                     && boogie == NotchMascotShuffle.songKey(title: " Boogie ", artist: "A")
+                     && boogie != NotchMascotShuffle.songKey(title: "Wonderland", artist: "A")
+                     && boogie != NotchMascotShuffle.songKey(title: "Boogie", artist: "B")
                      && boogie?.contains("Boogie") == false,
-                     "a song is told apart by its names, saved as a digest, and a reading with none tells nothing")
+                     "a song is told apart by its title and artist, saved as a digest, and a reading with neither tells nothing")
+        suite.expect(NotchMascotShuffle.songKey(title: "Boogie", artist: nil) != boogie,
+                     "a title read before its artist keys apart from the whole song, which the settle covers")
+    }
+
+    /// A shuffle deals for a new song only once its names have held still,
+    /// so a title landing before its artist brings out one member, not two.
+    private static func settleContracts(_ suite: TestSuite) {
+        let wait = NotchSongSettle.interval
+        suite.expect(wait == 0.8 && NotchSongSettle.tolerance < wait / 10,
+                     "a song settles after 0.8 seconds, give or take a timer firing a hair early")
+        var settle = NotchSongSettle()
+        suite.expect(settle.due == nil && !settle.hears("a", at: 10) && settle.due == 10 + wait,
+                     "a new key waits, and says when to read it again")
+        suite.expect(!settle.hears("a", at: 10.4) && settle.due == 10 + wait,
+                     "reading it again within the wait does not put the wait off")
+        suite.expect(settle.hears("a", at: 10 + wait - 0.02) && settle.due == nil,
+                     "read again when due, a hair early or not, it settles, and nothing waits after")
+
+        var burst = NotchSongSettle()
+        suite.expect(!burst.hears("title", at: 0) && !burst.hears("title+artist", at: 0.05)
+                     && burst.due == 0.05 + wait && !burst.hears("title+artist", at: 0.6)
+                     && burst.hears("title+artist", at: 0.05 + wait),
+                     "another key within the wait starts it over for that key")
+
+        var gap = NotchSongSettle()
+        suite.expect(!gap.hears("a", at: 0) && !gap.hears("a", at: 5) && gap.due == 5 + wait
+                     && gap.hears("a", at: 5 + wait),
+                     "a key read again only after a long gap, as after sleep, waits afresh")
+        var dropped = NotchSongSettle()
+        _ = dropped.hears("a", at: 0)
+        dropped.forget()
+        suite.expect(dropped.due == nil && !dropped.hears("a", at: wait),
+                     "forgotten when the music stops, a key waits afresh")
+
+        // The companion's flow: each reading heard, the settled one dealt.
+        // The title, then its artist a moment later, deal exactly once.
+        var hand = NotchMascotShuffle.first(at: Date(timeIntervalSince1970: 1_800_000_000), random: 0.3)
+        var flow = NotchSongSettle()
+        var deals = 0
+        func read(_ key: String?, at time: TimeInterval) {
+            guard let key, flow.hears(key, at: time),
+                  hand.hears(song: key, at: Date(timeIntervalSince1970: 1_800_000_000 + time), random: 0.6) else { return }
+            deals += 1
+        }
+        read(NotchMascotShuffle.songKey(title: "Boogie", artist: nil), at: 0)
+        read(NotchMascotShuffle.songKey(title: "Boogie", artist: "A"), at: 0.04)
+        if let due = flow.due { read(NotchMascotShuffle.songKey(title: "Boogie", artist: "A"), at: due) }
+        suite.expect(deals == 1 && hand.song == NotchMascotShuffle.songKey(title: "Boogie", artist: "A") && flow.due == nil,
+                     "a song whose artist lands after its title deals one member, for the whole song")
     }
 
     private static func calendarContracts(_ suite: TestSuite) {

@@ -47,17 +47,36 @@ final class NotchDanceStage {
         layer.addSublayer(glow)
     }
 
+    /// How long one dance takes to cross-fade into the next, as a new look
+    /// does on the companion.
+    static let danceChange: CFTimeInterval = 0.24
+
     /// Sets the dance on a floor `floorHeight` tall. A new dance or floor
-    /// rebuilds the figures and stands them in `poses` at once.
+    /// rebuilds the figures and stands them in `poses`. With `fades`, another
+    /// dance cross-fades in over the last one rather than swapping figures in
+    /// a single frame; the first dance, or the same one on a new floor, is
+    /// simply there. A fade is no motion, so it plays under Reduce Motion too,
+    /// as the colours' change does.
     func configure(routine: NotchDanceRoutine, floorHeight: CGFloat, poses: [NotchDancerPose],
-                   contentsScale: CGFloat) {
+                   contentsScale: CGFloat, fades: Bool = false) {
         guard routine != self.routine || floorHeight != self.floorHeight || parts.isEmpty else { return }
+        let fade = fades && self.routine != nil && routine != self.routine
         self.routine = routine
         self.floorHeight = floorHeight
         self.contentsScale = contentsScale
         dancers = routine.dancers
+        // One transaction for the rebuild, its colours and its poses, so the
+        // fade runs from the whole last dance to the whole new one.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        if fade {
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = Self.danceChange
+            transition.timingFunction = NotchSongMotion.settleCurve
+            layer.add(transition, forKey: "routine")
+        }
         parts.joined().forEach { $0.removeFromSuperlayer() }
         parts = dancers.map { dancer in
             dancer.layers.map { description in
@@ -79,7 +98,6 @@ final class NotchDanceStage {
         let ground = NotchDanceFloor.ground(height: floorHeight)
         let depth = 7 * NotchDanceFloor.scale(height: floorHeight)
         glow.frame = CGRect(x: 0, y: ground - depth / 2, width: NotchDanceFloor.width, height: depth)
-        CATransaction.commit()
         if let paint { colour(paint, animated: false) }
         show(poses, duration: 0)
     }

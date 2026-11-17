@@ -6,12 +6,15 @@ import Foundation
 
 /// Deals the member of the cast a companion set to Shuffle shows: another
 /// one each time a new song starts, and with nothing playing at most once
-/// an hour. It listens for songs only once a shuffled companion has been
-/// drawn, and stops when the companion is set to something else. A quiet
-/// deal waits on a single timer an hour away, and is checked again when
-/// the companion comes back into sight, since a sleeping Mac holds timers
-/// back. The hand is saved with each deal, so a relaunch keeps the member
-/// out, and its quiet hour, until the next. Main thread only.
+/// an hour. A new song is dealt for once its names have settled
+/// (NotchSongSettle), so a title arriving before its artist brings out one
+/// member, not two in a row. It listens for songs only once a shuffled
+/// companion has been drawn, and stops when the companion is switched off
+/// or set to something else. A quiet deal waits on a single timer an hour
+/// away, and is checked again when the companion comes back into sight,
+/// since a sleeping Mac holds timers back. The hand is saved with each
+/// deal, so a relaunch keeps the member out, and its quiet hour, until the
+/// next. Main thread only.
 final class NotchMascotShuffleService: ObservableObject {
     static let shared = NotchMascotShuffleService()
 
@@ -27,6 +30,10 @@ final class NotchMascotShuffleService: ObservableObject {
     private var playbackSubscription: AnyCancellable?
     private var quietWork: DispatchWorkItem?
     private var playing = false
+    /// A new song waiting for its names to settle, and the one read of it
+    /// queued for when the wait is up.
+    private var settle = NotchSongSettle()
+    private var settleWork: DispatchWorkItem?
 
     private init() {
         let now = Date()
@@ -54,8 +61,7 @@ final class NotchMascotShuffleService: ObservableObject {
         playbackSubscription = NotchMusicService.shared.$playback
             .map { playback -> String? in
                 guard let playback, playback.isPlaying else { return nil }
-                return NotchMascotShuffle.songKey(title: playback.track.title, artist: playback.track.artist,
-                                                  album: playback.track.album) ?? ""
+                return NotchMascotShuffle.songKey(title: playback.track.title, artist: playback.track.artist) ?? ""
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -72,8 +78,32 @@ final class NotchMascotShuffleService: ObservableObject {
     private func hear(_ key: String?) {
         guard stillShuffled() else { return }
         playing = key != nil
-        if let key, !key.isEmpty, hand.hears(song: key, at: Date(), random: Double.random(in: 0..<1)) { publish() }
+        settleWork?.cancel()
+        settleWork = nil
+        if let key, !key.isEmpty { settles(key) } else { settle.forget() }
         scheduleQuietDeal()
+    }
+
+    /// Deals for a new song once the same key has held for a settle: read
+    /// as it arrives, then once more when its wait is up. Another key in
+    /// between, as the artist landing after the title makes, starts the wait
+    /// over for that one. The song already dealt for needs no wait.
+    private func settles(_ key: String) {
+        guard key != hand.song else { settle.forget(); return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if settle.hears(key, at: now) {
+            if hand.hears(song: key, at: Date(), random: Double.random(in: 0..<1)) { publish() }
+            return
+        }
+        guard let due = settle.due else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.settleWork = nil
+            guard self.stillShuffled() else { return }
+            self.settles(key)
+        }
+        settleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, due - now), execute: work)
     }
 
     private func rest() {
@@ -82,13 +112,18 @@ final class NotchMascotShuffleService: ObservableObject {
         scheduleQuietDeal()
     }
 
-    /// Set to another style, it stops listening until a shuffled companion
-    /// is drawn again.
+    /// Switched off, or set to another style, it stops listening and drops
+    /// any deal it was waiting on, until a shuffled companion is drawn
+    /// again. A companion that is off never deals or saves a hand.
     private func stillShuffled() -> Bool {
-        guard NotchMascotSupport.look().style == .shuffle else {
+        guard NotchMascotSupport.isEnabled(), NotchMascotSupport.look().style == .shuffle else {
             playbackSubscription = nil
             quietWork?.cancel()
             quietWork = nil
+            settleWork?.cancel()
+            settleWork = nil
+            settle.forget()
+            playing = false
             return false
         }
         return true

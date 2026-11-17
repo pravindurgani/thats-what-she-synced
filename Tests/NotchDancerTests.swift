@@ -45,32 +45,66 @@ enum NotchDancerTests {
     }
 
     private static func shuffleContracts(_ suite: TestSuite) {
+        let wait = NotchSongSettle.interval
         var shuffle = NotchDanceShuffle()
         var dealt: [NotchDanceRoutine] = []
+        var keptWhileSettling = true
         // A fixed pseudo-random sequence, so the run is repeatable.
         var seed: UInt32 = 12_345
         for song in 0..<30 {
             seed = seed &* 1_103_515_245 &+ 12_345
             let draw = Int(seed >> 16)
             let pick = { (count: Int) in draw % count }
-            guard let routine = NotchMusicSide.shuffle.routine(for: "song \(song)", shuffle: &shuffle, pick: pick) else {
+            let start = Double(song) * 10
+            // Read as it arrives, then again once its names have settled.
+            let arriving = NotchMusicSide.shuffle.routine(for: "song \(song)", at: start, shuffle: &shuffle, pick: pick)
+            if let last = dealt.last { keptWhileSettling = keptWhileSettling && arriving == last }
+            guard let routine = NotchMusicSide.shuffle.routine(for: "song \(song)", at: start + wait,
+                                                                shuffle: &shuffle, pick: pick) else {
                 suite.expect(false, "shuffle deals a dance for every song")
                 return
             }
             dealt.append(routine)
-            suite.expect(NotchMusicSide.shuffle.routine(for: "song \(song)", shuffle: &shuffle, pick: { _ in 1 }) == routine,
+            suite.expect(NotchMusicSide.shuffle.routine(for: "song \(song)", at: start + 2, shuffle: &shuffle,
+                                                        pick: { _ in 1 }) == routine,
                          "the same song keeps its dance, so every copy of the strip agrees")
         }
+        suite.expect(keptWhileSettling, "a new song keeps the last dance until its names settle")
         suite.expect(zip(dealt, dealt.dropFirst()).allSatisfy { $0 != $1 }, "a new song never gets the dance just shown")
         suite.expect(Set(dealt) == Set(NotchDanceRoutine.allCases), "shuffle deals every dance over time")
         var untouched = NotchDanceShuffle()
-        suite.expect(NotchMusicSide.scarn.routine(for: "any", shuffle: &untouched, pick: { _ in 0 }) == .scarn
+        suite.expect(NotchMusicSide.scarn.routine(for: "any", at: 0, shuffle: &untouched, pick: { _ in 0 }) == .scarn
                         && untouched == NotchDanceShuffle(),
                      "a chosen dance ignores shuffle and leaves its deal alone")
         var wild = NotchDanceShuffle()
-        let first = wild.routine(for: "a", pick: { _ in 99 })
-        let second = wild.routine(for: "b", pick: { _ in -5 })
+        let first = wild.routine(for: "a", at: 0, pick: { _ in 99 })
+        _ = wild.routine(for: "b", at: 1, pick: { _ in -5 })
+        let second = wild.routine(for: "b", at: 1 + wait, pick: { _ in -5 })
         suite.expect(first != second, "an out-of-range pick still deals a different dance")
+
+        // A title landing before its artist, and a strip on its way out
+        // still asking for the last song, change the dance once.
+        var burst = NotchDanceShuffle()
+        let opening = burst.routine(for: "one", at: 0, pick: { _ in 0 })
+        var changes = 0
+        var showing = opening
+        for (key, time) in [("two", 1.0), ("two+artist", 1.05), ("one", 1.3), ("two+artist", 1.5),
+                            ("one", 1.6), ("two+artist", 1.05 + wait), ("two+artist", 2.5)] {
+            let routine = burst.routine(for: key, at: time, pick: { _ in 0 })
+            if key != "one", routine != showing { changes += 1; showing = routine }
+        }
+        suite.expect(opening == NotchDanceRoutine.allCases[0] && changes == 1 && showing != opening
+                        && burst.song == "two+artist" && burst.settle.due == nil,
+                     "a new song's dance changes once, for the whole song, whoever else asks meanwhile")
+        var nameless = NotchDanceShuffle()
+        let named = nameless.routine(for: "one", at: 0, pick: { _ in 0 })
+        suite.expect(nameless.routine(for: nil, at: 1, pick: { _ in 1 }) == named
+                        && nameless.routine(for: nil, at: 1 + wait, pick: { _ in 1 }) == named
+                        && nameless.settle.due == nil,
+                     "a reading with no names tells no song from the next and keeps the dance")
+        var blank = NotchDanceShuffle()
+        suite.expect(blank.routine(for: nil, at: 0, pick: { _ in 2 }) == NotchDanceRoutine.allCases[2],
+                     "the first song is dealt a dance at once, named or not")
     }
 
     private static func loopContracts(_ suite: TestSuite) {
@@ -172,6 +206,20 @@ enum NotchDancerTests {
         suite.expect(NotchDanceTiming.settleTimes.last == 1
                         && zip(NotchDanceTiming.settleTimes, NotchDanceTiming.settleTimes.dropFirst()).allSatisfy { $0 < $1 },
                      "the settle's frames run in order to its end")
+        suite.expect(NotchDanceTiming.heldStepPlays(beat: 6, generation: 3, latestBeat: 6, latestGeneration: 3),
+                     "a move held back half a beat plays while its beat is still the latest")
+        suite.expect(!NotchDanceTiming.heldStepPlays(beat: 6, generation: 3, latestBeat: 7, latestGeneration: 3),
+                     "a held move whose next beat already came is dropped, so it never cuts short the eighth count's jump")
+        suite.expect(!NotchDanceTiming.heldStepPlays(beat: 6, generation: 3, latestBeat: 6, latestGeneration: 4),
+                     "a held move from a dance since stopped or changed is dropped, even on the same count")
+        // The middle of the Farewell Three answers the count before the jump
+        // half a beat late, and the jump on time, so a quick jump can come
+        // while that move still waits.
+        let jump = NotchDanceRoutine.loop - 1
+        let three = NotchDanceRoutine.farewellThree
+        suite.expect(three.step(1, beat: jump - 1, energy: 1, interval: 0.5, settle: 0.5).delay > 0
+                        && three.step(1, beat: jump, energy: 1, interval: 0.5, settle: 0.5).delay == 0,
+                     "the middle dancer's move before the jump is held back and the jump is not, so it needs the guard")
 
         for routine in NotchDanceRoutine.allCases {
             for dancer in routine.dancers.indices {

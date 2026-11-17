@@ -564,11 +564,15 @@ struct NotchMascotShuffle: Equatable {
         return choices[min(choices.count - 1, index)]
     }
 
-    /// What tells one song from the next: its title, artist and album, as a
+    /// What tells one song from the next: its title and artist, as the
+    /// island tells whether a reading is still the song it holds, in a
     /// stable digest (64-bit FNV-1a), so the key can be saved without the
-    /// names. Nil for a reading with none of them, which tells nothing apart.
-    static func songKey(title: String?, artist: String?, album: String?) -> String? {
-        let parts = [title, artist, album].map { $0?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+    /// names. The album is left out: players send it last, so it would make
+    /// one song read as yet another, and the same recording on another
+    /// album is the same song. Nil for a reading with neither name, which
+    /// tells nothing apart.
+    static func songKey(title: String?, artist: String?) -> String? {
+        let parts = [title, artist].map { $0?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
         guard !parts.allSatisfy(\.isEmpty) else { return nil }
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in parts.joined(separator: "\u{1F}").utf8 {
@@ -621,4 +625,44 @@ struct NotchMascotShuffle: Equatable {
 
     /// When a deal is due with nothing playing.
     var quietDealDue: Date { dealt.addingTimeInterval(Self.quietInterval) }
+}
+
+/// Waits for a new song's names to settle before a shuffle deals for it,
+/// for the companion's cast and the strip's dancers alike. Players send a
+/// new song's title a moment before its artist, so its first readings make
+/// two keys; a deal on each would bring out one member or dance and swap it
+/// for another straight away. A song counts once the same key has been read
+/// for `interval`: read when it arrives, then again when `due`. A key read
+/// again only after a long gap, with no reading in between, starts its wait
+/// over, since nothing says it held still meanwhile. Times are seconds on a
+/// clock that only runs forward, as the system's uptime does.
+struct NotchSongSettle: Equatable {
+    static let interval: TimeInterval = 0.8
+    /// A reading a hair early, as a timer can fire, still counts.
+    static let tolerance: TimeInterval = 0.05
+
+    /// The key waiting to settle, nil while none is.
+    private(set) var song: String?
+    /// When it was first read, and when last.
+    private(set) var since: TimeInterval = 0
+    private(set) var seen: TimeInterval = 0
+
+    /// `song` is read at `now`. True once the same key has been read for
+    /// the interval, which ends its wait; false while it waits.
+    mutating func hears(_ song: String, at now: TimeInterval) -> Bool {
+        if song != self.song || now < seen || now - seen > Self.interval * 2 {
+            self.song = song
+            since = now
+        }
+        seen = now
+        guard now - since >= Self.interval - Self.tolerance else { return false }
+        self.song = nil
+        return true
+    }
+
+    /// When to read the waiting key again for it to settle; nil while none waits.
+    var due: TimeInterval? { song == nil ? nil : since + Self.interval }
+
+    /// Nothing waits any more: the music stopped, or the shuffle let go.
+    mutating func forget() { song = nil }
 }

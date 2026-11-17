@@ -75,9 +75,15 @@ final class NotchMascotRig: NSObject {
     /// Blinks wait until a visit has gone by.
     private var blinksResume: CFTimeInterval = 0
     private var configured = false
+    private var powerObserver: NSObjectProtocol?
 
     override init() {
         super.init()
+        // Low Power Mode coming on rests a member's idle loop at once, and
+        // going off starts it again, rather than waiting for the next
+        // change of face or sight to look again.
+        powerObserver = NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil,
+                                                               queue: .main) { [weak self] _ in self?.syncCastIdle() }
         root.addSublayer(hopper)
         hopper.addSublayer(squasher)
         squasher.addSublayer(cast.beatStage)
@@ -95,6 +101,10 @@ final class NotchMascotRig: NSObject {
         }
         shine.fillColor = NotchMascotColor.shine.cgColor
         visor.fillColor = NotchMascotColor.visor.cgColor
+    }
+
+    deinit {
+        if let powerObserver { NotificationCenter.default.removeObserver(powerObserver) }
     }
 
     private static let noActions: [String: CAAction] = [
@@ -774,7 +784,7 @@ final class NotchMascotRig: NSObject {
 
     /// A member of the cast plays its idle loop while it blinks: in sight,
     /// awake and allowed to move. Low Power Mode keeps it still but for
-    /// its blinks.
+    /// its blinks, and is read again whenever it changes.
     private func syncCastIdle() {
         cast.setIdling(idles && !reduceMotion && mood != .sleepy && size > 0
                        && !ProcessInfo.processInfo.isLowPowerModeEnabled)

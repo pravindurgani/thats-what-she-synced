@@ -13,7 +13,8 @@ import QuartzCore
 /// Idle loops are short episodes chained through Core Animation, as the
 /// rig's blinks are: each begins a few seconds after the last ends, and
 /// nothing runs in between. They play only while the rig idles, which it
-/// does only while it can be seen, and never under Reduce Motion.
+/// does only while it can be seen, and never under Reduce Motion or in Low
+/// Power Mode.
 final class NotchMascotCastParts {
     /// The whole figure on the beat.
     let beatStage = CALayer()
@@ -324,9 +325,11 @@ final class NotchMascotCastParts {
     private static let slowRate = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
 
     /// One episode of the member's idle loop, `gap` seconds from now, and the
-    /// next one queued as it ends.
+    /// next one queued as it ends. Low Power Mode is read again before each
+    /// one, so a loop running when it comes on stops once the episode
+    /// playing ends, even if the rig has not yet heard of the change.
     private func scheduleIdle(after gap: TimeInterval) {
-        guard idling, !reduceMotion, let member, size > 0 else { return }
+        guard idling, !reduceMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled, let member, size > 0 else { return }
         let begin = CACurrentMediaTime() + gap
         let ease = CAMediaTimingFunction(name: .easeInEaseOut)
         // The animation that ends last carries the relay that queues the next.
