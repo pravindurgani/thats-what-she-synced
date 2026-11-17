@@ -75,6 +75,8 @@ enum NotchMusicGenre {
     private static let musicBundleID = "com.apple.Music"
     private static var cache: [String: NotchMusicMood] = [:]
     private static let lock = NSLock()
+    /// One read at a time: NSAppleScript is not safe to run on several threads at once.
+    private static let queue = DispatchQueue(label: "notch.music.genre", qos: .utility)
 
     static func mood(for track: RadialNowPlayingSnapshot) async -> NotchMusicMood {
         guard track.appBundleIdentifier == musicBundleID else { return .neutral }
@@ -106,9 +108,11 @@ enum NotchMusicGenre {
 
     private static let script = """
     if application "Music" is running then
-        tell application "Music"
-            if player state is not stopped then return (name of current track) & linefeed & (genre of current track)
-        end tell
+        with timeout of 3 seconds
+            tell application "Music"
+                if player state is not stopped then return (name of current track) & linefeed & (genre of current track)
+            end tell
+        end timeout
     end if
     return ""
     """
@@ -117,7 +121,7 @@ enum NotchMusicGenre {
     /// thread, as the app's other Apple Events are.
     private static func read() async -> (title: String, genre: String)? {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
+            queue.async {
                 guard mayScriptMusic() else { continuation.resume(returning: nil); return }
                 let result = AppleScriptRunner.run(script)
                 guard result.ok, !result.output.isEmpty else { continuation.resume(returning: nil); return }

@@ -13,8 +13,8 @@ struct NotchArtworkPalette: Equatable {
     /// Colours for the backdrop behind the player. Deep jewel tones: at most
     /// 0.18 luminance, so white text keeps WCAG AA over them at full strength.
     let glow: [NSColor]
-    /// Colours for marks on the backdrop (equalizer, timeline, meter): bright
-    /// enough to keep 3:1 against it, as controls must.
+    /// Colours for marks on the backdrop (equalizer, timeline, meter): at
+    /// least 0.64 luminance, 3:1 against the 0.18 backdrop, as controls must.
     let marks: [NSColor]
     /// The play button's plate: the cover's lead colour, deep enough that the
     /// white glyph on it keeps at least 3:1 contrast.
@@ -25,7 +25,7 @@ struct NotchArtworkPalette: Equatable {
     init(pure: [NSColor]) {
         self.pure = pure
         glow = pure.map { $0.notchToned(maxLuminance: 0.18, minLuminance: 0.07) }
-        marks = pure.map { $0.notchToned(maxLuminance: 0.66, minLuminance: 0.42) }
+        marks = pure.map { $0.notchToned(maxLuminance: 0.8, minLuminance: 0.64) }
         plate = pure[0].notchToned(maxLuminance: 0.22, minLuminance: 0.09)
     }
 
@@ -187,13 +187,25 @@ extension NSColor {
         let luminance = current.notchLuminance
         if luminance >= minLuminance && luminance <= maxLuminance { return current }
         let target = luminance > maxLuminance ? maxLuminance : minLuminance
+        // Some hues (deep blue, violet) cannot reach a bright floor at any
+        // brightness; those keep full brightness and give up saturation, toward
+        // white, until they do.
+        if target == minLuminance, at(1).notchLuminance < minLuminance {
+            func pale(_ saturation: Double) -> NSColor {
+                NSColor(colorSpace: .sRGB, hue: hsb.h, saturation: saturation, brightness: 1, alpha: 1).usingColorSpace(.sRGB)!
+            }
+            var low = 0.0, high = hsb.s
+            for _ in 0..<18 {
+                let mid = (low + high) / 2
+                if pale(mid).notchLuminance >= minLuminance { low = mid } else { high = mid }
+            }
+            return pale(low)
+        }
         var low = 0.0, high = 1.0
         for _ in 0..<18 {
             let mid = (low + high) / 2
             if at(mid).notchLuminance > target { high = mid } else { low = mid }
         }
-        // Some hues (deep blue) cannot reach a bright target at any brightness;
-        // the brightest they can manage is the best they have.
         return at(target == maxLuminance ? low : high)
     }
 }

@@ -68,7 +68,7 @@ struct NotchMusicBackdrop: View {
 /// cover with a brief bloom; a pause settles and dims it.
 ///
 /// The motion is Core Animation, run by the render server; the app nudges a
-/// few layer values about twelve times a second while a song plays and the
+/// few layer values up to twenty times a second while a song plays and the
 /// island shows, and does nothing at all otherwise.
 struct NotchMusicAurora: View {
     let palette: NotchArtworkPalette
@@ -112,7 +112,7 @@ final class NotchMusicAuroraView: NSView {
     private static let pausedOpacity: Float = 0.5
     /// The veil never thins below this share of itself, so text keeps its
     /// contrast at the loudest beat.
-    private static let thinnestVeil: Double = 0.55
+    private static let thinnestVeil: Double = 0.8
 
     /// Where each pool rests, as a fraction of the island, and its loops: how
     /// long one drift around its rest takes, and one breath in and out.
@@ -154,7 +154,10 @@ final class NotchMusicAuroraView: NSView {
     private var rate: Float = 1
     private var ticks = 0
     private var nextBurst = 0
-    private var lastEnergy: Double = 0
+    private var bloomUntil: CFTimeInterval = 0
+    private var appliedBounce: Double = 0
+    private var installedSize: CGSize = .zero
+    private var reinstall: DispatchWorkItem?
     private var lastKick: CFTimeInterval = 0
     private var previousLevels: [Double] = []
     private var fluxAverage: Double = 0
@@ -238,6 +241,7 @@ final class NotchMusicAuroraView: NSView {
         if newDeepVeil != deepVeil {
             deepVeil = newDeepVeil
             paintVeil(animated: true)
+            if entered { updatePlayback() }
         }
         if newMood != mood {
             mood = newMood
@@ -257,6 +261,7 @@ final class NotchMusicAuroraView: NSView {
     }
 
     func teardown() {
+        reinstall?.cancel(); reinstall = nil
         levelsSubscription = nil
         volumeSubscription = nil
         clock.sublayers?.forEach { $0.removeAllAnimations() }
@@ -310,17 +315,19 @@ final class NotchMusicAuroraView: NSView {
     /// Reduce Motion as the one cue that the song changed.
     private func bloom() {
         let flare = CAKeyframeAnimation(keyPath: "opacity")
-        flare.values = [1, 0.15, 1]
+        flare.values = [1, 0.5, 1]
         flare.keyTimes = [0, 0.22, 1]
         flare.timingFunctions = [CAMediaTimingFunction(name: .easeOut), Self.settle]
         flare.duration = 1.25
         scrim.add(flare, forKey: "bloom")
+        bloomUntil = CACurrentMediaTime() + flare.duration
     }
 
     /// Playing: full strength and moving. Paused: dimmer and still, held where
     /// it stood rather than snapping back.
     private func updatePlayback() {
-        let target: Float = playing ? 1 : Self.pausedOpacity
+        // Half strength behind lyrics or the queue, whose softer text needs a calmer ground.
+        let target: Float = (playing ? 1 : Self.pausedOpacity) * (deepVeil ? 0.55 : 1)
         let from = canvas.presentation()?.opacity ?? canvas.opacity
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -349,7 +356,12 @@ final class NotchMusicAuroraView: NSView {
     private func syncClock() {
         let visible = window.map { $0.occlusionState.contains(.visible) } ?? false
         let run = playing && visible && moves
-        if run, !running {
+        if run, running, clock.speed != rate {
+            let local = clock.convertTime(CACurrentMediaTime(), from: nil)
+            clock.timeOffset = local
+            clock.beginTime = stageTime()
+            clock.speed = rate
+        } else if run, !running {
             clock.beginTime = stageTime()
             clock.speed = rate
         } else if !run, running {
@@ -407,7 +419,7 @@ final class NotchMusicAuroraView: NSView {
                 .sink { [weak self] volume, muted in
                     guard let self else { return }
                     self.loudness = muted == true ? 0 : min(1, max(0, volume ?? 0.6))
-                    self.retime(towards: self.targetRate(), immediately: false)
+                    self.retime(towards: self.targetRate(), immediately: true)
                     // A volume change moves the light at once, beats or not.
                     CATransaction.begin()
                     CATransaction.setAnimationDuration(0.5)
@@ -420,8 +432,13 @@ final class NotchMusicAuroraView: NSView {
 
     private func hear(_ levels: [Double]?) {
         guard playing, moves else { return }
-        let bands = levels ?? []
-        let energy = Self.energy(levels, bassWeight: mood.bassWeight)
+        // The reader stopped (silence, or the live equalizer turned off): the
+        // light settles instead of holding the last beat.
+        guard let bands = levels, !bands.isEmpty else {
+            if bounce > 0 || !previousLevels.isEmpty { previousLevels = []; settleResponse() }
+            return
+        }
+        let energy = Self.energy(bands, bassWeight: mood.bassWeight)
         drive += (energy - drive) * 0.03
 
         // Onsets, not loudness: how much the bands jumped since the last
@@ -438,8 +455,9 @@ final class NotchMusicAuroraView: NSView {
         }
         previousLevels = bands
         let now = CACurrentMediaTime()
-        // At least 0.35 s apart: never above three a second, the limit for flashing content.
-        let onset = flux > fluxAverage * 1.5 + 0.012 && now - lastKick > 0.35
+        // At least 0.4 s apart, and none during a song change's bloom: under
+        // three flashes in any second, the limit for flashing content.
+        let onset = flux > fluxAverage * 1.5 + 0.012 && now - lastKick > 0.4 && now > bloomUntil
         fluxAverage += (flux - fluxAverage) * 0.08
         if onset {
             lastKick = now
@@ -451,6 +469,10 @@ final class NotchMusicAuroraView: NSView {
             bounce *= 0.72
         }
 
+        // Nothing to move between beats once the light is at rest.
+        let resting = bounce < 0.01 && appliedBounce < 0.01
+        if resting { bounce = 0 } else { appliedBounce = bounce }
+        if !resting {
         CATransaction.begin()
         CATransaction.setAnimationDuration(onset ? 0.06 : 0.09)
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
@@ -459,6 +481,8 @@ final class NotchMusicAuroraView: NSView {
         stage.transform = CATransform3DMakeScale(swell, swell, 1)
         lift.transform = CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)
         CATransaction.commit()
+        }
+        if resting { appliedBounce = 0 }
 
         ticks += 1
         // The drift's speed follows the song's drive, gently, every two seconds.
@@ -499,6 +523,7 @@ final class NotchMusicAuroraView: NSView {
     /// The stage runs in real time, so this settles even with the drift paused.
     private func settleResponse() {
         bounce = 0
+        appliedBounce = 0
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.5)
         CATransaction.setAnimationTimingFunction(Self.settle)
@@ -524,11 +549,15 @@ final class NotchMusicAuroraView: NSView {
 
     // MARK: Motion
 
-    /// Adds the pools' drift and breath once, when the view first has a size
-    /// in a window, and again only when Reduce Motion changes. A resize keeps
-    /// them running where they are: the pools move with their rest points.
-    private func installMotion() {
+    /// Adds the pools' drift and breath when the view first has a size in a
+    /// window, when Reduce Motion changes, and once a resize has settled at a
+    /// size well apart from the one the drift was made for. A re-made drift
+    /// keeps each loop's begin time, so it carries on from where it was.
+    private func installMotion(keepingPhase: Bool = false) {
         let size = bounds.size
+        let began: [(drift: CFTimeInterval?, breath: CFTimeInterval?)] = blobs.map {
+            keepingPhase ? ($0.animation(forKey: "drift")?.beginTime, $0.animation(forKey: "breath")?.beginTime) : (nil, nil)
+        }
         for blob in blobs {
             blob.removeAnimation(forKey: "drift")
             blob.removeAnimation(forKey: "breath")
@@ -536,7 +565,9 @@ final class NotchMusicAuroraView: NSView {
         motionInstalled = false
         guard moves, window != nil, size.width > 1, size.height > 1 else { syncClock(); return }
         motionInstalled = true
+        installedSize = size
         let reachX = size.width * 0.14, reachY = size.height * 0.26
+        let now = clock.convertTime(CACurrentMediaTime(), from: nil)
         for (index, blob) in blobs.enumerated() {
             let pool = Self.pools[index]
             // A slow loop round the rest point; each pool turns the other way
@@ -555,6 +586,7 @@ final class NotchMusicAuroraView: NSView {
             drift.calculationMode = .cubicPaced
             drift.duration = pool.drift
             drift.repeatCount = .infinity
+            drift.beginTime = began[index].drift ?? now
             blob.add(drift, forKey: "drift")
 
             let breath = CABasicAnimation(keyPath: "transform.scale")
@@ -566,6 +598,7 @@ final class NotchMusicAuroraView: NSView {
             breath.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             // Each pool starts part-way into its breath, so they never pulse together.
             breath.timeOffset = pool.breath * Double(index) / 3
+            breath.beginTime = began[index].breath ?? now
             blob.add(breath, forKey: "breath")
         }
         syncClock()
@@ -594,7 +627,17 @@ final class NotchMusicAuroraView: NSView {
             blob.position = CGPoint(x: size.width * rest.x, y: size.height * rest.y)
         }
         CATransaction.commit()
-        if !motionInstalled { installMotion() }
+        if !motionInstalled {
+            installMotion()
+        } else if installedSize.width > 1, installedSize.height > 1,
+                  abs(size.width / installedSize.width - 1) > 0.1 || abs(size.height / installedSize.height - 1) > 0.1 {
+            // The island opening, or lyrics unfolding, resizes it frame by
+            // frame; the drift's reach is re-made once it has settled.
+            reinstall?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.installMotion(keepingPhase: true) }
+            reinstall = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -606,6 +649,7 @@ final class NotchMusicAuroraView: NSView {
             volumeSubscription = nil
             blobs.forEach { $0.removeAllAnimations() }
             motionInstalled = false
+            reinstall?.cancel(); reinstall = nil
             return
         }
         occlusionObserver = NotificationCenter.default.addObserver(

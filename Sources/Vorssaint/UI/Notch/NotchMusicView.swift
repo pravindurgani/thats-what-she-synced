@@ -288,7 +288,7 @@ struct NotchMusicView: View {
                          : playback.track.artist ?? playback.track.album ?? text.mediaNowPlaying)
                         .font(.system(size: 13))
                         .foregroundStyle(service.commandFailed ? AnyShapeStyle(Color.orange)
-                                         : palette != nil ? AnyShapeStyle(Color.white.opacity(0.82))
+                                         : palette != nil ? AnyShapeStyle(Color.white)
                                          : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                 }
@@ -469,7 +469,8 @@ private struct NotchMusicOutputButton: View {
         NotchMenuButton(title: l10n.s.mixerSystemOutputTitle, items: items, cornerRadius: 22) {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.55))
+                // Brighter over the music's colours, where 0.55 white loses its 3:1.
+                .foregroundStyle(.white.opacity(NotchArtworkPalette.of(NotchMusicService.shared.artwork) == nil ? 0.55 : 0.85))
                 .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
@@ -693,7 +694,7 @@ struct NotchMusicTimeline: View {
                 }
                 .font(.system(size: 10, weight: .medium))
                 .monospacedDigit()
-                .foregroundStyle(onColor ? AnyShapeStyle(Color.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                .foregroundStyle(onColor ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary))
             }
             .frame(height: timesBeside ? NotchLayout.musicTimelineHeight : 30)
             .onChange(of: playback.track) { clearScrub() }

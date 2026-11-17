@@ -40,7 +40,7 @@ struct NotchConnectIcon: View {
                     Circle()
                         .strokeBorder(colors[ring % colors.count], lineWidth: 1.5)
                         .frame(width: 16, height: 16)
-                        .scaleEffect(arrived ? 2.7 : 0.55)
+                        .scaleEffect(arrived ? 2.2 : 0.55)
                         .opacity(arrived ? 0 : 0.9)
                         // Each ring leaves a beat after the last, twice over,
                         // as sound leaves a cone.
@@ -59,7 +59,9 @@ struct NotchConnectIcon: View {
         }
         .frame(width: 18, height: 18)
         .task(id: trigger) {
-            arrived = false
+            var reset = Transaction(animation: nil)
+            reset.disablesAnimations = true
+            withTransaction(reset) { arrived = false }
             try? await Task.sleep(nanoseconds: 16_000_000)
             arrived = true
         }
@@ -69,20 +71,20 @@ struct NotchConnectIcon: View {
 /// The device's name, arriving out of a soft blur just behind its icon.
 struct NotchConnectTitle: ViewModifier {
     let trigger: String
-    /// Off, the title shows as it always has.
-    var enabled = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var arrived = false
 
     func body(content: Content) -> some View {
-        let shown = arrived || !enabled
+        let shown = arrived
         content
             .offset(x: shown || reduceMotion ? 0 : 10)
             .blur(radius: shown || reduceMotion ? 0 : 5)
             .opacity(shown ? 1 : 0)
             .animation(.easeOut(duration: 0.4).delay(reduceMotion ? 0 : 0.1), value: arrived)
             .task(id: trigger) {
-                arrived = false
+                var reset = Transaction(animation: nil)
+                reset.disablesAnimations = true
+                withTransaction(reset) { arrived = false }
                 try? await Task.sleep(nanoseconds: 16_000_000)
                 arrived = true
             }
@@ -110,9 +112,23 @@ struct NotchConnectSweep: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .task(id: trigger) {
-            crossed = false
+            var reset = Transaction(animation: nil)
+            reset.disablesAnimations = true
+            withTransaction(reset) { crossed = false }
             try? await Task.sleep(nanoseconds: 16_000_000)
             crossed = true
+        }
+    }
+}
+
+extension View {
+    /// The connect title's arrival, on connect notices only; every other
+    /// notice's title is left exactly as it was.
+    @ViewBuilder func notchConnectTitle(_ trigger: String?) -> some View {
+        if let trigger {
+            modifier(NotchConnectTitle(trigger: trigger)).id(trigger)
+        } else {
+            self
         }
     }
 }

@@ -52,7 +52,7 @@ struct NotchNoticeView: View {
         .foregroundStyle(.white)
         .frame(height: geometry.stripHeight)
         .overlay {
-            if connects { NotchConnectSweep(colors: NotchConnectFlourish.colors(), trigger: connectKey) }
+            if connects { NotchConnectSweep(colors: NotchConnectFlourish.colors(), trigger: connectKey).id(connectKey) }
         }
         // Each side is as wide as what it shows, so the island reaches
         // further toward the wider one and the camera's gap stays over it.
@@ -104,6 +104,7 @@ struct NotchNoticeView: View {
                         NotchTrackArtwork(size: min(18, geometry.stripHeight - 6))
                     } else if connects {
                         NotchConnectIcon(symbol: notice.symbol, colors: NotchConnectFlourish.colors(), trigger: connectKey)
+                            .id(connectKey)
                     } else {
                         Image(systemName: notice.symbol)
                             .font(.system(size: 14, weight: .medium))
@@ -119,7 +120,7 @@ struct NotchNoticeView: View {
                     .lineLimit(1)
                     .truncationMode(notice.event == .track ? .tail : .middle)
                     .contentTransition(.numericText())
-                    .modifier(NotchConnectTitle(trigger: connectKey, enabled: connects))
+                    .notchConnectTitle(connects ? connectKey : nil)
             }
             // A level's mark keeps its place while a shorter reading leaves
             // room it holds for the widest.
