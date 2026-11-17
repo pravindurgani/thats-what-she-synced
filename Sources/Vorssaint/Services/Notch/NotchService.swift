@@ -4423,7 +4423,10 @@ final class NotchService: ObservableObject {
                                          notificationID: item.id, office: office)
                 // A call rings in its own card; every other message stays a banner.
                 let shown = office?.opensCard == true ? self.showOfficeCard(notice) : self.show(notice)
-                if shown, !self.expanded, self.captureControls == nil, !self.dragPlaceholder {
+                // A ringing call keeps its own banner: only that one holds
+                // Accept and Decline, and the island cannot answer for it.
+                if shown, !self.expanded, self.captureControls == nil, !self.dragPlaceholder,
+                   NotchOfficeMoments.channel(for: item.content) != .call {
                     NotchNotificationService.shared.hideNative(item.id)
                 }
             }.store(in: &subscriptions)
