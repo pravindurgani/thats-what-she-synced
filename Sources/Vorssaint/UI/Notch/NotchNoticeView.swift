@@ -90,7 +90,7 @@ struct NotchNoticeView: View {
                     // warning keeps a symbol that says what happened.
                     if let reaction = companionReaction {
                         let size = NotchMascotSupport.noticeSize
-                        NotchMascotView(look: NotchMascotSupport.look(), mood: NotchService.shared.mascotRestingMood,
+                        NotchMascotView(look: NotchMascotSupport.islandLook(), mood: NotchService.shared.mascotRestingMood,
                                         size: size, reaction: NotchMascotSupport.reacts() ? reaction : nil)
                             .frame(width: size, height: size)
                             // Half a point low, on the line it rests on beside

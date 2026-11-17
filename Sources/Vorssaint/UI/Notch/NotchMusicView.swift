@@ -309,6 +309,7 @@ struct NotchMusicView: View {
             }
             NotchMusicTimeline(playback: playback, service: service, tint: palette.map { Color(nsColor: $0.marks[0]) } ?? accent,
                                timesBeside: true, onColor: palette != nil)
+                .animation(NotchSongMotion.colour, value: palette)
                 .padding(.top, NotchLayout.musicHeadSpacing)
             transportRow {
                 if !preview && shuffle.isOffered { shuffleButton }
@@ -607,10 +608,11 @@ private struct NotchMusicTransport: View {
                             .fill(plate)
                             .padding(height * 0.04)
                             .shadow(color: .black.opacity(0.38), radius: 7, x: 0, y: 3)
-                            .transition(.scale(scale: 0.6).combined(with: .opacity))
+                            .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
                     }
                 }
-                .animation(.smooth(duration: 0.6), value: plate)
+                // On the song's colour timing, as everything that takes its colours.
+                .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.colour, value: plate)
                 .contentShape(Circle())
         }
         .buttonStyle(NotchButtonStyle(cornerRadius: height / 2))

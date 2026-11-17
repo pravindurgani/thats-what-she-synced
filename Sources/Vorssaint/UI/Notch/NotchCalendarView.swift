@@ -5,6 +5,7 @@ import SwiftUI
 import EventKit
 
 struct NotchCalendarView: View {
+    @Environment(\.notchSongText) private var songText
     let size: CGSize
     @Environment(\.notchSettingsPreview) private var preview
     @ObservedObject private var l10n = L10n.shared
@@ -291,11 +292,11 @@ struct NotchCalendarView: View {
         HStack(spacing: 12) {
             Image(systemName: "calendar.badge.checkmark")
                 .font(.system(size: 26, weight: .light))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(songText.soft(0.45))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 8) {
                 Text(selectedDay == nil ? text.empty : text.emptyDay)
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.65))
+                    .font(.system(size: 12)).foregroundStyle(songText.soft(0.65))
                     .fixedSize(horizontal: false, vertical: true)
                 // With no card to open it from and no room for it in the row.
                 if !rowOpensCalendar {
@@ -311,7 +312,7 @@ struct NotchCalendarView: View {
             Image(systemName: "calendar.badge.clock").font(.system(size: 28))
             Text(permissions.calendarAccess == .denied || permissions.calendarAccess == .restricted
                  ? text.denied : text.permission)
-                .font(.callout).foregroundStyle(.white.opacity(0.7)).multilineTextAlignment(.center)
+                .font(.callout).foregroundStyle(songText.soft(0.7)).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
                 if permissions.calendarAccess == .denied || permissions.calendarAccess == .restricted {
@@ -348,6 +349,7 @@ struct NotchCalendarView: View {
 }
 
 private struct NotchCalendarDayLabel: View {
+    @Environment(\.notchSongText) private var songText
     let day: Date
     let now: Date
     let text: NotchCalendarStrings
@@ -362,12 +364,13 @@ private struct NotchCalendarDayLabel: View {
             Text(day, format: .dateTime.day().month(.abbreviated))
         }
         .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(.white.opacity(0.5))
+        .foregroundStyle(songText.soft(0.5))
         .lineLimit(1)
     }
 }
 
 private struct NotchCalendarEventRow: View {
+    @Environment(\.notchSongText) private var songText
     let event: NotchCalendarEvent
     let day: Date
     let now: Date
@@ -395,12 +398,12 @@ private struct NotchCalendarEventRow: View {
             if ongoing || isNext {
                 Text(ongoing ? text.ongoing : text.next)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(ongoing ? .mint : .white.opacity(0.7))
+                    .foregroundStyle(ongoing ? .mint : songText.soft(0.7))
                     .lineLimit(1)
             }
             Text(event.title.isEmpty ? text.untitled : event.title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(ended ? 0.65 : 1))
+                .foregroundStyle(songText.soft(ended ? 0.65 : 1))
                 .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Group {
@@ -423,12 +426,12 @@ private struct NotchCalendarEventRow: View {
                 }
             }
             .font(.system(size: 11)).monospacedDigit()
-            .foregroundStyle(.white.opacity(0.75))
+            .foregroundStyle(songText.soft(0.75))
             Text(event.calendar)
-                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                .font(.system(size: 10)).foregroundStyle(songText.soft(0.5)).lineLimit(1)
             if !event.location.isEmpty {
                 Label(event.location, systemImage: "mappin")
-                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    .font(.system(size: 10)).foregroundStyle(songText.soft(0.6)).lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

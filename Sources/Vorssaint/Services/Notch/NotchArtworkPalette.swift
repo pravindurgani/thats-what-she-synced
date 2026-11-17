@@ -19,6 +19,14 @@ struct NotchArtworkPalette: Equatable {
     /// The play button's plate: the cover's lead colour, deep enough that the
     /// white glyph on it keeps at least 3:1 contrast.
     let plate: NSColor
+    /// Text in the cover's hue: a near-white for primary words, and softer
+    /// levels toned to keep their contrast over the song's colour.
+    let textPrimary: NSColor
+    let textSecondary: NSColor
+    let textTertiary: NSColor
+    /// The companion's body while it wears the song: a light top and a shade.
+    let companionLight: NSColor
+    let companionShade: NSColor
 
     /// Toned once, here, so views that read the palette on every frame of a
     /// resize or every audio update only read stored colours.
@@ -27,6 +35,11 @@ struct NotchArtworkPalette: Equatable {
         glow = pure.map { $0.notchToned(maxLuminance: 0.18, minLuminance: 0.07) }
         marks = pure.map { $0.notchToned(maxLuminance: 0.8, minLuminance: 0.64) }
         plate = pure[0].notchToned(maxLuminance: 0.22, minLuminance: 0.09)
+        textPrimary = pure[0].notchToned(maxLuminance: 0.9, minLuminance: 0.82)
+        textSecondary = pure[0].notchToned(maxLuminance: 0.5, minLuminance: 0.42)
+        textTertiary = pure[0].notchToned(maxLuminance: 0.26, minLuminance: 0.2)
+        companionLight = pure[0].notchToned(maxLuminance: 0.86, minLuminance: 0.76)
+        companionShade = pure[min(1, pure.count - 1)].notchToned(maxLuminance: 0.6, minLuminance: 0.48)
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {

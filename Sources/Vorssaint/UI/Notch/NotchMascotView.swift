@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vorssaint
 
 import AppKit
+import Combine
 import QuartzCore
 import SwiftUI
 
@@ -100,6 +101,10 @@ final class NotchMascotRig: NSObject {
     func configure(look: NotchMascotLook, size: CGFloat, contentsScale scale: CGFloat) {
         guard !configured || look != self.look || size != self.size || scale != root.contentsScale else { return }
         let restyled = configured && look != self.look && size == self.size && !reduceMotion
+        // A song's colours arriving or changing flow in on the song's colour
+        // timing; a new style or palette chosen in Settings swaps quickly.
+        let recoloured = configured && look.style == self.look.style && look.shape == self.look.shape
+            && look.palette == self.look.palette
         configured = true
         self.look = look
         self.size = size
@@ -109,8 +114,8 @@ final class NotchMascotRig: NSObject {
         if restyled {
             let fade = CATransition()
             fade.type = .fade
-            fade.duration = 0.24
-            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            fade.duration = recoloured ? NotchSongMotion.colorChange : 0.24
+            fade.timingFunction = recoloured ? NotchSongMotion.settleCurve : CAMediaTimingFunction(name: .easeInEaseOut)
             tilter.add(fade, forKey: "look")
         }
         let box = CGRect(x: 0, y: 0, width: size, height: size)
@@ -121,7 +126,7 @@ final class NotchMascotRig: NSObject {
         }
         root.contentsScale = scale
         let robot = look.style == .robot
-        let palette = look.palette
+        let palette = look.paint
         fill.colors = [palette.light.cgColor, palette.shade.cgColor]
         fill.startPoint = CGPoint(x: 0.5, y: 0)
         fill.endPoint = CGPoint(x: 0.5, y: 1)
@@ -404,7 +409,7 @@ final class NotchMascotRig: NSObject {
     /// it wakes.
     private func lightBulb(_ lit: Bool, animated: Bool) {
         guard look.style == .robot else { return }
-        let color = (lit ? look.palette.light : look.palette.shade).cgColor
+        let color = (lit ? look.paint.light : look.paint.shade).cgColor
         if animated {
             let fade = CABasicAnimation(keyPath: "fillColor")
             fade.fromValue = bulb.presentation()?.fillColor ?? bulb.fillColor
@@ -421,9 +426,9 @@ final class NotchMascotRig: NSObject {
     /// Lit already, the bulb shows dark a moment longer, then lights.
     private func relightBulb(after delay: TimeInterval) {
         guard look.style == .robot else { return }
-        let dark = look.palette.shade.cgColor
+        let dark = look.paint.shade.cgColor
         let light = CAKeyframeAnimation(keyPath: "fillColor")
-        light.values = [dark, dark, look.palette.light.cgColor]
+        light.values = [dark, dark, look.paint.light.cgColor]
         light.keyTimes = [0, NSNumber(value: delay / (delay + 0.3)), 1]
         light.duration = delay + 0.3
         bulb.add(light, forKey: "light")
@@ -960,17 +965,76 @@ final class NotchMascotHostView: NSView {
             NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
                                                    object: window, queue: .main) { [weak self] _ in
                 self?.syncIdling()
+                self?.syncSong()
             }
         }
         syncIdling()
+        syncSong()
         if window != nil, let waiting = waitingReaction {
             waitingReaction = nil
             playReaction(waiting.event, lift: waiting.lift)
         }
     }
 
-    override func viewDidHide() { super.viewDidHide(); syncIdling() }
-    override func viewDidUnhide() { super.viewDidUnhide(); syncIdling() }
+    override func viewDidHide() { super.viewDidHide(); syncIdling(); syncSong() }
+    override func viewDidUnhide() { super.viewDidUnhide(); syncIdling(); syncSong() }
+
+    // MARK: The song
+
+    /// The look asked for, before the song's colours are put on it.
+    private var requestedLook: NotchMascotLook?
+    private var songSubscription: AnyCancellable?
+    private var beatSubscription: AnyCancellable?
+    private var lastPush: Double = 0
+    private var sway: CGFloat = 1
+
+    /// While the island wears a song, the island's companion takes its colours
+    /// and bops to the island's beat, swaying the other way on each new hit.
+    /// Reduce Motion keeps the colours and leaves out the bop.
+    private func syncSong() {
+        guard let requestedLook, requestedLook.followsSong else {
+            songSubscription = nil
+            stopBopping()
+            return
+        }
+        if songSubscription == nil {
+            songSubscription = NotchSongPaint.shared.$palette.dropFirst().sink { [weak self] palette in
+                guard let self, let look = self.requestedLook else { return }
+                let paint = palette.map(NotchSongPaint.companion(for:))
+                self.mascot.configure(look: look.wearing(paint), size: self.mascot.size, contentsScale: self.backingScale)
+                self.syncBeat(wearing: paint != nil)
+            }
+        }
+        syncBeat(wearing: NotchSongPaint.shared.palette != nil)
+    }
+
+    private func syncBeat(wearing: Bool) {
+        let dances = wearing && !mascot.reduceMotion && window != nil && !isHiddenOrHasHiddenAncestor
+        if dances, beatSubscription == nil {
+            beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] bounce in self?.bop(bounce) }
+        } else if !dances {
+            stopBopping()
+        }
+    }
+
+    private func stopBopping() {
+        guard beatSubscription != nil else { return }
+        beatSubscription = nil
+        bop(0)
+    }
+
+    private func bop(_ bounce: Double) {
+        let push = CGFloat(min(1, max(0, bounce)))
+        if bounce > lastPush + 0.12 { sway = -sway }
+        lastPush = bounce
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(push > 0.05 ? 0.08 : NotchSongMotion.beatReturn)
+        CATransaction.setAnimationTimingFunction(push > 0.05 ? CAMediaTimingFunction(name: .easeOut) : NotchSongMotion.settleCurve)
+        var bopped = CATransform3DMakeScale(1 + 0.12 * push, 1 + 0.12 * push, 1)
+        bopped = CATransform3DRotate(bopped, sway * 0.1 * push, 0, 0, 1)
+        mascot.root.sublayerTransform = bopped
+        CATransaction.commit()
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -1073,7 +1137,9 @@ final class NotchMascotHostView: NSView {
                    reduceMotion: Bool, animated: Bool) {
         mascot.reduceMotion = reduceMotion
         let shift = figureShift
-        mascot.configure(look: look, size: size, contentsScale: backingScale)
+        requestedLook = look
+        mascot.configure(look: look.wearing(NotchSongPaint.shared.companion), size: size, contentsScale: backingScale)
+        syncSong()
         if figureShift != shift { applyPlacement() }
         if mood != requestedMood {
             requestedMood = mood
@@ -1322,7 +1388,7 @@ struct NotchMascotActivityVisit: ViewModifier {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: ownWing && service.mascotStepsAside)
             .overlay(alignment: .top) {
                 if let track, let visit {
-                    NotchMascotTrackView(look: NotchMascotSupport.look(), track: track, rests: false, visit: visit,
+                    NotchMascotTrackView(look: NotchMascotSupport.islandLook(), track: track, rests: false, visit: visit,
                                          mood: service.mascotRestingMood)
                         .frame(width: track.width, height: track.height)
                         .allowsHitTesting(false)

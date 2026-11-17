@@ -119,8 +119,8 @@ final class NotchEqualizerView: NSView {
         // take theirs at once.
         CATransaction.begin()
         CATransaction.setDisableActions(fresh)
-        CATransaction.setAnimationDuration(0.6)
-        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1))
+        CATransaction.setAnimationDuration(NotchSongMotion.colorChange)
+        CATransaction.setAnimationTimingFunction(NotchSongMotion.settleCurve)
         for (index, bar) in bars.enumerated() {
             let color = tints.flatMap { $0.isEmpty ? nil : $0[index % $0.count] } ?? tint
             if bar.backgroundColor != color.cgColor { bar.backgroundColor = color.cgColor }

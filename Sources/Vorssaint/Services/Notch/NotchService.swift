@@ -2340,10 +2340,12 @@ final class NotchService: ObservableObject {
     }
 
     @discardableResult
-    func show(_ incoming: NotchNotice) -> Bool {
+    func show(_ incoming: NotchNotice, replacingVolume: Bool = false) -> Bool {
+        // A device joining replaces the volume notice its own switch raised.
+        let yields = replacingVolume && notice?.event == .volume
         guard showsSystemFeedback, NotchSupport.routes(incoming.event),
-              NotchSupport.shouldReplace(notice?.event, with: incoming.event,
-                                         held: noticeExpanded && notice?.notificationID != nil) else { return false }
+              yields || NotchSupport.shouldReplace(notice?.event, with: incoming.event,
+                                                   held: noticeExpanded && notice?.notificationID != nil) else { return false }
         noticeWork?.cancel(); noticeWork = nil
         var incoming = incoming
         if incoming.notification != nil, let shown = notice, shown.notification != nil, noticeCanPresent, !noticeExpanded {
@@ -2382,7 +2384,9 @@ final class NotchService: ObservableObject {
     func showConnect(_ incoming: NotchNotice) -> Bool {
         let opensCard = !expanded && !peeking && !dragPlaceholder && captureControls == nil && !showingCommandBar
             && !fullscreenCompact
-        guard show(incoming) else { return false }
+        // macOS moves the volume as it moves the sound to the new device; that
+        // notice gives way, so the card is not held back behind it.
+        guard show(incoming, replacingVolume: true) else { return false }
         guard opensCard, noticeCanPresent, notice == incoming else { return true }
         mutatePresentation(transitionContent: .reveal) { noticeExpanded = true }
         scheduleNoticeDismissal(after: 3.2)
@@ -5025,7 +5029,7 @@ extension NotchService {
     private func showMascotBridge(from: CGFloat, to: CGFloat, duration: TimeInterval,
                                   scale: (from: CGFloat, to: CGFloat) = (1, 1), trailsGrowth: Bool = false,
                                   hop: CGFloat = 0) {
-        windowHost?.bridgeMascot(look: NotchMascotSupport.look(),
+        windowHost?.bridgeMascot(look: NotchMascotSupport.islandLook(),
                                  size: NotchMascotSupport.size(stripHeight: geometry.stripHeight, floats: false),
                                  mood: mascotRestingMood, from: from, to: to,
                                  baseline: geometry.stripHeight / 2 + 0.5, duration: duration, scale: scale,

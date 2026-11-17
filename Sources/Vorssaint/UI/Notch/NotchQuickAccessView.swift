@@ -199,7 +199,8 @@ private struct NotchQuickAccessDrops: View {
                     .fill(tint ?? .black)
             }
         }
-        .animation(NotchSongMotion.fade, value: tint != nil)
+        // Arriving and leaving on the fade; a new cover's colour on the colour timing.
+        .animation(NotchSongMotion.colour, value: tint)
         .allowsHitTesting(false)
     }
 }

@@ -5,6 +5,7 @@ import AppKit
 import SwiftUI
 
 struct NotchNotificationsView: View {
+    @Environment(\.notchSongText) private var songText
     let size: CGSize
     @ObservedObject private var service = NotchNotificationService.shared
     @ObservedObject private var permissions = Permissions.shared
@@ -16,7 +17,7 @@ struct NotchNotificationsView: View {
             if !permissions.accessibility {
                 VStack(alignment: .leading, spacing: 10) {
                     PermissionRow(kind: .accessibility)
-                    Text(text.privacy).font(.callout).foregroundStyle(.white.opacity(0.7))
+                    Text(text.privacy).font(.callout).foregroundStyle(songText.soft(0.7))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else if service.items.isEmpty {
@@ -26,7 +27,7 @@ struct NotchNotificationsView: View {
                         .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
                         Text(service.monitoring ? text.empty : text.waiting).font(.headline)
-                        Text(text.privacy).font(.caption).foregroundStyle(.white.opacity(0.65))
+                        Text(text.privacy).font(.caption).foregroundStyle(songText.soft(0.65))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -77,6 +78,7 @@ struct NotchClearNotificationsButton: View {
 /// One card per message: its app and actions on top, the text below taking
 /// whatever room the card has.
 private struct NotchNotificationRow: View {
+    @Environment(\.notchSongText) private var songText
     let item: NotchSystemNotification
     @ObservedObject var service: NotchNotificationService
     let text: NotchNotificationStrings
@@ -104,7 +106,7 @@ private struct NotchNotificationRow: View {
                 NotchIconButton(symbol: "xmark", title: text.dismiss) { service.dismiss(item.id) }
                     .disabled(service.openingID == item.id)
             }
-            .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+            .font(.system(size: 11)).foregroundStyle(songText.soft(0.6))
             .frame(height: 22)
             Text(item.content.title).font(.system(size: 13, weight: .semibold)).lineLimit(2)
             if !item.content.subtitle.isEmpty { Text(item.content.subtitle).font(.system(size: 12)).lineLimit(1) }
@@ -128,6 +130,7 @@ private struct NotchNotificationRow: View {
 /// A banner held open under the pointer: the whole message with its actions,
 /// laid out with the fonts and limits the service measured it with.
 struct NotchNotificationPreviewView: View {
+    @Environment(\.notchSongText) private var songText
     let notice: NotchNotice
     let content: NotchNotificationContent
     @ObservedObject var service: NotchService
@@ -144,13 +147,13 @@ struct NotchNotificationPreviewView: View {
                 NotchNotificationAppIcon(app: content.app, size: NotchNotificationPreviewLayout.iconSize)
                 Text(content.app.isEmpty ? text.title : content.app)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(songText.soft(0.7))
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if let item {
                     Text(item.received, format: .dateTime.hour().minute())
                         .font(.system(size: 11)).monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(songText.soft(0.45))
                 }
                 NotchIconButton(symbol: "xmark", title: text.dismiss) { service.dismissNotification(notice) }
             }

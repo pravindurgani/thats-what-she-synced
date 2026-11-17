@@ -63,32 +63,38 @@ struct NotchConnectCard: View {
         let colors = NotchConnectFlourish.colors()
         let key = "\(notice.title)|\(notice.detail)|\(notice.symbol)"
         ZStack {
-            // The glow the sound comes out of, breathing once as it arrives.
-            RadialGradient(colors: [colors[0].opacity(0.42), colors[1].opacity(0.12), .clear],
-                           center: .center, startRadius: 4, endRadius: 120)
-                .scaleEffect(arrived ? 1 : 0.4)
-                .opacity(arrived ? 1 : 0)
-                .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.glow, value: arrived)
-            if !reduceMotion {
-                ForEach(0..<4, id: \.self) { ring in
-                    Circle()
-                        .strokeBorder(colors[ring % colors.count].opacity(0.9), lineWidth: 2)
-                        .frame(width: 46, height: 46)
-                        .scaleEffect(arrived ? 4.2 : 0.7)
-                        .opacity(arrived ? 0 : 0.85)
-                        .animation(.easeOut(duration: 1.3).delay(0.15 + Double(ring) * 0.22).repeatCount(2, autoreverses: false),
-                                   value: arrived)
-                }
-            }
             HStack(spacing: 16) {
-                Image(systemName: notice.symbol)
-                    .font(.system(size: 34, weight: .medium))
-                    .foregroundStyle(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 54, height: 54)
-                    .scaleEffect(arrived || reduceMotion ? 1 : 0.3)
-                    .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring,
-                               value: arrived)
-                    .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !reduceMotion)
+                // The sound comes out of the device: its glow and rings
+                // spread from the icon, under the words beside it.
+                ZStack {
+                    // A soft disc that is clear at its own edge, so it never
+                    // shows a frame as it grows.
+                    Circle()
+                        .fill(RadialGradient(colors: [colors[0].opacity(0.45), colors[1].opacity(0.14), .clear],
+                                             center: .center, startRadius: 2, endRadius: 52))
+                        .frame(width: 104, height: 104)
+                        .scaleEffect(arrived ? 1 : 0.4)
+                        .opacity(arrived ? 1 : 0)
+                        .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.glow, value: arrived)
+                    if !reduceMotion {
+                        ForEach(0..<4, id: \.self) { ring in
+                            Circle()
+                                .strokeBorder(colors[ring % colors.count].opacity(0.7), lineWidth: 1.5)
+                                .frame(width: 46, height: 46)
+                                .scaleEffect(arrived ? 3.4 : 0.7)
+                                .opacity(arrived ? 0 : 0.8)
+                                .animation(NotchSongMotion.ripple(1.3).delay(0.12 + Double(ring) * 0.22)
+                                            .repeatCount(2, autoreverses: false), value: arrived)
+                        }
+                    }
+                    Image(systemName: notice.symbol)
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundStyle(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .scaleEffect(arrived || reduceMotion ? 1 : 0.3)
+                        .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring, value: arrived)
+                        .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !reduceMotion)
+                }
+                .frame(width: 54, height: 54)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(notice.detail)
                         .font(.system(size: 16, weight: .semibold))
@@ -140,7 +146,7 @@ struct NotchConnectIcon: View {
                         .opacity(arrived ? 0 : 0.9)
                         // Each ring leaves a beat after the last, twice over,
                         // as sound leaves a cone.
-                        .animation(.easeOut(duration: 1.0).delay(0.12 + Double(ring) * 0.18).repeatCount(2, autoreverses: false),
+                        .animation(NotchSongMotion.ripple(1.0).delay(0.12 + Double(ring) * 0.18).repeatCount(2, autoreverses: false),
                                    value: arrived)
                 }
             }
@@ -204,7 +210,7 @@ struct NotchConnectSweep: View {
                 .frame(width: band)
                 .offset(x: crossed ? proxy.size.width : -band)
                 .blendMode(.plusLighter)
-                .animation(.easeInOut(duration: 0.95).delay(0.15), value: crossed)
+                .animation(NotchSongMotion.sweep.delay(0.15), value: crossed)
         }
         .opacity(reduceMotion ? 0 : 1)
         .allowsHitTesting(false)

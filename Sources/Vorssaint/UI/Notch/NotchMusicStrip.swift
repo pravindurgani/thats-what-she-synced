@@ -19,6 +19,7 @@ struct NotchCompactMusicSnapshot {
 /// Resting on the cover names the song beside it, and resting on the bars
 /// turns them into the song's play or pause button.
 struct NotchMusicStrip: View {
+    @Environment(\.notchSongText) private var songText
     @ObservedObject var service: NotchService
     var snapshot: NotchCompactMusicSnapshot? = nil
     /// Where the island draws it: its own strip as of the last update, or
@@ -154,7 +155,7 @@ struct NotchMusicStrip: View {
             if showsArtist, let artist {
                 Text(artist)
                     .font(Font(Layout.artistFont as CTFont))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(songText.soft(0.62))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -172,7 +173,7 @@ struct NotchMusicStrip: View {
             if showsArtist, let artist {
                 Text(artist)
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(songText.soft(0.62))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

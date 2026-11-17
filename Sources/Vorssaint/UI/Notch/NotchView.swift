@@ -5,6 +5,7 @@ import AppKit
 import SwiftUI
 
 struct NotchView: View {
+    @ObservedObject private var songPaint = NotchSongPaint.shared
     @ObservedObject var service: NotchService
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var music = NotchMusicService.shared
@@ -33,7 +34,16 @@ struct NotchView: View {
                 transaction.animation = .easeInOut(duration: NotchMascotMotion.restCrossfade)
             }
             .frame(width: service.surfaceSize.width, height: service.surfaceSize.height, alignment: .top)
+            // Words take the song's tints while the island wears it; otherwise
+            // white at the island's own levels (measured: 0.502 and 0.251), so
+            // nothing changes without a song.
+            .animation(NotchSongMotion.fade) {
+                $0.foregroundStyle(songPaint.text?.primary ?? .white,
+                                   songPaint.text?.secondary ?? .white.opacity(0.502),
+                                   songPaint.text?.tertiary ?? .white.opacity(0.251))
+            }
             .foregroundStyle(.white)
+            .environment(\.notchSongText, songPaint.text)
             // The window server leaves SwiftUI content that ignores hit tests
             // out of its own hit test unless it is fully opaque. The backdrop
             // ignores them (allowsHitTesting(false) in NotchSurfaceBackground),
@@ -108,7 +118,7 @@ struct NotchView: View {
                 if service.mascotOn {
                     // The companion stands by the hint and watches the file come.
                     HStack(spacing: 8) {
-                        NotchMascotView(look: NotchMascotSupport.look(), size: 20, followsDrag: true)
+                        NotchMascotView(look: NotchMascotSupport.islandLook(), size: 20, followsDrag: true)
                             .frame(width: 20, height: 20)
                             .accessibilityHidden(true)
                         Text(text.dropHint)
@@ -755,7 +765,7 @@ struct NotchRestingStrip: View {
                 } else { Color.clear }
             }
             if service.mascotShows(on: geometry) {
-                NotchMascotTrackView(look: NotchMascotSupport.look(),
+                NotchMascotTrackView(look: NotchMascotSupport.islandLook(),
                                      track: NotchMascotSupport.track(stripWidth: geometry.collapsed.width,
                                                                      stripHeight: geometry.stripHeight,
                                                                      wing: geometry.restingWingWidth,

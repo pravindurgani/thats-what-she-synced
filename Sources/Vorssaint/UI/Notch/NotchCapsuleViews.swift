@@ -144,7 +144,7 @@ struct NotchCapsuleNoticeView: View {
         // keep a symbol that says what happened.
         if NotchMascotSupport.isEnabled(), let reaction = notice.mascot {
             let side = min(CapsuleLayout.symbolWidth, CapsuleLayout.artworkSide(geometry))
-            NotchMascotView(look: NotchMascotSupport.look(), mood: NotchService.shared.mascotRestingMood,
+            NotchMascotView(look: NotchMascotSupport.islandLook(), mood: NotchService.shared.mascotRestingMood,
                             size: side, reaction: NotchMascotSupport.reacts() ? reaction : nil)
                 .frame(width: CapsuleLayout.symbolWidth, height: side)
         } else if notice.event == .agents, let agent = notice.agent, notice.symbol == agent.symbol {
@@ -193,7 +193,7 @@ struct NotchCapsuleRestingView: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: contentStepsAside)
             .overlay {
                 if service.mascotShows(on: geometry) {
-                    NotchMascotTrackView(look: NotchMascotSupport.look(),
+                    NotchMascotTrackView(look: NotchMascotSupport.islandLook(),
                                          track: NotchMascotSupport.track(stripWidth: size.width,
                                                                          stripHeight: geometry.stripHeight,
                                                                          wing: 0, cameraWidth: 0, floats: true,

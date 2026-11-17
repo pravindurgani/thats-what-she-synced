@@ -5,10 +5,11 @@ import AppKit
 import Combine
 import Foundation
 
-/// Announces an audio output joining: wired, USB or Bluetooth headphones, or
-/// a speaker, the moment it appears and the Mac switches its sound to it. It
-/// needs no Bluetooth access, since it reads the sound's route, not the radio,
-/// so it also catches wired earphones the accessory service never sees.
+/// Announces an audio output joining: wired, USB or Bluetooth headphones the
+/// moment they appear as an output, and a speaker once the Mac switches its
+/// sound to it. It needs no Bluetooth access, since it reads the sound's
+/// outputs, not the radio, so it also catches wired earphones the accessory
+/// service never sees.
 ///
 /// Only a device that has just appeared counts. Choosing between outputs
 /// already attached is not a connection, nor is the Mac's own speakers, a
@@ -43,7 +44,7 @@ final class NotchOutputConnectWatcher {
         let mixer = AppVolumeMixer.shared
         subscription = mixer.$outputDevices.combineLatest(mixer.$currentOutputDeviceUID)
             // A route settles over a few readings as a device wakes; one notice for where it lands.
-            .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
+            .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
             .sink { [weak self] devices, uid in self?.update(devices: devices, route: uid) }
         let center = NSWorkspace.shared.notificationCenter
         wakeObservers = [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification].map {
@@ -79,15 +80,24 @@ final class NotchOutputConnectWatcher {
         let now = Date()
         let uids = Set(devices.map(\.uid))
         present = present.filter { uids.contains($0.key) }
+        var joined: [MixerOutputDevice] = []
         for device in devices where present[device.uid] == nil {
             // After a wake, what reappears was attached all along.
             present[device.uid] = now < quietUntil ? .distantPast : now
+            if now >= quietUntil { joined.append(device) }
+        }
+        // Earphones are announced as they connect, not seconds later when
+        // macOS moves the sound to them.
+        if NotchAccessorySupport.isEnabled(), let device = joined.first(where: Self.isEarphones) {
+            announce(device: device, symbol: NotchAccessorySupport.symbol(for: .audio, name: device.name), retrying: true)
         }
         guard let uid, uid != lastUID else { return }
         lastUID = uid
+        // A speaker counts once the sound moves to it, so a monitor or a dock
+        // attaching never opens the island by itself.
         guard now >= quietUntil, let appeared = present[uid], now.timeIntervalSince(appeared) < Self.appearanceWindow,
               NotchAccessorySupport.isEnabled(),
-              let device = devices.first(where: { $0.uid == uid }),
+              let device = devices.first(where: { $0.uid == uid }), !Self.isEarphones(device),
               let symbol = Self.symbol(for: device) else { return }
         announce(device: device, symbol: symbol, retrying: true)
     }
@@ -101,7 +111,8 @@ final class NotchOutputConnectWatcher {
         } else if retrying {
             // A notice of the switch itself (volume) may hold the strip for a moment.
             let work = DispatchWorkItem { [weak self] in
-                guard let self, self.lastUID == device.uid else { return }
+                // Still connected: it is announced late rather than not at all.
+                guard let self, self.present[device.uid] != nil else { return }
                 self.announce(device: device, symbol: symbol, retrying: false)
             }
             retry?.cancel()
@@ -110,12 +121,15 @@ final class NotchOutputConnectWatcher {
         }
     }
 
+    static func isEarphones(_ device: MixerOutputDevice) -> Bool {
+        let name = device.name.lowercased()
+        return device.isHeadphones
+            || ["headphone", "earphone", "earpods", "airpods", "buds", "headset", "beats"].contains { name.contains($0) }
+    }
+
     /// The glyph for a device worth announcing, or nil for one that is not.
     static func symbol(for device: MixerOutputDevice) -> String? {
-        let name = device.name.lowercased()
-        let soundsLikeEarphones = ["headphone", "earphone", "earpods", "airpods", "buds", "headset", "beats"]
-            .contains { name.contains($0) }
-        if device.isHeadphones || soundsLikeEarphones {
+        if isEarphones(device) {
             return NotchAccessorySupport.symbol(for: .audio, name: device.name)
         }
         switch device.priorityTier {

@@ -77,8 +77,31 @@ struct NotchMascotLook: Equatable {
     var style: NotchMascotStyle
     var shape: NotchMascotShape
     var palette: NotchMascotPalette
+    /// The island's companion follows the song: while the island wears one
+    /// it takes the cover's colours (see NotchSongPaint). Settings' previews
+    /// keep the chosen palette.
+    var followsSong = false
+    /// The song's colours, while it wears them.
+    var song: NotchMascotPaint? = nil
 
     static let standard = NotchMascotLook(style: .minimal, shape: .ball, palette: .pearl)
+
+    /// The colours it is drawn in.
+    var paint: NotchMascotPaint { song ?? NotchMascotPaint(light: palette.light, shade: palette.shade) }
+
+    /// This look wearing a song's colours, if it follows the song.
+    func wearing(_ paint: NotchMascotPaint?) -> NotchMascotLook {
+        guard followsSong else { return self }
+        var worn = self
+        worn.song = paint
+        return worn
+    }
+}
+
+/// A light top and a shade: the companion's body colours.
+struct NotchMascotPaint: Equatable {
+    let light: NotchMascotColor
+    let shade: NotchMascotColor
 }
 
 enum NotchMascotMood: String, CaseIterable, Identifiable {
@@ -1257,6 +1280,13 @@ enum NotchMascotSupport {
 
     static func side(in defaults: UserDefaults = .standard) -> NotchMascotSide {
         NotchMascotSide(rawValue: defaults.string(forKey: DefaultsKey.notchMascotSide) ?? "") ?? .left
+    }
+
+    /// The island's own companion: the chosen look, following the song.
+    static func islandLook() -> NotchMascotLook {
+        var look = look()
+        look.followsSong = true
+        return look
     }
 
     static func look(in defaults: UserDefaults = .standard) -> NotchMascotLook {
