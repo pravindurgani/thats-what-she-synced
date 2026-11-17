@@ -20,12 +20,18 @@ enum AgentUsageEventDeliveryTests {
         func send(_ event: AgentUsageEvent) { values.append(event) }
     }
 
+    final class Ended {
+        var values: [AgentProvider] = []
+        func send(_ provider: AgentProvider) { values.append(provider) }
+    }
+
     class Fixture {
         var running = true
         var session = 1
         var readerSession = 1
         var providers: [AgentProvider] = [.claude, .codex, .copilot]
         let events = Events()
+        let turnsEnded = Ended()
     }
 
     static func run(_ suite: TestSuite) {
@@ -88,5 +94,24 @@ enum AgentUsageEventDeliveryTests {
         host.report(events[3])
         drain()
         suite.expect(host.events.values.isEmpty, "duration and disabled-alert preferences still filter current events")
+
+        // The strip's ring closes on every turn that ends, notice or not.
+        host.turnsEnded.values.removeAll()
+        NotchAgentSupport.minimum = nil
+        host.report(finished)
+        host.report(events[1])
+        drain()
+        suite.expect(host.turnsEnded.values == [.claude] && host.events.values.isEmpty,
+                     "a turn ends for the strip even while finish notices are off, and only a finish counts")
+        host.turnsEnded.values.removeAll()
+        host.providers = [.codex]
+        host.report(finished)
+        drain()
+        suite.expect(host.turnsEnded.values.isEmpty, "a disabled agent never closes a ring")
+        host.providers = [.claude, .codex, .copilot]
+        host.report(finished)
+        host.session += 1
+        drain()
+        suite.expect(host.turnsEnded.values.isEmpty, "a previous reading's turn never closes a ring")
     }
 }

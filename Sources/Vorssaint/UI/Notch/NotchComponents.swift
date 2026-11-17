@@ -540,8 +540,9 @@ struct NotchBackdropShape: Shape {
 
 struct NotchWindowBackground: View {
     @ObservedObject var presentation: NotchBackdropPresentation
-    /// The main island's window draws the music page's colours; mirror
-    /// windows on other displays leave them out.
+    /// The main island's window draws the music page's colours, and the
+    /// agents' and the companion's glows; mirror windows on other displays
+    /// leave them out.
     var showsMusic = false
     @AppStorage(DefaultsKey.notchLiquidGlassEnabled) private var glass = false
     @AppStorage(DefaultsKey.notchTranslucentBackground) private var translucent = false
@@ -549,8 +550,12 @@ struct NotchWindowBackground: View {
     var body: some View {
         ZStack {
             NotchSurfaceBackground(presentation: presentation, glass: glass, translucent: translucent)
-            // The music page's colours, over the glass and under the page.
-            if showsMusic { NotchMusicBackdrop(presentation: presentation) }
+            // The music page's colours, over the glass and under the page,
+            // over the glow that colours the island when no song does.
+            if showsMusic {
+                NotchGlowBackdrop(presentation: presentation)
+                NotchMusicBackdrop(presentation: presentation)
+            }
         }
     }
 }

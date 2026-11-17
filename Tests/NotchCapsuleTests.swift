@@ -63,7 +63,8 @@ enum NotchCapsuleTests {
                                                             geometry: geometry, language: language)),
             ("event and music", Layout.calendarPairSurface(companion: .music, workingAgents: 0, downloadPercent: false,
                                                            geometry: geometry, language: language)),
-            ("agents", Layout.agentSurface(reading: "1:02:33", working: 2, geometry: geometry)),
+            ("agents", Layout.agentSurface(readings: ["1:02:33"], geometry: geometry)),
+            ("two agents", Layout.agentSurface(readings: ["1:02:33", "4:05"], geometry: geometry)),
             ("keep awake", Layout.keepAwakeSurface(reading: "26h05", geometry: geometry)),
             ("keep awake without an end", Layout.keepAwakeSurface(reading: nil, geometry: geometry)),
             ("download", Layout.downloadSurface(name: "Installer.dmg", hasProgress: true, geometry: geometry, language: language)),
@@ -223,8 +224,10 @@ enum NotchCapsuleTests {
                                         geometry: geometry, language: .enUS)
             let b = Layout.timerSurface(reading: second, companion: nil, workingAgents: 0, downloadPercent: false,
                                         geometry: geometry, language: .enUS)
-            suite.expect(a == b && Layout.agentSurface(reading: first, working: 1, geometry: geometry)
-                            == Layout.agentSurface(reading: second, working: 1, geometry: geometry),
+            suite.expect(a == b && Layout.agentSurface(readings: [first], geometry: geometry)
+                            == Layout.agentSurface(readings: [second], geometry: geometry)
+                            && Layout.agentSurface(readings: [first, first], geometry: geometry)
+                            == Layout.agentSurface(readings: [second, second], geometry: geometry),
                          "a reading keeps its capsule while its digits change: \(first) and \(second)")
         }
         let music = Layout.musicSurface(title: "Song", geometry: geometry)

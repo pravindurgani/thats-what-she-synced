@@ -435,60 +435,93 @@ private struct NotchCapsuleCompanionMark: View {
     }
 }
 
-/// A working agent: its mark and the reading the person chose.
+
+/// Working agents: one agent's ring and the reading the person chose, or two
+/// agents at the capsule's two ends, each ring with its own reading toward
+/// the middle, mirrored as on the island's wings.
 struct NotchCapsuleAgentStrip: View {
     @ObservedObject var service: NotchService
     let size: CGSize
     /// Another display's capsule, when the island shows on every display.
     var displayGeometry: NotchGeometry? = nil
     @ObservedObject private var usage = AgentUsageService.shared
+    @ObservedObject private var finishes = NotchAgentFinishes.shared
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(DefaultsKey.notchAgentsReadout) private var readout = NotchAgentReadout.elapsed.rawValue
     @AppStorage(DefaultsKey.notchAgentsLimitDisplay) private var display = NotchAgentLimitDisplay.remaining.rawValue
     @AppStorage(DefaultsKey.notchAgentsLimitFocus) private var focus = NotchAgentLimitFocus.mostUsed.rawValue
 
-    private func working(_ live: [AgentLiveSession]) -> [AgentProvider] {
-        AgentProvider.allCases.filter { provider in live.contains { $0.provider == provider } }
-    }
-
     var body: some View {
+        let model = finishes.model(live: usage.snapshot.live)
         // The last agent stopping empties the list before the strip has left.
-        NotchStripHold(usage.snapshot.live, shows: !usage.snapshot.live.isEmpty) { row(live: $0) }
+        NotchStripHold(model, shows: !model.wings.isEmpty) { row(model: $0) }
     }
 
-    @ViewBuilder private func row(live: [AgentLiveSession]) -> some View {
-        let working = working(live)
-        NotchCapsuleRow(size: size, geometry: displayGeometry ?? service.geometry) {
-            HStack(spacing: CapsuleLayout.spacing) {
-                NotchCapsuleAgentMarks(providers: working)
-                NotchAgentReadoutTimeline(readout: NotchAgentReadout(rawValue: readout) ?? .elapsed) { date in
-                    let text = reading(at: date, live: live)
-                    Text(text)
-                        .font(Font(CapsuleLayout.readingFont as CTFont))
-                        .foregroundStyle(working.first?.tint ?? .white)
-                        .lineLimit(1).fixedSize()
-                        // A reading that gains a digit, like an hour passing,
-                        // widens the capsule; the service measures the same.
-                        .onChange(of: NotchAgentSupport.readingShape(text)) { _, _ in
-                            DispatchQueue.main.async { service.refreshPresentation() }
-                        }
+    @ViewBuilder private func row(model: NotchAgentStripModel) -> some View {
+        let geometry = displayGeometry ?? service.geometry
+        let ring = CapsuleLayout.agentRing(geometry)
+        NotchCapsuleRow(size: size, geometry: geometry) {
+            HStack(spacing: CapsuleLayout.groupSpacing) {
+                if model.twoSided {
+                    HStack(spacing: CapsuleLayout.spacing) {
+                        NotchAgentWingMark(wing: model.wings[0], ring: ring)
+                        readingText(model.wings[0], model: model)
+                    }
+                    HStack(spacing: CapsuleLayout.spacing) {
+                        readingText(model.wings[1], model: model)
+                        NotchAgentWingMark(wing: model.wings[1], ring: ring)
+                    }
+                } else if let wing = model.wings.first {
+                    HStack(spacing: CapsuleLayout.spacing) {
+                        NotchAgentWingMark(wing: wing, ring: ring)
+                        readingText(wing, model: model)
+                    }
                 }
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(working.map(\.displayName).joined(separator: ", "))
-        .accessibilityValue(reading(at: Date(), live: live))
+        .accessibilityLabel(model.wings.map(\.provider.displayName).joined(separator: ", "))
+        .accessibilityValue(model.wings.map { wing in
+            wing.finished ? FeatureStrings.notchAgents(l10n.language).finished(wing.provider.displayName)
+                : "\(wing.provider.displayName) \(reading(wing, model: model, at: Date()))"
+        }.joined(separator: ", "))
         .accessibilityHint(FeatureStrings.notch(l10n.language).open)
     }
 
-    private func reading(at now: Date, live: [AgentLiveSession]) -> String {
-        var snapshot = usage.snapshot
-        snapshot.live = live
-        return NotchAgentSupport.stripReading(snapshot, readout: NotchAgentReadout(rawValue: readout) ?? .elapsed,
-                                              display: NotchAgentLimitDisplay(rawValue: display) ?? .remaining,
-                                              focus: NotchAgentLimitFocus(rawValue: focus) ?? .mostUsed, now: now)
+    /// A finished wing's reading holds where its turn ended, so it needs no clock.
+    @ViewBuilder private func readingText(_ wing: NotchAgentWing, model: NotchAgentStripModel) -> some View {
+        if wing.finished {
+            readingLabel(reading(wing, model: model, at: Date()), provider: wing.provider)
+        } else {
+            NotchAgentReadoutTimeline(readout: chosenReadout) { date in
+                readingLabel(reading(wing, model: model, at: date), provider: wing.provider)
+            }
+        }
+    }
+
+    private func readingLabel(_ text: String, provider: AgentProvider) -> some View {
+        Text(text)
+            .font(Font(CapsuleLayout.readingFont as CTFont))
+            // Light enough to keep AA over the agents' glow.
+            .foregroundStyle(Color(nsColor: provider.readingColor.nsColor))
+            .lineLimit(1).fixedSize()
+            // A reading that gains a digit, like an hour passing,
+            // widens the capsule; the service measures the same.
+            .onChange(of: NotchAgentSupport.readingShape(text)) { _, _ in
+                DispatchQueue.main.async { service.refreshPresentation() }
+            }
+    }
+
+    private var chosenReadout: NotchAgentReadout { NotchAgentReadout(rawValue: readout) ?? .elapsed }
+
+    private func reading(_ wing: NotchAgentWing, model: NotchAgentStripModel, at now: Date) -> String {
+        NotchAgentWings.reading(usage.snapshot, sessions: finishes.sessions(for: wing, live: model.live),
+                                finished: wing.finished, readout: chosenReadout,
+                                display: NotchAgentLimitDisplay(rawValue: display) ?? .remaining,
+                                focus: NotchAgentLimitFocus(rawValue: focus) ?? .mostUsed, now: now)
     }
 }
+
 
 /// A download: its arrow and name, its progress and the percentage.
 struct NotchCapsuleDownloadStrip: View {

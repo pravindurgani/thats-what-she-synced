@@ -31,6 +31,9 @@ final class AgentUsageService: ObservableObject {
     /// The day of the price list in use.
     @Published private(set) var pricesUpdated: Date?
     let events = PassthroughSubject<AgentUsageEvent, Never>()
+    /// Every turn that ends, before the person's alert choices filter it:
+    /// the closed island closes that agent's ring on it, notice or not.
+    let turnsEnded = PassthroughSubject<AgentProvider, Never>()
 
     /// The history the island can show: thirteen weeks for the activity map.
     static let horizon = TimeInterval(AgentUsageSnapshot.dayCount) * 86_400
@@ -664,6 +667,9 @@ final class AgentUsageService: ObservableObject {
         let session = readerSession
         DispatchQueue.main.async { [weak self] in
             guard let self, self.running, self.session == session else { return }
+            if case .finished(let provider, _, _, _, _) = event, self.providers.contains(provider) {
+                self.turnsEnded.send(provider)
+            }
             switch event {
             case .finished(let provider, let duration, _, _, _):
                 guard self.providers.contains(provider), let minimum = NotchAgentSupport.finishMinimum(),

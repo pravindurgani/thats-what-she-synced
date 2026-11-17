@@ -1164,10 +1164,19 @@ enum NotchCapsuleLayout {
         return surface(content: cup + spacing + right, maximum: Maximum.activity, geometry: geometry)
     }
 
-    /// Working agents' marks and the reading the person chose.
-    static func agentSurface(reading: String, working: Int, geometry: NotchGeometry) -> CGSize {
-        let content = agentMarksWidth(working: working) + spacing
-            + width(NotchAgentSupport.readingShape(reading), font: readingFont)
+    /// A working agent's ring, as the capsule draws it beside its reading.
+    static func agentRing(_ geometry: NotchGeometry) -> CGFloat { max(12, min(20, geometry.stripBodyHeight - 6)) }
+
+    /// One agent's ring and the reading the person chose; or two agents at
+    /// the capsule's two ends, each ring with its own reading toward the
+    /// middle, mirrored as on the island's wings. Readings are measured by
+    /// their shape, so the capsule only moves when a character comes or goes.
+    static func agentSurface(readings: [String], geometry: NotchGeometry) -> CGSize {
+        let ring = agentRing(geometry)
+        let widths = readings.prefix(2).map { width(NotchAgentSupport.readingShape($0), font: readingFont) }
+        let content = widths.count > 1
+            ? (ring + spacing) * 2 + widths[0] + groupSpacing + widths[1]
+            : ring + spacing + (widths.first ?? 0)
         return surface(content: content, maximum: Maximum.activity, geometry: geometry)
     }
 
@@ -2552,13 +2561,14 @@ struct NotchGeometry: Equatable {
     }
     /// A working agent keeps its mark and one reading beside the camera,
     /// never below it, like the timer. Both wings take the width the reading
-    /// needs, so a short one leaves no band of empty black at the ends.
-    func compactAgentGeometry(wing: CGFloat) -> NotchGeometry {
+    /// needs, so a short one leaves no band of empty black at the ends. Two
+    /// agents, a wing each with its ring and reading, may take wider wings.
+    func compactAgentGeometry(wing: CGFloat, twoSided: Bool = false) -> NotchGeometry {
         var compact = self
         let room = compactSideRoom ?? 0
-        let fitted = min(NotchAgentSupport.stripWingRange.upperBound,
-                         max(NotchAgentSupport.stripWingRange.lowerBound, wing.isFinite ? wing.rounded(.up) : 0))
-        compact.compactSideRoom = room.isFinite && room >= NotchAgentSupport.stripWingRange.lowerBound ? min(fitted, room) : 0
+        let range = twoSided ? NotchAgentWings.twoSidedRange : NotchAgentSupport.stripWingRange
+        let fitted = min(range.upperBound, max(range.lowerBound, wing.isFinite ? wing.rounded(.up) : 0))
+        compact.compactSideRoom = room.isFinite && room >= range.lowerBound ? min(fitted, room) : 0
         compact.minimumCompactWidth = cameraWidth + fitted * 2
         compact.allowsActivityFooter = false
         return compact
