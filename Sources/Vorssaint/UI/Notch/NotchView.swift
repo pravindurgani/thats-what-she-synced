@@ -143,7 +143,19 @@ struct NotchView: View {
                 .padding(.horizontal, 18)
                 .padding(.top, service.geometry.safeContentTop)
         } else if let notice = service.stripNotice {
-            if service.noticeExpanded, let content = notice.notification {
+            if service.noticeExpanded, notice.office?.opensCard == true {
+                // A call ringing or a meeting starting, with the Office moments on.
+                Button { service.activateNotice(notice) } label: {
+                    NotchOfficeCard(notice: notice)
+                        .padding(.horizontal, NotchLayout.horizontalInset)
+                        .padding(.top, service.geometry.safeContentTop)
+                        .padding(.bottom, NotchLayout.bottomInset)
+                        .frame(width: service.surfaceSize.width, height: service.surfaceSize.height, alignment: .top)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .id(notice.clickTarget)
+            } else if service.noticeExpanded, let content = notice.notification {
                 NotchNotificationPreviewView(notice: notice, content: content, service: service)
                     .padding(.horizontal, NotchLayout.horizontalInset)
                     .padding(.top, service.geometry.safeContentTop)

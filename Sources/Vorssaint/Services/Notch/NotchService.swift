@@ -22,6 +22,9 @@ struct NotchNotice: Equatable {
     /// A banner that replaces one still on screen keeps at least its wings,
     /// so a burst of messages does not resize the island with each one.
     var minimumWings = NotchNoticeWings.zero
+    /// The Office moment this notice plays, set where it is raised while the
+    /// Office moments are on; nil draws the notice exactly as it always was.
+    var office: NotchOfficeCue? = nil
 
     enum ClickTarget: Hashable {
         case event(NotchEvent, title: String, detail: String?)
@@ -41,18 +44,25 @@ struct NotchNotice: Equatable {
     /// The sides this notice takes beside a camera, as its strip draws them.
     func wings(in geometry: NotchGeometry) -> NotchNoticeWings {
         geometry.noticeWings(preferredWings(
-            wrapsMessage: NotchNotificationBannerLayout.messageLines(stripHeight: geometry.stripHeight) > 1))
+            wrapsMessage: NotchNotificationBannerLayout.messageLines(stripHeight: geometry.stripHeight) > 1,
+            captions: NotchOfficeMoments.stripFitsCaption(geometry.stripHeight)))
     }
 
-    func preferredWings(wrapsMessage: Bool) -> NotchNoticeWings {
+    /// `captions` makes room for an Office caption under the title, which a
+    /// strip too short for two lines leaves out.
+    func preferredWings(wrapsMessage: Bool, captions: Bool = true) -> NotchNoticeWings {
+        let office = captions ? self.office : self.office.map { NotchOfficeCue(kind: $0.kind, level: $0.level) }
         if let notification {
-            let fitted = NotchNotificationBannerLayout.wings(for: notification, wrapsMessage: wrapsMessage)
+            let fitted = NotchOfficeMoments.bannerWings(
+                office, fitted: NotchNotificationBannerLayout.wings(for: notification, wrapsMessage: wrapsMessage))
             return NotchNoticeWings(leading: max(minimumWings.leading, fitted.leading),
                                     trailing: max(minimumWings.trailing, fitted.trailing))
         }
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         func measured(_ text: String) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
-        let leading = measured(level == nil ? title : detail)
+        // An Office caption reads under the title, so that side is as wide
+        // as the wider of the two.
+        let leading = max(measured(level == nil ? title : detail), NotchOfficeMoments.captionWidth(office))
         // A level's wings are as wide as its mark and its widest reading, so
         // the island holds still as the value gains or loses a digit; the
         // meter takes the same width on the other side.
@@ -66,7 +76,8 @@ struct NotchNotice: Equatable {
         // An empty title leaves the mark alone, without the space after it.
         let mark = fitted(leading > 0 ? leading + 18 + 8 : 18)
         guard level == nil else { return NotchNoticeWings(leading: mark, trailing: mark) }
-        return NotchNoticeWings(leading: mark, trailing: fitted((detail as NSString).size(withAttributes: [.font: font]).width))
+        return NotchNoticeWings(leading: mark, trailing: fitted((detail as NSString).size(withAttributes: [.font: font]).width
+                                                                 + NotchOfficeMoments.readingAccessoryWidth(office)))
     }
 
     /// The wider side, for what still takes one width for both.
@@ -108,8 +119,11 @@ struct NotchNotice: Equatable {
     }
 
     func previewContentHeight(width: CGFloat) -> CGFloat {
+        // A call and a meeting starting open into the Office card instead.
+        if office?.opensCard == true { return NotchOfficeMoments.cardHeight }
         guard let notification else { return NotchConnectFlourish.applies(to: self) ? NotchConnectFlourish.cardHeight : 0 }
         return NotchNotificationPreviewLayout.contentHeight(for: notification, width: width)
+            + NotchOfficeMoments.previewExtraHeight(office, title: notification.title)
     }
 }
 
@@ -382,6 +396,10 @@ final class NotchService: ObservableObject {
     private var mascotSawAgents: Bool?
     /// The calendar countdown the island showed when the companion last looked.
     private var mascotSawCountdown: NotchCalendarCountdown?
+    /// The countdown the Office moments last saw, and the moment its strip
+    /// earns a caption, five minutes before the event.
+    private var officeSawCountdown: NotchCalendarCountdown?
+    private var officeSoonTimer: Timer?
     private var lastMascotAgentStart: CFTimeInterval = -.infinity
     /// The companion is out in the Command Bar's drop, and the island rests without it.
     @Published private(set) var mascotInBar = false
@@ -749,7 +767,12 @@ final class NotchService: ObservableObject {
             + NotchCalendarSupport.stripClockSpacing
             + width(NotchCalendarSupport.timeText(countdown, locale: language.formattingLocale()),
                     .monospacedDigitSystemFont(ofSize: 11, weight: .medium))
-        return inset + max(titleSide, clockSide)
+        // Five minutes out, the Office caption splits under both sides.
+        let caption = NotchOfficeMoments.isEnabled()
+            ? NotchOfficeMoments.meetingSoonHalves(countdown, now: Date(), language: language) : nil
+        let captionSide = caption.map { max(NotchOfficeMoments.captionWidth($0.leading),
+                                            NotchOfficeMoments.captionWidth($0.trailing, rule: false)) } ?? 0
+        return inset + max(titleSide, clockSide, captionSide)
     }
 
     /// The wider of the two sides, the timer's reading or what shares the
@@ -2409,6 +2432,11 @@ final class NotchService: ObservableObject {
     /// or holding something the person is doing, keeps it to the strip.
     @discardableResult
     func showConnect(_ incoming: NotchNotice) -> Bool {
+        // With the Office moments on, the card brings the boombox.
+        var incoming = incoming
+        if incoming.office == nil, NotchOfficeMoments.isEnabled(), NotchConnectFlourish.applies(to: incoming) {
+            incoming.office = NotchOfficeMoments.connectCue(symbol: incoming.symbol, language: L10n.shared.language)
+        }
         let opensCard = !expanded && !peeking && !dragPlaceholder && captureControls == nil && !showingCommandBar
             && !fullscreenCompact
         // macOS moves the volume as it moves the sound to the new device; that
@@ -2417,6 +2445,23 @@ final class NotchService: ObservableObject {
         guard opensCard, noticeCanPresent, notice == incoming else { return true }
         mutatePresentation(transitionContent: .reveal) { noticeExpanded = true }
         scheduleNoticeDismissal(after: 3.2)
+        return true
+    }
+
+    /// A call ringing or a meeting starting, with the Office moments on, opens
+    /// the island into its card as a connection does, and it closes by itself.
+    /// An island already open, or holding something the person is doing,
+    /// keeps it to the strip.
+    @discardableResult
+    func showOfficeCard(_ incoming: NotchNotice) -> Bool {
+        let opensCard = !expanded && !peeking && !dragPlaceholder && captureControls == nil && !showingCommandBar
+            && !fullscreenCompact
+        guard show(incoming) else { return false }
+        // A banner replacing another keeps its wings, so it is matched by what it opens.
+        guard opensCard, noticeCanPresent, notice?.clickTarget == incoming.clickTarget, !noticeExpanded else { return true }
+        mutatePresentation(transitionContent: .reveal) { noticeExpanded = true }
+        // A banner held under the pointer stays until the pointer leaves.
+        if noticeWork != nil { scheduleNoticeDismissal(after: NotchOfficeMoments.cardDuration) }
         return true
     }
 
@@ -2447,7 +2492,7 @@ final class NotchService: ObservableObject {
              : selectedNotice.event == .accessory ? .system : selectedNotice.event == .systemNotification ? .notifications
              : selectedNotice.event == .clipboard ? .clipboard : selectedNotice.event == .agents ? .agents
              : selectedNotice.event == .track ? .music : selectedNotice.event == .microphone ? .mixer
-             : selectedNotice.event == .watch ? .watch : .controls)
+             : selectedNotice.event == .watch ? .watch : selectedNotice.event == .calendar ? .calendar : .controls)
         // The notice grows into the page it led to, and stays gone after it closes.
         if expanded, (notice ?? departingNotice)?.clickTarget == selectedNotice.clickTarget { dismissNotice() }
     }
@@ -4325,6 +4370,7 @@ final class NotchService: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.syncMascotCalendar()
+                    self?.syncOfficeCalendar()
                     self?.syncMenuSpaceMonitoring()
                     self?.objectWillChange.send()
                     self?.refreshPresentation()
@@ -4370,8 +4416,13 @@ final class NotchService: ObservableObject {
         if NotchSupport.routes(.systemNotification) {
             NotchNotificationService.shared.received.sink { [weak self] item in
                 guard let self else { return }
-                let shown = self.show(NotchNotice(event: .systemNotification, title: item.content.title,
-                                                 detail: item.content.body, symbol: "bell.fill", notification: item.content, notificationID: item.id))
+                let office = NotchOfficeMoments.isEnabled()
+                    ? NotchOfficeMoments.communicationCue(for: item.content, language: L10n.shared.language) : nil
+                let notice = NotchNotice(event: .systemNotification, title: item.content.title,
+                                         detail: item.content.body, symbol: "bell.fill", notification: item.content,
+                                         notificationID: item.id, office: office)
+                // A call rings in its own card; every other message stays a banner.
+                let shown = office?.opensCard == true ? self.showOfficeCard(notice) : self.show(notice)
                 if shown, !self.expanded, self.captureControls == nil, !self.dragPlaceholder {
                     NotchNotificationService.shared.hideNative(item.id)
                 }
@@ -4570,10 +4621,16 @@ final class NotchService: ObservableObject {
                 ? text.charged : L10n.shared.s.powerPluggedIn) : text.onBattery
         let charged = next.externalConnected && before.isCharging && !next.isCharging && next.chargePercent == 100
         let reaction = NotchMascotSupport.powerReaction(pluggedIn: pluggedIn, charged: charged, low: low)
+        // The Office moment names the same reading the title does.
+        let office = NotchOfficeMoments.isEnabled()
+            ? NotchOfficeMoments.batteryCue(NotchOfficeMoments.battery(low: low, externalConnected: next.externalConnected,
+                                                                       charging: next.isCharging, percent: next.chargePercent),
+                                            percent: next.chargePercent, language: L10n.shared.language)
+            : nil
         show(NotchNotice(event: .battery, title: title,
                          detail: next.chargePercent.map { "\($0)%" } ?? "",
                          symbol: next.externalConnected ? "battery.100percent.bolt" : "battery.25percent",
-                         mascot: reaction))
+                         mascot: reaction, office: office))
         if let reaction { reactMascot(reaction) }
     }
 
@@ -4615,6 +4672,41 @@ final class NotchService: ObservableObject {
         guard notchNeedsMonitor else { return }
         notchNeedsMonitor = false
         SystemMonitor.shared.setNotchVisible(false)
+    }
+}
+
+// MARK: - Office moments
+
+extension NotchService {
+    /// The event the island counted down to begins: with the Office moments
+    /// on, the island opens into its meeting card. Five minutes before an
+    /// event, its countdown strip is measured again for the caption it earns;
+    /// a timer on the wall clock, so a Mac that slept wakes to it on time.
+    fileprivate func syncOfficeCalendar() {
+        let countdown = NotchCalendarService.shared.countdown
+        let saw = officeSawCountdown
+        officeSawCountdown = countdown
+        officeSoonTimer?.invalidate(); officeSoonTimer = nil
+        guard NotchOfficeMoments.isEnabled() else { return }
+        let now = Date()
+        if let begins = NotchOfficeMoments.meetingSoonBegins(countdown, now: now) {
+            let timer = Timer(fire: begins, interval: 0, repeats: false) { [weak self] _ in
+                guard let self, self.running else { return }
+                self.officeSoonTimer = nil
+                self.objectWillChange.send()
+                self.refreshPresentation()
+            }
+            timer.tolerance = 1
+            RunLoop.main.add(timer, forMode: .common)
+            officeSoonTimer = timer
+        }
+        guard NotchOfficeMoments.meetingBegan(from: saw, to: countdown, at: now), let event = saw?.event,
+              NotchSupport.routes(.calendar) else { return }
+        let language = L10n.shared.language
+        let title = NotchCalendarStrip.displayTitle(event, untitled: FeatureStrings.notchCalendar(language).untitled)
+        showOfficeCard(NotchNotice(event: .calendar, title: title,
+                                   detail: NotchOfficeMoments.meetingHours(event, locale: language.formattingLocale()),
+                                   symbol: "calendar", office: NotchOfficeMoments.meetingCue(event, language: language)))
     }
 }
 

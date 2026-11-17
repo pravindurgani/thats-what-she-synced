@@ -40,7 +40,8 @@ struct NotchCalendarStrip: View {
                                 if usesFullRow {
                                     fullRow(countdown, title: displayTitle, remaining: remaining)
                                 } else {
-                                    wings(countdown, title: displayTitle, remaining: remaining)
+                                    wings(countdown, title: displayTitle, remaining: remaining,
+                                          caption: officeCaption(countdown, now: context.date))
                                 }
                             }
                             .frame(width: geometry.compactActivitySize.width - geometry.compactActivityHorizontalPadding * 2,
@@ -82,30 +83,51 @@ struct NotchCalendarStrip: View {
 
     private var rowInset: CGFloat { max(10, geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)) }
 
-    private func wings(_ countdown: NotchCalendarCountdown, title: String, remaining: String) -> some View {
+    /// The Office caption five minutes before the event, in two halves
+    /// either side of the camera, while the strip has the height for it and
+    /// each half fits its wing; the countdown is what matters.
+    private func officeCaption(_ countdown: NotchCalendarCountdown,
+                               now: Date) -> (leading: String, trailing: String)? {
+        guard NotchOfficeMoments.isEnabled(), geometry.compactActivityContentHeight >= 24,
+              let halves = NotchOfficeMoments.meetingSoonHalves(countdown, now: now, language: l10n.language) else { return nil }
+        let room = geometry.compactActivityWingWidth - geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)
+        guard NotchOfficeMoments.captionWidth(halves.leading) <= room,
+              NotchOfficeMoments.captionWidth(halves.trailing, rule: false) <= room else { return nil }
+        return halves
+    }
+
+    private func wings(_ countdown: NotchCalendarCountdown, title: String, remaining: String,
+                       caption: (leading: String, trailing: String)? = nil) -> some View {
         let inset = geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)
+        let key = caption.map { _ in "soon|\(countdown.event.id)" }
         return HStack(spacing: 0) {
-            HStack(spacing: NotchCalendarSupport.stripTitleSpacing) {
-                Self.dot(countdown.event)
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1).truncationMode(.tail)
+            VStack(alignment: .trailing, spacing: 1) {
+                HStack(spacing: NotchCalendarSupport.stripTitleSpacing) {
+                    Self.dot(countdown.event)
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1).truncationMode(.tail)
+                }
+                if let caption { NotchLowerThird(caption: caption.leading, trigger: key) }
             }
             .padding(.leading, inset)
             .frame(width: geometry.compactActivityWingWidth, alignment: .trailing)
             .clipped()
             Color.clear.frame(width: geometry.compactActivityCameraGap)
-            // The start or end time fills the side the clock alone left
-            // mostly empty; a wing narrowed by the menus keeps just the clock.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: NotchCalendarSupport.stripClockSpacing) {
+            VStack(alignment: .leading, spacing: 1) {
+                // The start or end time fills the side the clock alone left
+                // mostly empty; a wing narrowed by the menus keeps just the clock.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NotchCalendarSupport.stripClockSpacing) {
+                        Self.clock(remaining, ongoing: countdown.ongoing)
+                        Text(NotchCalendarSupport.timeText(countdown, locale: l10n.language.formattingLocale()))
+                            .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.55))
+                            .fixedSize()
+                    }
                     Self.clock(remaining, ongoing: countdown.ongoing)
-                    Text(NotchCalendarSupport.timeText(countdown, locale: l10n.language.formattingLocale()))
-                        .font(.system(size: 11, weight: .medium)).monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.55))
-                        .fixedSize()
                 }
-                Self.clock(remaining, ongoing: countdown.ongoing)
+                if let caption { NotchLowerThird(caption: caption.trailing, rule: false, trigger: key, delay: 0.32) }
             }
             .padding(.trailing, inset)
             .frame(width: geometry.compactActivityWingWidth, alignment: .leading)
