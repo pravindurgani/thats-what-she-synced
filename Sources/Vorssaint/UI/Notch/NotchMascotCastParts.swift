@@ -164,34 +164,37 @@ final class NotchMascotCastParts {
         halo.shadowOffset = .zero
     }
 
-    /// Agent Scarn: the suit stays dark; the song goes on his tie and the
-    /// rim-light along his lapels and jacket.
+    /// Agent Scarn: the suit stays dark and the head paper-white; the song
+    /// goes on his tie and the rim-light along his lapels and jacket.
     private func drawScarn(look: NotchMascotLook, tint: NotchMascotCastTint) {
         let parts = NotchMascotGeometry.scarn(size: size)
-        let skin = look.palette
         // Soft at rest, just enough to set the dark suit off the black island.
         let rimAlpha: CGFloat = look.song == nil ? 0.32 : 0.95
-        // Arms behind the body: at rest only the hands show at its sides.
+        // Arms behind the jacket, out of sight until one reaches out.
         for (arm, hand, shoulder) in [(parts.leftArm, parts.leftHand, parts.leftShoulder),
                                       (parts.rightArm, parts.rightHand, parts.rightShoulder)] {
             let holder = pivoting(at: shoulder, in: drawing)
             shape(arm, fill: NotchMascotCastColor.suit, stroke: tint.rim.with(alpha: rimAlpha * 0.8),
                   width: size * 0.035, in: holder)
-            shape(hand, fill: skin.light, in: holder)
+            shape(hand, fill: NotchMascotCastColor.paper, in: holder)
             arms.append(holder)
         }
-        let figure = clip(parts.body, in: drawing)
-        gradient([skin.light, skin.shade], from: CGPoint(x: 0.5, y: 0), to: CGPoint(x: 0.5, y: 1), in: figure)
-        shape(NotchMascotGeometry.shine(NotchMascotGeometry.castFace(.scarn), size: size), fill: NotchMascotColor.shine,
-              in: figure)
-        shape(parts.suit, fill: NotchMascotCastColor.suit, in: figure)
-        // The rim-light along the jacket's edge: the body's outline, kept
-        // inside the body and below the collar.
-        let jacketRim = clip(parts.suit, in: figure)
-        rim = shape(parts.body, fill: nil, stroke: tint.rim.with(alpha: rimAlpha), width: size * 0.09, in: jacketRim)
-        shape(parts.shirt, fill: NotchMascotCastColor.shirt, in: figure)
-        shape(parts.tie, fill: tint.accent, in: figure)
-        shape(parts.lapels, fill: nil, stroke: tint.rim.with(alpha: rimAlpha), width: size * 0.035, in: figure)
+        shape(parts.suit, fill: NotchMascotCastColor.suit, in: drawing)
+        // The rim-light along the jacket's edge, kept inside it.
+        let jacketRim = clip(parts.suit, in: drawing)
+        rim = shape(parts.suit, fill: nil, stroke: tint.rim.with(alpha: rimAlpha), width: size * 0.08, in: jacketRim)
+        shape(parts.shirt, fill: NotchMascotCastColor.shirt, in: drawing)
+        shape(parts.lapels, fill: nil, stroke: tint.rim.with(alpha: rimAlpha), width: size * 0.035, in: drawing)
+        shape(parts.collar, fill: NotchMascotCastColor.shirt, stroke: NotchMascotCastColor.collarEdge,
+              width: size * 0.02, in: drawing)
+        shape(parts.tie, fill: tint.accent, in: drawing)
+        // The head on the collar, outlined in the suit's dark so the chin
+        // stands off the white shirt below it.
+        let head = clip(parts.head, in: drawing)
+        gradient([NotchMascotCastColor.paper, NotchMascotCastColor.paperShade],
+                 from: CGPoint(x: 0.35, y: 0.1), to: CGPoint(x: 0.6, y: 0.65), in: head)
+        shape(parts.highlight, fill: NotchMascotColor.shine, in: head)
+        shape(parts.head, fill: nil, stroke: NotchMascotCastColor.suit, width: size * 0.035, in: drawing)
     }
 
     /// Goldenface: the face stays gold; the song tints the rim-light on his
@@ -220,11 +223,11 @@ final class NotchMascotCastParts {
         glint = band
     }
 
-    /// The Jell-O Stapler: a see-through yellow block, the stapler dark
+    /// The Jelly Stapler: a see-through yellow block, the stapler dark
     /// inside it. A song lays its colour over the yellow at 35%.
     private func drawJello(tint: NotchMascotCastTint) {
         let parts = NotchMascotGeometry.jello(size: size)
-        // See-through, but no more than keeps it Jell-O yellow over the black
+        // See-through, but no more than keeps it jelly yellow over the black
         // island: two thirds opaque reads as olive there.
         shape(parts.side, fill: NotchMascotCastColor.jelloSide.with(alpha: 0.86), in: drawing)
         shape(parts.top, fill: NotchMascotCastColor.jelloTop.with(alpha: 0.92), in: drawing)

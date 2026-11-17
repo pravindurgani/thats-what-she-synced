@@ -53,11 +53,17 @@ extension NotchMascotColor {
 }
 
 /// The cast's own colours. These never take a song's: they are what keeps
-/// each member recognisable, the suit dark, the face gold, the Jell-O yellow,
+/// each member recognisable, the suit dark, the face gold, the jelly yellow,
 /// the mug white with black print and the beet beet-coloured.
 enum NotchMascotCastColor {
     static let suit = NotchMascotColor(hex: 0x1B1B1F)
     static let shirt = NotchMascotColor(hex: 0xF4F1E8)
+    /// Agent Scarn's head: the same paper-white, shaded softly toward the
+    /// chin. A neutral, not a skin tone.
+    static let paper = NotchMascotColor(hex: 0xF4F1E8)
+    static let paperShade = NotchMascotColor(hex: 0xD6CFBF)
+    /// The fold along the collar's points, so they stand off the shirt.
+    static let collarEdge = NotchMascotColor(hex: 0xB4AD9D)
     /// The tie at rest with the pearl companion, whose own shade is too pale
     /// to read on a white shirt: corporate navy.
     static let navy = NotchMascotColor(hex: 0x1F3A5F)
@@ -88,7 +94,7 @@ enum NotchMascotCastColor {
 }
 
 /// Where a member wears colour that is not its own: Scarn's tie and lapel
-/// rim, Goldenface's rim and glint, a tint over the Jell-O, the mug's steam,
+/// rim, Goldenface's rim and glint, a tint over the jelly, the mug's steam,
 /// coffee and glow, and the beet's leaf rim and glow. While the island wears
 /// a song these take its colours; at rest, the companion colour chosen in
 /// Settings.
@@ -99,7 +105,7 @@ struct NotchMascotCastTint: Equatable {
     let rim: NotchMascotColor
     /// The song's glow around the figure, nil at rest.
     let glow: NotchMascotColor?
-    /// The song laid over the Jell-O at 35%, nil at rest, so yellow stays on top.
+    /// The song laid over the jelly at 35%, nil at rest, so yellow stays on top.
     let wash: NotchMascotColor?
 
     static let washShare: CGFloat = 0.35
@@ -129,7 +135,7 @@ extension NotchMascotGeometry {
                                   shineRadii: CGSize(width: 0.06, height: 0.04), shineAngle: -0.5)
         }
         switch member {
-        case .scarn: return face(0.5, 0.35, gap: 0.22, eye: CGSize(width: 0.09, height: 0.18))
+        case .scarn: return face(0.5, 0.36, gap: 0.21, eye: CGSize(width: 0.085, height: 0.17))
         case .goldenface: return face(0.5, 0.42, gap: 0.2, eye: CGSize(width: 0.085, height: 0.165))
         case .jello: return face(0.41, 0.54, gap: 0.21, eye: CGSize(width: 0.085, height: 0.17))
         case .mug: return face(0.40, 0.53, gap: 0.2, eye: CGSize(width: 0.085, height: 0.17))
@@ -144,7 +150,7 @@ extension NotchMascotGeometry {
         switch member {
         case .scarn:
             let parts = scarn(size: size)
-            return [parts.body, parts.leftArm, parts.rightArm]
+            return [parts.head, parts.suit, parts.leftArm, parts.rightArm]
         case .goldenface:
             let parts = goldenface(size: size)
             return [parts.head, parts.clothes]
@@ -206,71 +212,59 @@ extension NotchMascotGeometry {
         }
     }
 
-    /// Agent Scarn: a rounded head and body in a dark suit, a white shirt
-    /// showing between the lapels and a thin tie. No sunglasses, nothing in
-    /// his hands but a handshake.
+    /// Agent Scarn: a round paper-white head on the shoulders of a dark
+    /// suit, a white collar and shirt showing between the lapels and a thin
+    /// tie. No sunglasses, nothing in his hands but a handshake.
     struct Scarn {
-        /// The whole figure, which the head colour fills and the outfit is cut to.
-        let body: CGPath
-        /// The head above the collar, where the eyes are.
+        /// The head, where the eyes are: neutral paper-white, never a skin tone.
         let head: CGPath
-        /// The jacket, cut to the body when drawn.
+        /// The light catching the top of the head.
+        let highlight: CGPath
+        /// The jacket's shoulders and chest.
         let suit: CGPath
         let shirt: CGPath
+        /// The collar's two points under the chin.
+        let collar: CGPath
         let tie: CGPath
         /// The lapels' edges, stroked for the rim-light.
         let lapels: CGPath
-        /// Each arm hangs from its shoulder and swings out from it for a handshake.
+        /// Each arm hangs from its shoulder behind the jacket and swings out
+        /// from it for a handshake.
         let leftArm: CGPath
         let rightArm: CGPath
         let leftHand: CGPath
         let rightHand: CGPath
         let leftShoulder: CGPoint
         let rightShoulder: CGPoint
-        /// Where the jacket starts, as a share of the size.
-        let collar: CGFloat
     }
 
     static func scarn(size: CGFloat) -> Scarn {
         let s = Sketch(size: size)
-        // A gumdrop: a round head flaring into square shoulders, so it reads
-        // as someone in a suit rather than a shape wearing one.
-        let body = CGMutablePath()
-        body.move(to: s.p(0.5, 0.06))
-        body.addCurve(to: s.p(0.79, 0.37), control1: s.p(0.67, 0.06), control2: s.p(0.79, 0.19))
-        body.addCurve(to: s.p(0.87, 0.74), control1: s.p(0.79, 0.53), control2: s.p(0.87, 0.58))
-        body.addCurve(to: s.p(0.80, 0.94), control1: s.p(0.87, 0.85), control2: s.p(0.86, 0.92))
-        body.addCurve(to: s.p(0.5, 0.97), control1: s.p(0.72, 0.965), control2: s.p(0.6, 0.97))
-        body.addCurve(to: s.p(0.20, 0.94), control1: s.p(0.4, 0.97), control2: s.p(0.28, 0.965))
-        body.addCurve(to: s.p(0.13, 0.74), control1: s.p(0.14, 0.92), control2: s.p(0.13, 0.85))
-        body.addCurve(to: s.p(0.21, 0.37), control1: s.p(0.13, 0.58), control2: s.p(0.21, 0.53))
-        body.addCurve(to: s.p(0.5, 0.06), control1: s.p(0.21, 0.19), control2: s.p(0.33, 0.06))
-        body.closeSubpath()
-        let collar: CGFloat = 0.6
-        // The jacket's top edge rises a little toward the collar, as
-        // shoulders round toward the neck.
         let suit = CGMutablePath()
-        suit.move(to: s.p(0.0, collar + 0.07))
-        suit.addCurve(to: s.p(1.0, collar + 0.07), control1: s.p(0.3, collar - 0.03), control2: s.p(0.7, collar - 0.03))
-        suit.addLine(to: s.p(1.0, 1.0))
-        suit.addLine(to: s.p(0.0, 1.0))
+        suit.move(to: s.p(0.12, 0.965))
+        suit.addLine(to: s.p(0.12, 0.80))
+        suit.addCurve(to: s.p(0.32, 0.59), control1: s.p(0.12, 0.67), control2: s.p(0.21, 0.59))
+        suit.addLine(to: s.p(0.68, 0.59))
+        suit.addCurve(to: s.p(0.88, 0.80), control1: s.p(0.79, 0.59), control2: s.p(0.88, 0.67))
+        suit.addLine(to: s.p(0.88, 0.965))
+        suit.addQuadCurve(to: s.p(0.12, 0.965), control: s.p(0.5, 0.99))
         suit.closeSubpath()
-        let head = body.intersection(CGPath(rect: s.rect(0, 0, 1, collar), transform: nil))
-        let shirt = s.polygon([(0.385, collar + 0.005), (0.615, collar + 0.005), (0.5, 0.86)])
+        let shirt = s.polygon([(0.385, 0.6), (0.615, 0.6), (0.5, 0.9)])
+        let collar = CGMutablePath()
+        collar.addPath(s.polygon([(0.375, 0.6), (0.495, 0.648), (0.425, 0.72)]))
+        collar.addPath(s.polygon([(0.625, 0.6), (0.505, 0.648), (0.575, 0.72)]))
         let tie = CGMutablePath()
-        // The knot under the collar, then the blade to its point.
-        tie.addPath(s.polygon([(0.465, collar + 0.01), (0.535, collar + 0.01), (0.522, collar + 0.06),
-                               (0.478, collar + 0.06)]))
-        tie.addPath(s.polygon([(0.48, collar + 0.06), (0.52, collar + 0.06), (0.545, 0.79), (0.5, 0.845),
-                               (0.455, 0.79)]))
+        // The knot between the collar's points, then the blade to its point.
+        tie.addPath(s.polygon([(0.47, 0.646), (0.53, 0.646), (0.517, 0.7), (0.483, 0.7)]))
+        tie.addPath(s.polygon([(0.486, 0.7), (0.514, 0.7), (0.536, 0.83), (0.5, 0.875), (0.464, 0.83)]))
         let lapels = CGMutablePath()
-        lapels.move(to: s.p(0.385, collar + 0.005))
-        lapels.addLine(to: s.p(0.5, 0.86))
-        lapels.addLine(to: s.p(0.615, collar + 0.005))
-        // Arms hang behind the body, out of sight until one reaches out.
-        let leftShoulder = s.p(0.24, 0.68), rightShoulder = s.p(0.76, 0.68)
+        lapels.move(to: s.p(0.385, 0.6))
+        lapels.addLine(to: s.p(0.5, 0.9))
+        lapels.addLine(to: s.p(0.615, 0.6))
+        // Arms hang behind the jacket, out of sight until one reaches out.
+        let leftShoulder = s.p(0.22, 0.74), rightShoulder = s.p(0.78, 0.74)
         func arm(_ shoulder: CGPoint, outward: CGFloat) -> (arm: CGPath, hand: CGPath) {
-            let length = 0.24 * size, width = 0.1 * size
+            let length = 0.22 * size, width = 0.1 * size
             let rect = CGRect(x: shoulder.x - width / 2, y: shoulder.y - width / 2, width: width, height: length)
             var lean = CGAffineTransform(translationX: shoulder.x, y: shoulder.y).rotated(by: outward)
                 .translatedBy(x: -shoulder.x, y: -shoulder.y)
@@ -282,9 +276,11 @@ extension NotchMascotGeometry {
         }
         // Positive turns clockwise on screen: the left arm leans out to the left.
         let left = arm(leftShoulder, outward: 0.06), right = arm(rightShoulder, outward: -0.06)
-        return Scarn(body: body, head: head, suit: suit, shirt: shirt, tie: tie, lapels: lapels,
+        return Scarn(head: s.ellipse(0.5, 0.35, 0.27, 0.285),
+                     highlight: s.ellipse(0.39, 0.19, 0.085, 0.045, angle: -0.55),
+                     suit: suit, shirt: shirt, collar: collar, tie: tie, lapels: lapels,
                      leftArm: left.arm, rightArm: right.arm, leftHand: left.hand, rightHand: right.hand,
-                     leftShoulder: leftShoulder, rightShoulder: rightShoulder, collar: collar)
+                     leftShoulder: leftShoulder, rightShoulder: rightShoulder)
     }
 
     /// Goldenface: a face of gold over black clothes.
@@ -322,8 +318,8 @@ extension NotchMascotGeometry {
                           glint: s.rect(0.0, -0.1, 0.13, 1.2), glintTravel: 0.9 * size)
     }
 
-    /// The Jell-O Stapler: a block of yellow Jell-O, a little see-through,
-    /// with a dark stapler set inside it.
+    /// The Jelly Stapler: a block of yellow jelly, a little see-through,
+    /// with a dark stapler set inside it, as the prank had it.
     struct Jello {
         let front: CGPath
         let top: CGPath
@@ -537,15 +533,17 @@ extension NotchMascotGeometry {
 
 /// The shuffle's hand: which member of the cast is out, when it was dealt
 /// and for which song. A new song deals another; with no music, one is
-/// dealt at most once an hour. A deal is never the member already out.
+/// dealt at most once an hour. A deal is never the member already out. The
+/// hand is saved, so a relaunch keeps the member out until the next deal.
 struct NotchMascotShuffle: Equatable {
     /// With nothing playing, another member comes out at most this often.
     static let quietInterval: TimeInterval = 3600
 
     private(set) var member: NotchMascotStyle
     private(set) var dealt: Date
-    /// The song it last dealt for, so a song paused and played again keeps
-    /// the member it brought.
+    /// The song it last dealt for, so a song paused and played again, or
+    /// still playing after a relaunch, keeps the member it brought. A digest
+    /// of its names, so no title is ever saved.
     private(set) var song: String?
 
     init(member: NotchMascotStyle, dealt: Date, song: String? = nil) {
@@ -566,11 +564,34 @@ struct NotchMascotShuffle: Equatable {
         return choices[min(choices.count - 1, index)]
     }
 
-    /// What tells one song from the next: its title, artist and album. Nil
-    /// for a reading with none of them, which tells nothing apart.
+    /// What tells one song from the next: its title, artist and album, as a
+    /// stable digest (64-bit FNV-1a), so the key can be saved without the
+    /// names. Nil for a reading with none of them, which tells nothing apart.
     static func songKey(title: String?, artist: String?, album: String?) -> String? {
         let parts = [title, artist, album].map { $0?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
-        return parts.allSatisfy(\.isEmpty) ? nil : parts.joined(separator: "\u{1F}")
+        guard !parts.allSatisfy(\.isEmpty) else { return nil }
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in parts.joined(separator: "\u{1F}").utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01B3
+        }
+        return String(hash, radix: 16)
+    }
+
+    /// The hand as it is saved in defaults.
+    var stored: [String: Any] {
+        var stored: [String: Any] = ["member": member.rawValue, "dealt": dealt.timeIntervalSince1970]
+        if let song { stored["song"] = song }
+        return stored
+    }
+
+    /// A saved hand, or nil for one missing, damaged or holding anything but
+    /// a member of the cast. A deal dated after `now`, from a clock set
+    /// back, counts from `now`, so the quiet hour is never put off.
+    init?(stored: [String: Any]?, now: Date) {
+        guard let raw = stored?["member"] as? String, let member = NotchMascotStyle(rawValue: raw), member.isCast,
+              let dealt = stored?["dealt"] as? Double, dealt.isFinite else { return nil }
+        self.init(member: member, dealt: min(Date(timeIntervalSince1970: dealt), now), song: stored?["song"] as? String)
     }
 
     /// Deals another member now.

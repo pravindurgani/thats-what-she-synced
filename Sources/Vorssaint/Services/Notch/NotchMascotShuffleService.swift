@@ -10,25 +10,42 @@ import Foundation
 /// drawn, and stops when the companion is set to something else. A quiet
 /// deal waits on a single timer an hour away, and is checked again when
 /// the companion comes back into sight, since a sleeping Mac holds timers
-/// back. Main thread only.
+/// back. The hand is saved with each deal, so a relaunch keeps the member
+/// out, and its quiet hour, until the next. Main thread only.
 final class NotchMascotShuffleService: ObservableObject {
     static let shared = NotchMascotShuffleService()
 
-    /// The member out now. A fresh launch deals one at random.
+    /// The member out now: the one saved from the last deal, kept across a
+    /// relaunch, or one dealt at random the first time.
     @Published private(set) var member: NotchMascotStyle
-    private var hand: NotchMascotShuffle
+    private var hand: NotchMascotShuffle {
+        didSet { if hand != oldValue { save() } }
+    }
+    /// Whether the hand is in defaults. A first one is saved only once a
+    /// shuffled companion is drawn, never for a companion that only reads it.
+    private var saved: Bool
     private var playbackSubscription: AnyCancellable?
     private var quietWork: DispatchWorkItem?
     private var playing = false
 
     private init() {
-        hand = .first(at: Date(), random: Double.random(in: 0..<1))
+        let now = Date()
+        let stored = NotchMascotShuffle(stored: UserDefaults.standard.dictionary(forKey: DefaultsKey.notchMascotShuffleHand),
+                                        now: now)
+        saved = stored != nil
+        hand = stored ?? .first(at: now, random: Double.random(in: 0..<1))
         member = hand.member
+    }
+
+    private func save() {
+        UserDefaults.standard.set(hand.stored, forKey: DefaultsKey.notchMascotShuffleHand)
+        saved = true
     }
 
     /// Listens for songs, once, and deals now if a quiet hour has gone by.
     func start() {
         guard stillShuffled() else { return }
+        if !saved { save() }
         guard playbackSubscription == nil else { rest(); return }
         // Nil while nothing plays; an empty key while something plays that
         // gives no names, which tells no song from the next. Heard on the

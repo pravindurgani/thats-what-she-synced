@@ -989,6 +989,9 @@ enum DefaultsKey {
     static let notchMascotVisits = "notchMascotVisits" // passes through the island now and then
     static let notchMascotReactions = "notchMascotReactions" // comes out to react to what the island sees
     static let notchMascotStyle = "notchMascotStyle" // NotchMascotStyle.rawValue
+    // The member Shuffle dealt, when and for which song (NotchMascotShuffle.stored),
+    // so a relaunch keeps it until the next deal. State, not a preference: unregistered.
+    static let notchMascotShuffleHand = "notchMascotShuffleHand"
     static let notchMascotShape = "notchMascotShape" // NotchMascotShape.rawValue
     static let notchMascotPalette = "notchMascotPalette" // NotchMascotPalette.rawValue
     static let notchMascotSide = "notchMascotSide" // NotchMascotSide.rawValue, beside the camera

@@ -138,7 +138,7 @@ enum NotchMascotTests {
         let singing = NotchMascotCastTint(look: resting.wearing(song))
         suite.expect(singing.accent == song.shade && singing.rim == song.light && singing.glow == song.light
                      && singing.wash?.alpha == NotchMascotCastTint.washShare && NotchMascotCastTint.washShare == 0.35,
-                     "a song goes on the tie, the rims, the glow and a 35% wash over the Jell-O")
+                     "a song goes on the tie, the rims, the glow and a 35% wash over the jelly")
         suite.expect(rest.glow == nil && rest.wash == nil && rest.accent == NotchMascotPalette.mint.shade
                      && rest.rim == NotchMascotPalette.mint.light
                      && NotchMascotCastTint(look: NotchMascotLook.standard).accent == NotchMascotCastColor.navy,
@@ -155,7 +155,7 @@ enum NotchMascotTests {
                 && abs(color.green * 255 - CGFloat((hex >> 8) & 0xFF)) < 0.01
                 && abs(color.blue * 255 - CGFloat(hex & 0xFF)) < 0.01 && color.alpha == 1
         }
-        suite.expect(accurate, "the suit, shirt, gold, Jell-O, stapler, mug, beet and leaves keep the brief's colours")
+        suite.expect(accurate, "the suit, shirt, gold, jelly, stapler, mug, beet and leaves keep the brief's colours")
     }
 
     /// The shuffle deals another member for each new song and, with nothing
@@ -211,11 +211,24 @@ enum NotchMascotTests {
         suite.expect(NotchMascotShuffle(member: .robot, dealt: start).member.isCast
                      && NotchMascotShuffle(member: .shuffle, dealt: start).member.isCast,
                      "a hand never holds anything but a member of the cast")
+        // Saved and read back, the hand keeps its member, its quiet hour and
+        // its song; anything damaged or not of the cast deals afresh.
+        let reloaded = NotchMascotShuffle(stored: hand.stored, now: hand.dealt.addingTimeInterval(60))
+        var damaged = hand.stored
+        damaged["member"] = "robot"
+        let ahead = NotchMascotShuffle(stored: hand.stored, now: hand.dealt.addingTimeInterval(-600))
+        suite.expect(reloaded == hand && reloaded?.song != nil
+                     && NotchMascotShuffle(stored: damaged, now: start) == nil
+                     && NotchMascotShuffle(stored: ["member": "beet"], now: start) == nil
+                     && NotchMascotShuffle(stored: nil, now: start) == nil
+                     && ahead?.dealt == hand.dealt.addingTimeInterval(-600) && ahead?.member == hand.member,
+                     "a relaunch keeps the member out until the next deal, and a clock set back never delays it")
         let boogie = NotchMascotShuffle.songKey(title: "Boogie", artist: "A", album: nil)
         suite.expect(NotchMascotShuffle.songKey(title: nil, artist: " ", album: "") == nil
                      && boogie == NotchMascotShuffle.songKey(title: " Boogie ", artist: "A", album: "")
-                     && boogie != NotchMascotShuffle.songKey(title: "Wonderland", artist: "A", album: nil),
-                     "a song is told apart by its names, and a reading with none tells nothing")
+                     && boogie != NotchMascotShuffle.songKey(title: "Wonderland", artist: "A", album: nil)
+                     && boogie?.contains("Boogie") == false,
+                     "a song is told apart by its names, saved as a digest, and a reading with none tells nothing")
     }
 
     private static func calendarContracts(_ suite: TestSuite) {
