@@ -69,10 +69,13 @@ final class NotchOutputConnectWatcher {
         guard baselineTaken else {
             guard uid != nil, !devices.isEmpty else { return }
             baselineTaken = true
-            present = Dictionary(uniqueKeysWithValues: devices.map { ($0.uid, Date.distantPast) })
+            present = Dictionary(devices.map { ($0.uid, Date.distantPast) }, uniquingKeysWith: { first, _ in first })
             lastUID = uid
             return
         }
+        // A mixer restarting reports no devices for a moment; what returns
+        // after it was attached all along.
+        guard !devices.isEmpty else { quiet(); return }
         let now = Date()
         let uids = Set(devices.map(\.uid))
         present = present.filter { uids.contains($0.key) }
