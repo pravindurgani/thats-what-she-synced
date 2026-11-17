@@ -91,13 +91,17 @@ enum NotchSongMotion {
 
 /// How strongly the aurora is veiled for what sits over it.
 enum NotchAuroraVeil {
-    case open, calm, page
+    /// `vivid` is every other page by default: the colour well up, white text
+    /// far above AA, softer grey near 4:1. `page` is the same pages under
+    /// Increase Contrast, where all their text keeps AA.
+    case open, calm, vivid, page
 
     /// The colour's strength under the veil.
     var strength: Float {
         switch self {
         case .open: return 1
         case .calm: return 0.55
+        case .vivid: return 0.7
         // Measured on the busiest pages: their grey and orange text keeps
         // 4.5:1 and their larger bold status text 3:1 over the colour.
         case .page: return 0.45
@@ -110,18 +114,26 @@ enum NotchAuroraVeil {
         switch self {
         case .open: return [0.26, 0.12, 0.22]
         case .calm: return [0.49, 0.23, 0.42]
+        case .vivid: return [0.42, 0.18, 0.36]
         case .page: return [0.49, 0.26, 0.42]
         }
     }
 
     /// How far a beat may thin the veil, as a share of itself.
-    var thinnest: Double { self == .page ? 0.92 : 0.8 }
+    var thinnest: Double {
+        switch self {
+        case .page: return 0.92
+        case .vivid: return 0.86
+        default: return 0.8
+        }
+    }
 
     /// How far a new song's bloom lifts the veil.
     var bloomDepth: Double {
         switch self {
         case .open: return 0.5
         case .calm: return 0.7
+        case .vivid: return 0.65
         case .page: return 0.8
         }
     }
@@ -144,11 +156,12 @@ enum NotchSongMode {
     }
 
     /// How strongly the colour is veiled: fullest behind the player's large
-    /// white type, calmer behind lyrics and the queue, calmest behind pages
-    /// of small, softer and coloured text, so all of it keeps AA contrast.
+    /// white type, calmer behind lyrics and the queue, and vivid behind the
+    /// other pages, or calm enough there for all their text to keep AA when
+    /// the person asks macOS for more contrast.
     static func veil(page: Bool, notch: NotchService, increasedContrast: Bool) -> NotchAuroraVeil {
         guard page else { return .open }
-        if !onMusicPage(notch) { return .page }
+        if !onMusicPage(notch) { return increasedContrast ? .page : .vivid }
         return increasedContrast || notch.musicDetailVisible ? .calm : .open
     }
 
