@@ -94,9 +94,9 @@ final class NotchMusicAuroraView: NSView {
     /// Where each pool rests, as a fraction of the island, and its loops: how
     /// long one drift around its rest takes, and one breath in and out.
     private static let pools: [(rest: CGPoint, drift: CFTimeInterval, breath: CFTimeInterval)] = [
-        (CGPoint(x: 0.16, y: 0.56), 17, 10),
-        (CGPoint(x: 0.58, y: 0.26), 21, 13),
-        (CGPoint(x: 0.88, y: 0.60), 25, 15),
+        (CGPoint(x: 0.16, y: 0.56), 11, 6),
+        (CGPoint(x: 0.58, y: 0.26), 14, 8),
+        (CGPoint(x: 0.88, y: 0.60), 17, 9),
     ]
 
     private let ground = CALayer()
@@ -104,6 +104,11 @@ final class NotchMusicAuroraView: NSView {
     private let base = CAGradientLayer()
     private var blobs: [CAGradientLayer] = []
     private let scrim = CAGradientLayer()
+    /// Soft bursts of the cover's colour, one per beat, reused in turn.
+    private var bursts: [CAGradientLayer] = []
+    private var nextBurst = 0
+    private var lastEnergy: Double = 0
+    private var lastKick: CFTimeInterval = 0
 
     private var colors: [NSColor] = []
     private var playing = false
@@ -150,6 +155,15 @@ final class NotchMusicAuroraView: NSView {
             blob.endPoint = CGPoint(x: 1, y: 1)
             stage.addSublayer(blob)
             blobs.append(blob)
+        }
+        for _ in 0..<3 {
+            let burst = CAGradientLayer()
+            burst.type = .radial
+            burst.startPoint = CGPoint(x: 0.5, y: 0.5)
+            burst.endPoint = CGPoint(x: 1, y: 1)
+            burst.opacity = 0
+            stage.addSublayer(burst)
+            bursts.append(burst)
         }
         layer?.addSublayer(stage)
 
@@ -342,12 +356,50 @@ final class NotchMusicAuroraView: NSView {
         CATransaction.setAnimationDuration(0.12)
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
         scrim.opacity = Float(1 - min(1 - Self.thinnestVeil, push * 0.6))
-        let swell = 1 + 0.05 * push
+        let swell = 1 + 0.08 * push
         stage.transform = CATransform3DMakeScale(swell, swell, 1)
         CATransaction.commit()
+        // A kick: the energy jumps clear of the song's own level, not merely
+        // loud. Spaced at least 0.4 s apart, so never above 2.5 a second, under
+        // the three-flashes-a-second limit for flashing content.
+        let now = CACurrentMediaTime()
+        if mood != .calm, energy - lastEnergy > 0.1, energy > drive * 1.2 + 0.05, now - lastKick > 0.4 {
+            lastKick = now
+            kick(strength: min(1, (energy - lastEnergy) * 4) * mood.response)
+        }
+        lastEnergy = energy
         ticks += 1
         // The drift's speed follows the song's drive, gently, every second and a half.
         if ticks % 18 == 0 { retime(towards: targetRate(), immediately: false) }
+    }
+
+    /// A soft burst of one of the cover's colours, blooming from where its
+    /// pool rests and fading in under half a second. Below the veil, so text
+    /// keeps its contrast through it.
+    private func kick(strength: Double) {
+        guard !colors.isEmpty, strength > 0.05, let size = Optional(bounds.size), size.width > 1 else { return }
+        let burst = bursts[nextBurst]
+        let pool = Self.pools[nextBurst % Self.pools.count]
+        let color = colors[nextBurst % colors.count]
+        nextBurst = (nextBurst + 1) % bursts.count
+        let side = max(size.width, size.height) * 0.9
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        burst.bounds = CGRect(x: 0, y: 0, width: side, height: side * 0.7)
+        burst.position = CGPoint(x: size.width * pool.rest.x, y: size.height * pool.rest.y)
+        burst.colors = [color.withAlphaComponent(0.85).cgColor, color.withAlphaComponent(0).cgColor]
+        CATransaction.commit()
+        let grow = CABasicAnimation(keyPath: "transform.scale")
+        grow.fromValue = 0.45
+        grow.toValue = 1.25
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0, Float(0.35 + 0.5 * strength), 0]
+        fade.keyTimes = [0, 0.18, 1]
+        let group = CAAnimationGroup()
+        group.animations = [grow, fade]
+        group.duration = 0.45
+        group.timingFunction = Self.settle
+        burst.add(group, forKey: "kick")
     }
 
     /// The light's rest pose, eased back to when the music stops answering.
@@ -385,7 +437,7 @@ final class NotchMusicAuroraView: NSView {
             blob.removeAnimation(forKey: "breath")
         }
         guard moves, window != nil, size.width > 1, size.height > 1 else { syncClock(); return }
-        let reachX = size.width * 0.11, reachY = size.height * 0.22
+        let reachX = size.width * 0.14, reachY = size.height * 0.26
         for (index, blob) in blobs.enumerated() {
             let pool = Self.pools[index]
             // A slow loop round the rest point; each pool turns the other way
@@ -406,8 +458,8 @@ final class NotchMusicAuroraView: NSView {
             blob.add(drift, forKey: "drift")
 
             let breath = CABasicAnimation(keyPath: "transform.scale")
-            breath.fromValue = 0.9
-            breath.toValue = 1.14
+            breath.fromValue = 0.86
+            breath.toValue = 1.2
             breath.duration = pool.breath
             breath.autoreverses = true
             breath.repeatCount = .infinity
