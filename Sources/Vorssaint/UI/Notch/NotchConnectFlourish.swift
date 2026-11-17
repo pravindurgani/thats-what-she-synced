@@ -164,9 +164,11 @@ struct NotchConnectIcon: View {
     }
 }
 
-/// The device's name, arriving out of a soft blur just behind its icon.
-struct NotchConnectTitle: ViewModifier {
+/// Words arriving out of a soft blur just behind their icon: a device's name
+/// as it connects, a new song's title and artist.
+struct NotchArrival: ViewModifier {
     let trigger: String
+    var delay: Double = 0.1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var arrived = false
 
@@ -176,7 +178,7 @@ struct NotchConnectTitle: ViewModifier {
             .offset(x: shown || reduceMotion ? 0 : 10)
             .blur(radius: shown || reduceMotion ? 0 : 5)
             .opacity(shown ? 1 : 0)
-            .animation(.easeOut(duration: 0.4).delay(reduceMotion ? 0 : 0.1), value: arrived)
+            .animation(.easeOut(duration: 0.4).delay(reduceMotion ? 0 : delay), value: arrived)
             .task(id: trigger) {
                 var reset = Transaction(animation: nil)
                 reset.disablesAnimations = true
@@ -218,11 +220,11 @@ struct NotchConnectSweep: View {
 }
 
 extension View {
-    /// The connect title's arrival, on connect notices only; every other
-    /// notice's title is left exactly as it was.
-    @ViewBuilder func notchConnectTitle(_ trigger: String?) -> some View {
+    /// The arrival, on connect and song notices only; every other notice's
+    /// words are left exactly as they were.
+    @ViewBuilder func notchArrival(_ trigger: String?, delay: Double = 0.1) -> some View {
         if let trigger {
-            modifier(NotchConnectTitle(trigger: trigger)).id(trigger)
+            modifier(NotchArrival(trigger: trigger, delay: delay)).id(trigger)
         } else {
             self
         }

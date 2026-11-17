@@ -69,6 +69,7 @@ struct NotchQuickAccessView: View {
     @ObservedObject private var awake = KeepAwakeManager.shared
     @ObservedObject private var microphone = MicMuteService.shared
     @ObservedObject private var recorder = ScreenRecorderService.shared
+    @ObservedObject private var music = NotchMusicService.shared
     @AppStorage(DefaultsKey.notchLiquidGlassEnabled) private var glass = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -81,11 +82,20 @@ struct NotchQuickAccessView: View {
         return false
     }
 
+    /// While the open island wears the song, its bubbles wear it too.
+    private var songColors: [NSColor]? {
+        guard NotchSongMode.wearsSong(service), music.playback != nil else { return nil }
+        return NotchArtworkPalette.of(music.artwork)?.glow
+    }
+
     var body: some View {
         let drops = NotchQuickAccessDrops(placements: motion.placements, progress: motion.progress)
+        let song = songColors
+        let playing = music.playback?.isPlaying == true
         let buttons = ZStack(alignment: .topLeading) {
             ForEach(motion.placements) { placement in
-                bubble(placement.button)
+                // Neighbours start at different points of the turn, so they never spin in step.
+                bubble(placement.button, song: song, playing: playing, phase: Double(placement.index) * 0.29)
                     .scaleEffect(0.4 + 0.6 * motion.progress)
                     .opacity(Double(motion.progress))
                     .position(placement.center(progress: motion.progress))
@@ -107,7 +117,7 @@ struct NotchQuickAccessView: View {
         .accessibilityHidden(!motion.interactive)
     }
 
-    private func bubble(_ button: NotchQuickButton) -> some View {
+    private func bubble(_ button: NotchQuickButton, song: [NSColor]?, playing: Bool, phase: Double) -> some View {
         let action = button.action ?? .explore
         let isBack = action == .explore && service.showingSections
         let selected: Bool = {
@@ -147,6 +157,16 @@ struct NotchQuickAccessView: View {
                 // a faint fill keeps the whole circle from passing clicks to
                 // the app behind, not just the glyph.
                 .background(followsGlass ? Color.black.opacity(0.02) : Color.black, in: Circle())
+                .background {
+                    ZStack {
+                        if let song {
+                            NotchAuroraBubble(colors: song, playing: playing, phase: phase)
+                                .clipShape(Circle())
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(NotchSongMode.fade, value: song != nil)
+                }
                 .overlay {
                     Circle().strokeBorder(.white.opacity(selected || contrast == .increased ? 0.6 : 0.16), lineWidth: 0.75)
                         .allowsHitTesting(false)

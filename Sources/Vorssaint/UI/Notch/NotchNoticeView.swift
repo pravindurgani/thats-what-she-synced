@@ -27,6 +27,10 @@ struct NotchNoticeView: View {
     /// Headphones or a speaker joining get the connect flourish.
     private var connects: Bool { NotchConnectFlourish.applies(to: notice) }
     private var connectKey: String { "\(notice.title)|\(notice.detail)|\(notice.symbol)" }
+    /// A new song arrives as a moment: its cover springs in lit by its own
+    /// colour, and its title and artist follow out of a blur, over the strip's
+    /// aurora (see NotchMusicBackdrop).
+    private var trackKey: String? { notice.event == .track ? "track|\(notice.title)|\(notice.detail)" : nil }
     /// The words of a timer's notice share its orange too.
     private var textTint: Color { notice.event == .timer ? .orange : .white }
     /// With the companion on, it stands in for the symbol, and reacts unless
@@ -101,7 +105,7 @@ struct NotchNoticeView: View {
                     } else if notice.event == .agents, let agent = notice.agent, notice.symbol == agent.symbol {
                         NotchAgentMark(provider: agent, size: 13)
                     } else if notice.event == .track {
-                        NotchTrackArtwork(size: min(18, geometry.stripHeight - 6))
+                        NotchTrackArtwork(size: min(18, geometry.stripHeight - 6), trigger: trackKey ?? "")
                     } else if connects {
                         NotchConnectIcon(symbol: notice.symbol, colors: NotchConnectFlourish.colors(), trigger: connectKey)
                             .id(connectKey)
@@ -120,7 +124,7 @@ struct NotchNoticeView: View {
                     .lineLimit(1)
                     .truncationMode(notice.event == .track ? .tail : .middle)
                     .contentTransition(.numericText())
-                    .notchConnectTitle(connects ? connectKey : nil)
+                    .notchArrival(connects ? connectKey : trackKey)
             }
             // A level's mark keeps its place while a shorter reading leaves
             // room it holds for the widest.
@@ -150,16 +154,36 @@ struct NotchNoticeView: View {
                 .lineLimit(1)
                 .truncationMode(notice.event == .accessory ? .middle : .tail)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+                .notchArrival(trackKey, delay: 0.2)
         }
     }
 }
 
 /// The new song's cover, read as it arrives: it often lands after the title.
+/// It springs in, as a record dropping onto the platter, lit by its own colour.
 private struct NotchTrackArtwork: View {
     @ObservedObject private var music = NotchMusicService.shared
     let size: CGFloat
+    let trigger: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var arrived = false
 
-    var body: some View { NotchArtwork(image: music.artwork, size: size, source: music.playback?.track) }
+    var body: some View {
+        let glow = NotchArtworkPalette.of(music.artwork)?.marks.first.map { Color(nsColor: $0) } ?? .clear
+        NotchArtwork(image: music.artwork, size: size, source: music.playback?.track)
+            .shadow(color: glow.opacity(arrived ? 0.7 : 0), radius: arrived ? 5 : 0)
+            .scaleEffect(arrived || reduceMotion ? 1 : 0.4)
+            .rotationEffect(.degrees(arrived || reduceMotion ? 0 : -14))
+            .opacity(arrived || reduceMotion ? 1 : 0)
+            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.62), value: arrived)
+            .task(id: trigger) {
+                var reset = Transaction(animation: nil)
+                reset.disablesAnimations = true
+                withTransaction(reset) { arrived = false }
+                try? await Task.sleep(nanoseconds: 16_000_000)
+                arrived = true
+            }
+    }
 }
 
 /// Level feedback occupies the header while the current page stays usable.
