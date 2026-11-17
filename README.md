@@ -3,7 +3,8 @@
 <p align="center"><strong>Your MacBook's notch, in sync with your music.</strong></p>
 
 <p align="center">
-  <img src="docs/thats-what-she-synced/song-mode.jpg" width="90%" alt="The open island and its buttons in the colours of Genesis' self-titled album">
+  <img src="docs/thats-what-she-synced/vivid-genesis.jpg" width="49%" alt="The island and its buttons in the warm colours of Genesis' self-titled album">
+  <img src="docs/thats-what-she-synced/vivid-pinkfloyd.jpg" width="49%" alt="The island and its buttons in the prism colours of Pink Floyd's The Dark Side of the Moon">
 </p>
 
 > **Unofficial.** A personal fork of **[Vorssaint](https://github.com/vorssaint/vorssaint-utils)**, not affiliated with or endorsed by it. Source only, no builds. Get the official app at [vorssaint.com](https://vorssaint.com).
