@@ -234,6 +234,24 @@ function setupMoment({ createTimeline, utils, spring, stagger }) {
   });
 }
 
+// ---------- code blocks join the tab order only when they scroll sideways ----------
+function markScrollers() {
+  for (const el of $$('[data-label]')) {
+    const scrolls = el.scrollWidth > el.clientWidth + 1;
+    el.toggleAttribute('tabindex', scrolls);
+    el.toggleAttribute('role', scrolls);
+    el.toggleAttribute('aria-label', scrolls);
+    if (scrolls) {
+      el.tabIndex = 0;
+      el.setAttribute('role', 'region');
+      el.setAttribute('aria-label', el.dataset.label);
+    }
+  }
+}
+let resizeTimer = 0;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(markScrollers, 150); });
+document.fonts?.ready.then(markScrollers);
+
 if (!reduce.matches && 'IntersectionObserver' in window) {
   const near = new IntersectionObserver((entries) => {
     for (const e of entries) {
@@ -247,8 +265,8 @@ if (!reduce.matches && 'IntersectionObserver' in window) {
 }
 
 // ---------- start ----------
-putMember(testIsl);
 putDancer(testIsl);
+markScrollers();
 root.classList.remove('static');
 root.classList.add('ready');
 setPaused(state.paused);
