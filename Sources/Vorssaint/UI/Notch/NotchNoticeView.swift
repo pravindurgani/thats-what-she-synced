@@ -24,6 +24,9 @@ struct NotchNoticeView: View {
     }
     /// The volume meter wears the music's colours (see NotchLevelPaint).
     private var levelColors: [Color]? { notice.event == .volume ? NotchLevelPaint.volume() : nil }
+    /// Headphones or a speaker joining get the connect flourish.
+    private var connects: Bool { NotchConnectFlourish.applies(to: notice) }
+    private var connectKey: String { "\(notice.title)|\(notice.detail)|\(notice.symbol)" }
     /// The words of a timer's notice share its orange too.
     private var textTint: Color { notice.event == .timer ? .orange : .white }
     /// With the companion on, it stands in for the symbol, and reacts unless
@@ -48,6 +51,9 @@ struct NotchNoticeView: View {
         }
         .foregroundStyle(.white)
         .frame(height: geometry.stripHeight)
+        .overlay {
+            if connects { NotchConnectSweep(colors: NotchConnectFlourish.colors(), trigger: connectKey) }
+        }
         // Each side is as wide as what it shows, so the island reaches
         // further toward the wider one and the camera's gap stays over it.
         .offset(x: (wings.trailing - wings.leading) / 2)
@@ -96,6 +102,8 @@ struct NotchNoticeView: View {
                         NotchAgentMark(provider: agent, size: 13)
                     } else if notice.event == .track {
                         NotchTrackArtwork(size: min(18, geometry.stripHeight - 6))
+                    } else if connects {
+                        NotchConnectIcon(symbol: notice.symbol, colors: NotchConnectFlourish.colors(), trigger: connectKey)
                     } else {
                         Image(systemName: notice.symbol)
                             .font(.system(size: 14, weight: .medium))
@@ -111,6 +119,7 @@ struct NotchNoticeView: View {
                     .lineLimit(1)
                     .truncationMode(notice.event == .track ? .tail : .middle)
                     .contentTransition(.numericText())
+                    .modifier(NotchConnectTitle(trigger: connectKey, enabled: connects))
             }
             // A level's mark keeps its place while a shorter reading leaves
             // room it holds for the widest.
