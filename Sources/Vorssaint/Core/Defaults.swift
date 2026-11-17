@@ -1560,7 +1560,8 @@ enum Defaults {
         DefaultsKey.notchLyricsOnline: false,
         DefaultsKey.notchBrowserCovers: false,
         DefaultsKey.notchLiveEqualizer: false,
-        DefaultsKey.notchMusicSide: NotchMusicSide.bars.rawValue,
+        // This fork dances by default: a new act each song.
+        DefaultsKey.notchMusicSide: NotchMusicSide.shuffle.rawValue,
         DefaultsKey.notchQueueEnabled: true,
         DefaultsKey.notchDownloadsEnabled: true,
         DefaultsKey.notchWatchEnabled: true,
@@ -1610,7 +1611,8 @@ enum Defaults {
         DefaultsKey.notchMascotEnabled: false,
         DefaultsKey.notchMascotVisits: true,
         DefaultsKey.notchMascotReactions: true,
-        DefaultsKey.notchMascotStyle: NotchMascotStyle.minimal.rawValue,
+        // This fork deals its Office cast by default, a new member each song.
+        DefaultsKey.notchMascotStyle: NotchMascotStyle.shuffle.rawValue,
         DefaultsKey.notchMascotShape: NotchMascotShape.ball.rawValue,
         DefaultsKey.notchMascotPalette: NotchMascotPalette.pearl.rawValue,
         DefaultsKey.notchMascotSide: NotchMascotSide.left.rawValue,

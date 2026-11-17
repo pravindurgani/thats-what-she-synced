@@ -161,7 +161,9 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
                 canOpen: rootActions.contains("AXPress"), controls: controls + remembered)
             nextTargets.removeAll { $0.item.id == id }
             nextTargets.append(Target(root: root, window: candidate.window, transient: candidate.transient,
-                                      interactive: !item.controls.isEmpty, nativeIdentity: identity, item: item))
+                                      interactive: NotchNotificationSupport.keepsOwnBanner(
+                                        controls: item.controls, content: content),
+                                      nativeIdentity: identity, item: item))
             items.append(item)
         }
         guard usable else { return nil }

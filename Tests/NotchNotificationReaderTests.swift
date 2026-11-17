@@ -731,16 +731,27 @@ enum NotchNotificationReaderTests {
         if let (access, reader, window, banner, id) = hiddenFixture() {
             access.allowClose = true
             let home = window.frame
-            let answer = Node("AXButton")
+            let answer = Node("AXButton"), decline = Node("AXButton")
             answer.strings["AXTitle"] = "Contestar"
-            banner.children.append(answer)
-            suite.expect(reader.read()?.items.first?.controls == ["Contestar"]
+            decline.strings["AXTitle"] = "Rechazar"
+            banner.children.append(contentsOf: [answer, decline])
+            suite.expect(reader.read()?.items.first?.controls == ["Contestar", "Rechazar"]
                             && reader.hideNative([id]).isEmpty && window.frame == home,
-                         "a labelled button inside the banner keeps it in sight, in any language")
+                         "a call's two labelled buttons keep its banner in sight, in any language")
             answer.strings["AXTitle"] = nil
             answer.strings["AXDescription"] = "Close"
-            suite.expect(reader.read()?.items.first?.controls == ["Contestar"],
+            suite.expect(reader.read()?.items.first?.controls == ["Rechazar", "Contestar"],
                          "a label once seen is not forgotten while its banner lasts")
+        } else {
+            suite.expect(false, "the hiding fixture has a live banner")
+        }
+
+        if let (access, reader, window, banner, id) = hiddenFixture() {
+            access.allowClose = true
+            banner.actions = ["AXPress", custom("Close"), custom("Reply")]
+            suite.expect(reader.read()?.items.first?.controls == ["Reply"]
+                            && reader.hideNative([id]).isEmpty && !window.frame.intersects(screens),
+                         "a message's lone Reply does not hold its banner back, so hiding works as before")
         } else {
             suite.expect(false, "the hiding fixture has a live banner")
         }
@@ -756,7 +767,7 @@ enum NotchNotificationReaderTests {
                          "a banner with only the center's controls still leaves the screen while the island shows it")
             let call = card(sender: "Jane", body: "Incoming call")
             call.strings["AXSubrole"] = "AXNotificationCenterBanner"
-            call.actions = ["AXPress", custom("Answer")]
+            call.actions = ["AXPress", custom("Answer"), custom("Decline")]
             window.children.append(call)
             let items = reader.read()?.items ?? []
             suite.expect(items.count == 2 && reader.hideNative(Set(items.map(\.id))).isEmpty

@@ -332,9 +332,9 @@ enum NotchMascotTests {
         defaults.set(true, forKey: AppFeature.notchMascot.availabilityKey)
         suite.expect(!NotchMascotSupport.isEnabled(in: defaults),
                      "installed, it still waits for its switch")
-        suite.expect(NotchMascotSupport.look(in: defaults) == .standard
+        suite.expect(NotchMascotSupport.look(in: defaults) == NotchMascotLook(style: .shuffle, shape: .ball, palette: .pearl)
                      && NotchMascotLook.standard == NotchMascotLook(style: .minimal, shape: .ball, palette: .pearl),
-                     "it starts as a pearl ball with two ink eyes")
+                     "in this fork it starts on Shuffle, dealt from the Office cast; the fallback look stays a pearl ball")
         defaults.set(true, forKey: DefaultsKey.notchMascotEnabled)
         suite.expect(NotchMascotSupport.isEnabled(in: defaults) && NotchMascotSupport.visits(in: defaults)
                      && NotchMascotSupport.reacts(in: defaults)

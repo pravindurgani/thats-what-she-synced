@@ -218,6 +218,15 @@ enum NotchNotificationSupport {
         }
     }
 
+    /// Whether a banner must stay in sight because the island cannot do what
+    /// its buttons do. A call answers with two of its own, Accept and
+    /// Decline in whatever language, or reads as a call; a lone Reply, which
+    /// nearly every message offers, does not hold its banner back, so hiding
+    /// the originals still works for messages as it always has.
+    static func keepsOwnBanner(controls: [String], content: NotchNotificationContent) -> Bool {
+        controls.count >= 2 || NotchOfficeMoments.channel(for: content) == .call
+    }
+
     static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
         NotchSupport.isEnabled(in: defaults)
             && AppFeature.notchNotifications.isAvailable(in: defaults)

@@ -24,8 +24,8 @@ enum NotchDancerTests {
     private static func settingContracts(_ suite: TestSuite) {
         suite.expect(NotchMusicSide.allCases.map(\.rawValue) == ["bars", "boomboxBoss", "farewellThree", "scarn", "shuffle"],
                      "the music side's stored values are the ones `defaults write` takes")
-        suite.expect(Defaults.registeredDefaults[DefaultsKey.notchMusicSide] as? String == NotchMusicSide.bars.rawValue,
-                     "the strip keeps upstream's bars until a dance is chosen")
+        suite.expect(Defaults.registeredDefaults[DefaultsKey.notchMusicSide] as? String == NotchMusicSide.shuffle.rawValue,
+                     "this fork dances by default, a new act each song")
         suite.expect(NotchMusicSide(stored: nil) == .bars && NotchMusicSide(stored: "moonwalk") == .bars,
                      "nothing stored, or an unknown value, keeps the bars")
         let domain = "com.vorssaint.tests.notch-music-side"
