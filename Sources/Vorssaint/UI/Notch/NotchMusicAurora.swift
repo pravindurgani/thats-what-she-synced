@@ -58,16 +58,16 @@ struct NotchMusicBackdrop: View {
                              // with the beat but never flares.
                              quiet: glowing,
                              shown: page || strip)
-                // The open island's camera row stays black, meeting the
-                // housing as the resting island does, and the colour rises
-                // out of it. The strip is that row, so it keeps its colour.
+                // Black only around the camera, fading out sideways and down,
+                // so the notch melts into the island and the colour reaches
+                // all the way into its top corners. The strip is the camera's
+                // own row, so it keeps its colour; no notch, no ink.
                 .overlay(alignment: .top) {
-                    LinearGradient(stops: [.init(color: .black, location: 0),
-                                           .init(color: .black, location: 0.5),
-                                           .init(color: .black.opacity(0), location: 1)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: presentation.stripHeight + 20)
-                        .animation(NotchSongMotion.fade) { $0.opacity(strip ? 0 : 1) }
+                    if notch.geometry.isNotched {
+                        NotchCameraInk(camera: CGSize(width: notch.geometry.cameraWidth,
+                                                      height: notch.geometry.cameraHeight))
+                            .animation(NotchSongMotion.fade) { $0.opacity(strip ? 0 : 1) }
+                    }
                 }
                 .frame(width: box.width, height: box.height)
                 .mask(NotchBackdropShape(contour: presentation.contour.offsetBy(dx: -box.minX, dy: -box.minY)))
@@ -177,6 +177,34 @@ enum NotchAuroraVeil {
     }
 }
 
+/// A soft pool of black around the camera: solid behind the housing, then
+/// fading out sideways and downward, so the island's colour wraps around the
+/// notch instead of stopping at a flat black band.
+private struct NotchCameraInk: View {
+    let camera: CGSize
+    /// How far the black fades out beyond the camera, sideways and down.
+    private static let reach: CGFloat = 84
+    private static let depth: CGFloat = 38
+    /// Smoothstep from solid to clear, so the pool's edge has no line or corner.
+    private static let falloff: [(at: CGFloat, ink: Double)] = [(0, 1), (0.25, 0.84), (0.5, 0.5), (0.75, 0.16), (1, 0)]
+
+    var body: some View {
+        let width = camera.width + Self.reach * 2
+        let height = camera.height + Self.depth
+        let solid = camera.height / height
+        let side = Self.reach / width
+        LinearGradient(stops: Self.falloff.map {
+                           .init(color: .black.opacity($0.ink), location: solid + (1 - solid) * $0.at)
+                       },
+                       startPoint: .top, endPoint: .bottom)
+            .frame(width: width, height: height)
+            .mask(LinearGradient(stops: Self.falloff.reversed().map { .init(color: .black.opacity($0.ink), location: side * (1 - $0.at)) }
+                                    + Self.falloff.map { .init(color: .black.opacity($0.ink), location: 1 - side * (1 - $0.at)) },
+                                 startPoint: .leading, endPoint: .trailing))
+            .allowsHitTesting(false)
+    }
+}
+
 /// Where the island wears the song: the open music page and the sections
 /// gallery, with the bubbles beside them, and the strip that names a new song.
 enum NotchSongMode {
@@ -184,7 +212,6 @@ enum NotchSongMode {
     /// It turns off the island's colour, glow, bubbles, text tints and the
     /// companion's; the player's own cover-tinted controls stay.
     static var enabled: Bool { UserDefaults.standard.object(forKey: "notchSongModeEnabled") as? Bool ?? true }
-
 
     /// Pages showing an image the person is judging keep their plain ground.
     private static let plainPages: Set<NotchModule> = [.camera, .captures]
@@ -254,7 +281,7 @@ struct NotchMusicAurora: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        NotchMusicAuroraBridge(colors: palette.glow, playing: isPlaying, moves: !reduceMotion,
+        NotchMusicAuroraBridge(colors: palette.glow, energy: palette.energy, playing: isPlaying, moves: !reduceMotion,
                                mood: mood, veil: veil, quiet: quiet, shown: shown)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -263,6 +290,7 @@ struct NotchMusicAurora: View {
 
 private struct NotchMusicAuroraBridge: NSViewRepresentable {
     let colors: [NSColor]
+    let energy: Double
     let playing: Bool
     let moves: Bool
     let mood: NotchMusicMood
@@ -273,7 +301,8 @@ private struct NotchMusicAuroraBridge: NSViewRepresentable {
     func makeNSView(context: Context) -> NotchMusicAuroraView { NotchMusicAuroraView() }
 
     func updateNSView(_ view: NotchMusicAuroraView, context: Context) {
-        view.apply(colors: colors, playing: playing, moves: moves, mood: mood, veil: veil, quiet: quiet, shown: shown)
+        view.apply(colors: colors, energy: energy, playing: playing, moves: moves, mood: mood, veil: veil, quiet: quiet,
+                   shown: shown)
     }
 
     static func dismantleNSView(_ view: NotchMusicAuroraView, coordinator: ()) { view.teardown() }
@@ -317,6 +346,8 @@ final class NotchMusicAuroraView: NSView {
     private var moves = true
     private var mood: NotchMusicMood = .neutral
     private var veil: NotchAuroraVeil = .open
+    /// The cover's liveliness (see NotchArtworkPalette.energy).
+    private var coverEnergy: Double = 0.5
     private var quiet = false
     private var shown = true
     /// The cover changed while hidden: its colours bloom when it next shows.
@@ -410,10 +441,14 @@ final class NotchMusicAuroraView: NSView {
 
     // MARK: State
 
-    func apply(colors newColors: [NSColor], playing newPlaying: Bool, moves newMoves: Bool,
+    func apply(colors newColors: [NSColor], energy newEnergy: Double, playing newPlaying: Bool, moves newMoves: Bool,
                mood newMood: NotchMusicMood, veil newVeil: NotchAuroraVeil, quiet newQuiet: Bool,
                shown newShown: Bool) {
         quiet = newQuiet
+        if abs(newEnergy - coverEnergy) > 0.01 {
+            coverEnergy = newEnergy
+            retime(towards: targetRate(), immediately: true)
+        }
         let colorsChanged = newColors.map(\.cgColor) != colors.map(\.cgColor)
         let firstColors = colors.isEmpty
         colors = newColors
@@ -602,7 +637,9 @@ final class NotchMusicAuroraView: NSView {
 
     private func targetRate() -> Float {
         // The genre sets the character; the song's drive and the volume lean it.
-        let lean = Float((0.75 + 0.6 * min(1, drive)) * (0.85 + 0.3 * loudness))
+        // The genre sets the character; the song's drive, the volume and the
+        // cover's liveliness lean it.
+        let lean = Float((0.75 + 0.6 * min(1, drive)) * (0.85 + 0.3 * loudness) * (0.85 + 0.3 * coverEnergy))
         return min(2.2, max(0.45, mood.rate * lean))
     }
 
@@ -677,7 +714,8 @@ final class NotchMusicAuroraView: NSView {
         fluxAverage += (flux - fluxAverage) * 0.08
         if onset {
             lastKick = now
-            bounce = max(bounce, min(1, 0.45 + flux * 6) * mood.response * intensity)
+            // A lively cover hits a little harder, a muted one a little softer.
+            bounce = max(bounce, min(1, min(1, 0.45 + flux * 6) * mood.response * intensity * (0.8 + 0.4 * coverEnergy)))
             if mood != .calm, !quiet { kick(strength: bounce) }
         } else {
             // A quick fall after each hit, so the light jumps on the beat and
@@ -877,7 +915,6 @@ final class NotchMusicAuroraView: NSView {
         scheduleMotion()
     }
 }
-
 
 // MARK: - The beat, shared
 
@@ -1083,3 +1120,4 @@ final class NotchAuroraBubbleView: NSView {
         sync()
     }
 }
+
