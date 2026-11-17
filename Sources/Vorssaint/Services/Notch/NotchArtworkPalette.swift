@@ -10,18 +10,24 @@ import AppKit
 struct NotchArtworkPalette: Equatable {
     /// The cover's colours at full voice: vivid, never washed out.
     let pure: [NSColor]
-
-    /// Colours for the backdrop behind the player. Kept dark enough that white
-    /// text, and the player's softer secondary text, stay legible over them.
-    var glow: [NSColor] { pure.map { $0.notchToned(maxLuminance: 0.46, minLuminance: 0.14) } }
-
-    /// Colours for small moving marks (the equalizer): bright enough to read
-    /// as colour on a near-black island.
-    var marks: [NSColor] { pure.map { $0.notchToned(maxLuminance: 0.62, minLuminance: 0.30) } }
-
+    /// Colours for the backdrop behind the player. Deep jewel tones: at most
+    /// 0.18 luminance, so white text keeps WCAG AA over them at full strength.
+    let glow: [NSColor]
+    /// Colours for marks on the backdrop (equalizer, timeline, meter): bright
+    /// enough to keep 3:1 against it, as controls must.
+    let marks: [NSColor]
     /// The play button's plate: the cover's lead colour, deep enough that the
     /// white glyph on it keeps at least 3:1 contrast.
-    var plate: NSColor { pure[0].notchToned(maxLuminance: 0.26, minLuminance: 0.10) }
+    let plate: NSColor
+
+    /// Toned once, here, so views that read the palette on every frame of a
+    /// resize or every audio update only read stored colours.
+    init(pure: [NSColor]) {
+        self.pure = pure
+        glow = pure.map { $0.notchToned(maxLuminance: 0.18, minLuminance: 0.07) }
+        marks = pure.map { $0.notchToned(maxLuminance: 0.66, minLuminance: 0.42) }
+        plate = pure[0].notchToned(maxLuminance: 0.22, minLuminance: 0.09)
+    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.pure.count == rhs.pure.count
@@ -88,8 +94,11 @@ struct NotchArtworkPalette: Equatable {
             sums[bin].b += b * w
         }
         let total = weight.reduce(0, +)
-        // Too little colour on the whole cover reads as a neutral cover.
-        guard total > 0.6 else { return nil }
+        // Too little colour on the whole cover reads as a neutral cover. JPEG
+        // noise never gets here (low saturation is skipped above) and a speck
+        // does not reach this; a deliberate colour element, such as a prism's
+        // thin rainbow on black, does.
+        guard total > 0.008 * Double(side * side) else { return nil }
 
         // Strongest bins first, each new pick far enough round the wheel from
         // the ones already taken to read as its own colour.
@@ -195,11 +204,14 @@ import SwiftUI
 /// turning it up feels part of the music; with no song, the companion's own
 /// colours, so the island keeps one identity instead of falling back to grey.
 enum NotchLevelPaint {
-    static func volume() -> [Color] {
+    static func volume() -> [Color]? {
         let music = NotchMusicService.shared
         if music.playback != nil, let palette = NotchArtworkPalette.of(music.artwork) {
             return palette.marks.map { Color(nsColor: $0) }
         }
+        // The companion's colours only while the companion is on; otherwise
+        // the meter keeps the island's plain white.
+        guard NotchMascotSupport.isEnabled() else { return nil }
         let companion = NotchMascotSupport.look().palette
         return [companion.shade, companion.light].map { Color(cgColor: $0.cgColor) }
     }

@@ -301,7 +301,7 @@ struct NotchMusicView: View {
                 // bars rest flat while paused, so the title keeps its width.
                 NotchLiveEqualizerBars(isPlaying: playback.isPlaying, bars: 4, barWidth: 2.5, height: 15,
                                        tint: .white.opacity(0.5),
-                                       tints: palette?.marks.map { Color(nsColor: $0) })
+                                       tints: palette?.marks)
                 if band.besideCamera { sectionsButton }
             } corner: {
                 extraButtons
@@ -381,7 +381,7 @@ struct NotchMusicView: View {
         .frame(maxWidth: 110)
         .fixedSize()
         .font(.system(size: 10, weight: .medium))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(palette != nil ? AnyShapeStyle(Color.white.opacity(0.85)) : AnyShapeStyle(.secondary))
         .accessibilityLabel(extras.playbackSource)
         .accessibilityValue([service.sourceIsAutomatic ? extras.automaticSource : nil,
                              playback == nil ? nil : name].compactMap { $0 }.joined(separator: ", "))
@@ -601,7 +601,7 @@ private struct NotchMusicTransport: View {
                 .background {
                     if let plate {
                         Circle()
-                            .fill(plate.gradient)
+                            .fill(plate)
                             .padding(height * 0.04)
                             .shadow(color: .black.opacity(0.38), radius: 7, x: 0, y: 3)
                             .transition(.scale(scale: 0.6).combined(with: .opacity))

@@ -178,7 +178,7 @@ final class NotchService: ObservableObject {
     /// Kept after closing, so the next Fan Control detail opens at its size.
     @Published private var fanDetailHeight: CGFloat?
     @Published private(set) var power = PowerReading()
-    @Published private var musicDetailVisible = false
+    @Published private(set) var musicDetailVisible = false
 
     private var windowHost: NotchWindowHost?
     private var panel: NotchPanel? { windowHost?.panel }
@@ -3641,7 +3641,7 @@ final class NotchService: ObservableObject {
         if !sameMenuBar { readMenuSpace() }
         if windowHost == nil {
             windowHost = NotchWindowHost(content: AnyView(NotchView(service: self)), geometry: geometry, size: surfaceSize,
-                                        background: { AnyView(NotchWindowBackground(presentation: $0)) },
+                                        background: { AnyView(NotchWindowBackground(presentation: $0, showsMusic: true)) },
                                         quickAccess: { AnyView(NotchQuickAccessView(service: self, motion: $0, backdrop: $1)) })
             windowHost?.missionControlDidRestore = { [weak self] in self?.missionControlDidRestore() }
             windowHost?.setHoverHandler { [weak self] in self?.hover($0) }

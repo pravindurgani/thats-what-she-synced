@@ -46,7 +46,7 @@ struct NotchLiveEqualizerBars: View {
     var barWidth: CGFloat = 2.5
     var height: CGFloat = 14
     var tint: Color = .white
-    var tints: [Color]? = nil
+    var tints: [NSColor]? = nil
     @ObservedObject private var audio = NotchAudioLevelService.shared
 
     var body: some View {
@@ -540,6 +540,9 @@ struct NotchBackdropShape: Shape {
 
 struct NotchWindowBackground: View {
     @ObservedObject var presentation: NotchBackdropPresentation
+    /// The main island's window draws the music page's colours; mirror
+    /// windows on other displays leave them out.
+    var showsMusic = false
     @AppStorage(DefaultsKey.notchLiquidGlassEnabled) private var glass = false
     @AppStorage(DefaultsKey.notchTranslucentBackground) private var translucent = false
 
@@ -547,7 +550,7 @@ struct NotchWindowBackground: View {
         ZStack {
             NotchSurfaceBackground(presentation: presentation, glass: glass, translucent: translucent)
             // The music page's colours, over the glass and under the page.
-            NotchMusicBackdrop(presentation: presentation)
+            if showsMusic { NotchMusicBackdrop(presentation: presentation) }
         }
     }
 }

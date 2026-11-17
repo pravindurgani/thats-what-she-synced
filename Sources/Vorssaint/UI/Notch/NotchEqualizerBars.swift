@@ -14,7 +14,7 @@ struct NotchEqualizerBars: View {
     var tint: Color = .white
     /// One colour per bar, repeating, in place of the single tint: a cover's
     /// palette across the bars.
-    var tints: [Color]? = nil
+    var tints: [NSColor]? = nil
     /// Band levels from 0 to 1 read from the player's audio. When present the
     /// bars follow them instead of the stepped synthetic motion.
     var live: [Double]? = nil
@@ -24,7 +24,7 @@ struct NotchEqualizerBars: View {
         let count = max(1, bars)
         NotchEqualizerBridge(animates: isPlaying && !reduceMotion, bars: count,
                              barWidth: barWidth, height: height, tint: NSColor(tint),
-                             tints: tints?.map { NSColor($0) },
+                             tints: tints,
                              levels: isPlaying && !reduceMotion ? live : nil)
             .frame(width: CGFloat(count) * barWidth + CGFloat(count - 1) * barWidth * 0.85,
                    height: height)

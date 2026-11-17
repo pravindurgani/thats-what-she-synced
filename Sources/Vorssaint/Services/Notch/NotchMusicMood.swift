@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Vorssaint
 
+import CoreServices
 import Foundation
 
 /// How the music backdrop moves for a kind of music. The cover picks the
@@ -66,9 +67,10 @@ enum NotchMusicMood: String, Equatable {
 }
 
 /// Reads the genre of the song Music is playing, once per song. Only Music is
-/// asked: it answers through the same Automation permission the island's
-/// playback buttons already use, and it is never launched by the question.
-/// Other players, or Music without permission, leave the mood neutral.
+/// asked, and only once this app may already script it (the permission the
+/// island's playback buttons ask for): the check never prompts, so a cosmetic
+/// effect never raises a consent dialog. Music is never launched by it. Other
+/// players, or Music without that permission, leave the mood neutral.
 enum NotchMusicGenre {
     private static let musicBundleID = "com.apple.Music"
     private static var cache: [String: NotchMusicMood] = [:]
@@ -79,47 +81,50 @@ enum NotchMusicGenre {
         let key = [track.title, track.artist, track.album].map { $0 ?? "" }.joined(separator: "\u{1F}")
         lock.lock(); let known = cache[key]; lock.unlock()
         if let known { return known }
-        let genre = await readGenre()
-        let mood = genre.map(NotchMusicMood.from(genre:)) ?? .neutral
-        // A failed read is not remembered, so granting permission later works
-        // on the next song without a restart.
-        if genre != nil {
-            lock.lock()
-            if cache.count > 256 { cache.removeAll() }
-            cache[key] = mood
-            lock.unlock()
-        }
+        guard let reading = await read() else { return .neutral }
+        // The reply names the song it read. A skip between the ask and the
+        // answer must not file one song's genre under another.
+        guard reading.title == (track.title ?? "") else { return .neutral }
+        let mood = reading.genre.isEmpty ? .neutral : NotchMusicMood.from(genre: reading.genre)
+        lock.lock()
+        if cache.count > 256 { cache.removeAll() }
+        cache[key] = mood
+        lock.unlock()
         return mood
     }
 
-    private static func readGenre() async -> String? {
+    /// Whether this app may already script Music, asked without a prompt.
+    private static func mayScriptMusic() -> Bool {
+        var target = AEAddressDesc()
+        let created = musicBundleID.withCString { pointer in
+            AECreateDesc(typeApplicationBundleID, pointer, musicBundleID.utf8.count, &target)
+        }
+        guard created == noErr else { return false }
+        defer { AEDisposeDesc(&target) }
+        return AEDeterminePermissionToAutomateTarget(&target, typeWildCard, typeWildCard, false) == noErr
+    }
+
+    private static let script = """
+    if application "Music" is running then
+        tell application "Music"
+            if player state is not stopped then return (name of current track) & linefeed & (genre of current track)
+        end tell
+    end if
+    return ""
+    """
+
+    /// The playing song's name and genre, read in process and off the main
+    /// thread, as the app's other Apple Events are.
+    private static func read() async -> (title: String, genre: String)? {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
-                let script = """
-                if application "Music" is running then
-                    tell application "Music"
-                        if player state is not stopped then return genre of current track
-                    end tell
-                end if
-                return ""
-                """
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-                process.arguments = ["-e", script]
-                let output = Pipe()
-                process.standardOutput = output
-                process.standardError = FileHandle.nullDevice
-                do { try process.run() } catch { continuation.resume(returning: nil); return }
-                // Music answers in milliseconds; a hung reply must not hold the mood.
-                let deadline = DispatchTime.now() + .seconds(3)
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: deadline) {
-                    if process.isRunning { process.terminate() }
-                }
-                process.waitUntilExit()
-                guard process.terminationStatus == 0 else { continuation.resume(returning: nil); return }
-                let data = output.fileHandleForReading.readDataToEndOfFile()
-                let genre = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                continuation.resume(returning: genre.isEmpty ? nil : genre)
+                guard mayScriptMusic() else { continuation.resume(returning: nil); return }
+                let result = AppleScriptRunner.run(script)
+                guard result.ok, !result.output.isEmpty else { continuation.resume(returning: nil); return }
+                let lines = result.output.components(separatedBy: .newlines)
+                let title = lines.first ?? ""
+                let genre = lines.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                continuation.resume(returning: (title, genre))
             }
         }
     }
