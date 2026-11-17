@@ -31,9 +31,10 @@ final class AgentUsageService: ObservableObject {
     /// The day of the price list in use.
     @Published private(set) var pricesUpdated: Date?
     let events = PassthroughSubject<AgentUsageEvent, Never>()
-    /// Every turn that ends, before the person's alert choices filter it:
-    /// the closed island closes that agent's ring on it, notice or not.
-    let turnsEnded = PassthroughSubject<AgentProvider, Never>()
+    /// Every turn that ends, before the person's alert choices filter it,
+    /// with its session: the closed island closes that agent's ring on it,
+    /// notice or not, when it was the agent's last turn at work.
+    let turnsEnded = PassthroughSubject<AgentTurnEnd, Never>()
 
     /// The history the island can show: thirteen weeks for the activity map.
     static let horizon = TimeInterval(AgentUsageSnapshot.dayCount) * 86_400
@@ -523,7 +524,7 @@ final class AgentUsageService: ObservableObject {
                 : cursor.parent ?? cursor.codexParent(among: cursors)
             let finished = store.apply(entries, file: turnFile, provider: provider, tracksTurns: tracksTurns,
                                        parent: parent, modified: cursor.modified, now: now)
-            finished.forEach(report)
+            for event in finished { report(event, session: turnFile) }
         }
         if provider.reader.readsFullHistoryFirst && cursor.offset == 0 {
             AgentLogReader.readCopilotHistory(cursor, shouldContinue: { !cancellation.isCancelled }, line: consume)
@@ -663,12 +664,13 @@ final class AgentUsageService: ObservableObject {
     // MARK: Alerts
 
     /// Filters by the person's choices on the main thread, where they live.
-    private func report(_ event: AgentUsageEvent) {
+    /// `turn` is the session a finished turn ran in.
+    private func report(_ event: AgentUsageEvent, session turn: String? = nil) {
         let session = readerSession
         DispatchQueue.main.async { [weak self] in
             guard let self, self.running, self.session == session else { return }
-            if case .finished(let provider, _, _, _, _) = event, self.providers.contains(provider) {
-                self.turnsEnded.send(provider)
+            if case .finished(let provider, _, _, _, _) = event, let turn, self.providers.contains(provider) {
+                self.turnsEnded.send(AgentTurnEnd(provider: provider, session: turn))
             }
             switch event {
             case .finished(let provider, let duration, _, _, _):

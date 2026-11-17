@@ -14,19 +14,24 @@ struct NotchAgentWingMark: View {
     let ring: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
+    /// Whether it has shown: a wing that first shows finished, as the strip
+    /// comes back from the finish notice, closes its ring before its check.
+    @State private var shown = false
 
     var body: some View {
         let room = ring + NotchAgentWings.haloRoom * 2
+        let moves = !reduceMotion && !lowPower.isOn
+        let checked = wing.finished && (shown || !moves)
         ZStack {
             NotchAgentCometBridge(stops: wing.provider.glowStops, diameter: ring, finished: wing.finished,
-                                  moves: !reduceMotion && !lowPower.isOn)
+                                  moves: moves)
                 .frame(width: room, height: room)
-            if wing.finished {
+            if checked {
                 Image(systemName: "checkmark")
                     .font(.system(size: (ring * 0.42).rounded(), weight: .bold))
                     .foregroundStyle(Color(nsColor: NotchAgentWings.done.nsColor))
                     .transition(.opacity)
-            } else {
+            } else if !wing.finished {
                 NotchAgentMark(provider: wing.provider, size: NotchAgentWings.markSize(ring: ring))
                     .transition(.opacity)
             }
@@ -35,8 +40,9 @@ struct NotchAgentWingMark: View {
         .frame(width: ring, height: ring)
         // The check comes in as the ring finishes closing.
         .animation(reduceMotion ? NotchSongMotion.reduced
-                    : .easeOut(duration: 0.25).delay(wing.finished ? NotchAgentWings.closing : 0),
-                   value: wing.finished)
+                    : .easeOut(duration: 0.25).delay(checked ? NotchAgentWings.closing : 0),
+                   value: checked)
+        .onAppear { shown = true }
         .accessibilityHidden(true)
         .allowsHitTesting(false)
     }

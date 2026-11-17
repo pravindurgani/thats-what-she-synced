@@ -1292,8 +1292,8 @@ enum NotchMascotSupport {
     }
 
     /// The island's own companion: the chosen look, following the song.
-    static func islandLook() -> NotchMascotLook {
-        var look = look()
+    static func islandLook(in defaults: UserDefaults = .standard) -> NotchMascotLook {
+        var look = look(in: defaults)
         look.followsSong = true
         return look
     }

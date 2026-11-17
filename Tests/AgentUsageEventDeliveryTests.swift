@@ -21,8 +21,8 @@ enum AgentUsageEventDeliveryTests {
     }
 
     final class Ended {
-        var values: [AgentProvider] = []
-        func send(_ provider: AgentProvider) { values.append(provider) }
+        var values: [AgentTurnEnd] = []
+        func send(_ end: AgentTurnEnd) { values.append(end) }
     }
 
     class Fixture {
@@ -95,21 +95,26 @@ enum AgentUsageEventDeliveryTests {
         drain()
         suite.expect(host.events.values.isEmpty, "duration and disabled-alert preferences still filter current events")
 
-        // The strip's ring closes on every turn that ends, notice or not.
+        // The strip's ring closes on every turn that ends, notice or not,
+        // knowing which of its agent's turns it was.
         host.turnsEnded.values.removeAll()
         NotchAgentSupport.minimum = nil
-        host.report(finished)
+        host.report(finished, session: "turn-log")
         host.report(events[1])
         drain()
-        suite.expect(host.turnsEnded.values == [.claude] && host.events.values.isEmpty,
-                     "a turn ends for the strip even while finish notices are off, and only a finish counts")
+        suite.expect(host.turnsEnded.values == [AgentTurnEnd(provider: .claude, session: "turn-log")]
+                        && host.events.values.isEmpty,
+                     "a turn ends for the strip, with its session, even while finish notices are off, and only a finish counts")
         host.turnsEnded.values.removeAll()
-        host.providers = [.codex]
         host.report(finished)
+        drain()
+        suite.expect(host.turnsEnded.values.isEmpty, "a finish that names no turn closes no ring")
+        host.providers = [.codex]
+        host.report(finished, session: "turn-log")
         drain()
         suite.expect(host.turnsEnded.values.isEmpty, "a disabled agent never closes a ring")
         host.providers = [.claude, .codex, .copilot]
-        host.report(finished)
+        host.report(finished, session: "turn-log")
         host.session += 1
         drain()
         suite.expect(host.turnsEnded.values.isEmpty, "a previous reading's turn never closes a ring")

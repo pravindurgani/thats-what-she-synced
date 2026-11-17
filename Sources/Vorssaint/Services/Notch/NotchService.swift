@@ -157,7 +157,9 @@ final class NotchService: ObservableObject {
     /// The gallery's first visible row; the rows above it have stepped away.
     @Published private(set) var sectionRow = 0
     @Published private(set) var modules: [NotchModule] = []
-    @Published private(set) var notice: NotchNotice?
+    @Published private(set) var notice: NotchNotice? {
+        didSet { if (notice?.event == .agents) != (oldValue?.event == .agents) { agentNoticeChanged() } }
+    }
     @Published private(set) var noticeExpanded = false
     /// A compact notice stays drawn while the island closes around it.
     @Published private(set) var departingNotice: NotchNotice?
@@ -559,11 +561,26 @@ final class NotchService: ObservableObject {
     }
 
     /// An agent at work, or one whose turn just ended, which keeps its wing
-    /// a moment longer to close its ring.
+    /// a moment longer to close its ring. Only the agents' own strip holds
+    /// that moment: beside a timer or an event (hasWorkingAgents), a mark
+    /// shows only while its agent works.
     var hasAgentActivity: Bool {
         guard NotchAgentSupport.showsLiveActivity() else { return false }
         let live = AgentUsageService.shared.snapshot.live
         return !live.isEmpty || !NotchAgentFinishes.shared.finished(live: live).isEmpty
+    }
+
+    /// An agent at work, for a strip that shows the agents' marks beside its own.
+    var hasWorkingAgents: Bool {
+        NotchAgentSupport.showsLiveActivity() && !AgentUsageService.shared.snapshot.live.isEmpty
+    }
+
+    /// An agents' notice covers their strip: a ring closing under it waits
+    /// to be seen, and its check starts again as the strip comes back.
+    private func agentNoticeChanged() {
+        let covers = notice?.event == .agents
+        NotchAgentFinishes.shared.cover(covers, stripShows: !covers && compactActivityIsVisible
+                                            && compactActivity == .agents)
     }
 
     var hasCalendarActivity: Bool {
@@ -647,11 +664,13 @@ final class NotchService: ObservableObject {
         }
     }
 
-    /// The pairs `primary` supports now.
+    /// The pairs `primary` supports now. Agents keep a companion's place only
+    /// while they work: their check holds only their own strip, so a timer
+    /// or an event never keeps an empty wing for it.
     func compactCompanions(of primary: NotchCompactActivity) -> [NotchCompactActivity] {
         NotchSupport.compactCompanions(of: primary, timer: hasTimerActivity,
                                        running: NotchTimerService.shared.session.isRunning,
-                                       downloads: hasDownloadActivity, agents: hasAgentActivity,
+                                       downloads: hasDownloadActivity, agents: hasWorkingAgents,
                                        calendar: hasCalendarActivity, music: hasMusicActivity)
     }
 

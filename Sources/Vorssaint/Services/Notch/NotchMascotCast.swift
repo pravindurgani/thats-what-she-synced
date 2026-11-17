@@ -91,6 +91,46 @@ enum NotchMascotCastColor {
     static let leaf = NotchMascotColor(hex: 0x3F7D3A)
     static let leafLight = NotchMascotColor(hex: 0x5E9E4F)
     static let stem = NotchMascotColor(hex: 0xC2306E)
+
+    // The colours each member lends the island's glow at rest (see
+    // NotchMascotStyle.glowColors): its own, turned up where its body is
+    // too dark or too pale to glow.
+    /// Agent Scarn: an agent's blue, a tie's red and a shirt's blue.
+    static let agentBlue = NotchMascotColor(hex: 0x2A5FC4)
+    static let tieRed = NotchMascotColor(hex: 0xD2343F)
+    static let shirtBlue = NotchMascotColor(hex: 0x8FB4F2)
+    /// Goldenface's gold turning to amber.
+    static let amber = NotchMascotColor(hex: 0xB26A12)
+    /// The jelly's yellow deepening to orange, and its gloss.
+    static let jelloOrange = NotchMascotColor(hex: 0xF29F2B)
+    static let jelloGloss = NotchMascotColor(hex: 0xFFF0A0)
+    /// The mug's coffee and cream, warmed, and a mustard.
+    static let coffeeWarm = NotchMascotColor(hex: 0xC8742C)
+    static let cream = NotchMascotColor(hex: 0xF3E2C4)
+    static let mustard = NotchMascotColor(hex: 0xC9A227)
+    /// The beet's bulb turned up, its leaves' green and its stems' pink.
+    static let beetGlow = NotchMascotColor(hex: 0xC22E66)
+    static let leafGlow = NotchMascotColor(hex: 0x3F9A3A)
+    static let stemGlow = NotchMascotColor(hex: 0xE24A8A)
+}
+
+extension NotchMascotStyle {
+    /// The colours a member of the cast lends the island's glow at rest, in
+    /// the glow's order: the one around it, the one across the camera, and
+    /// the accent both wings share. Nil for the minimal body and the robot,
+    /// whose glow grows from the colour chosen in Settings, and for a
+    /// shuffle, which is never drawn as itself.
+    var glowColors: [NotchMascotColor]? {
+        typealias Cast = NotchMascotCastColor
+        switch self {
+        case .scarn: return [Cast.agentBlue, Cast.tieRed, Cast.shirtBlue]
+        case .goldenface: return [Cast.gold, Cast.amber, Cast.goldLight]
+        case .jello: return [Cast.jello, Cast.jelloOrange, Cast.jelloGloss]
+        case .mug: return [Cast.coffeeWarm, Cast.mustard, Cast.cream]
+        case .beet: return [Cast.beetGlow, Cast.leafGlow, Cast.stemGlow]
+        case .minimal, .robot, .shuffle: return nil
+        }
+    }
 }
 
 /// Where a member wears colour that is not its own: Scarn's tie and lapel
