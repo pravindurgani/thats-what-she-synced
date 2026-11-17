@@ -30,6 +30,8 @@ struct NotchMusicStrip: View {
     var interactive = false
     @ObservedObject private var music = NotchMusicService.shared
     @ObservedObject private var l10n = L10n.shared
+    /// Draws the strip again once a new song's shuffled dance has settled.
+    @ObservedObject private var dances = NotchDanceSelection.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private typealias Layout = NotchMusicStripLayout
@@ -61,7 +63,7 @@ struct NotchMusicStrip: View {
     private var routine: NotchDanceRoutine? {
         let side = NotchMusicSide.current
         guard side.dances, Layout.fitsDancers(geometry), let track = playback?.track else { return nil }
-        return NotchDanceSelection.routine(for: side, track: track)
+        return dances.routine(for: side, track: track)
     }
 
     private var title: String { playback?.track.title ?? FeatureStrings.radialMenu(l10n.language).mediaNowPlaying }

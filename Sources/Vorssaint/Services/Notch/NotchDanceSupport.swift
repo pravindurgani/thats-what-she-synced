@@ -40,12 +40,12 @@ enum NotchMusicSide: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The dance for `song`: the chosen one, or the one shuffle dealt it.
-    /// `pick` answers an index below the count it is given.
-    func routine(for song: String, shuffle: inout NotchDanceShuffle,
+    /// The dance for `song`, read at `now`: the chosen one, or the one
+    /// shuffle dealt it. `pick` answers an index below the count it is given.
+    func routine(for song: String?, at now: TimeInterval, shuffle: inout NotchDanceShuffle,
                  pick: (Int) -> Int) -> NotchDanceRoutine? {
         guard self == .shuffle else { return routine }
-        return shuffle.routine(for: song, pick: pick)
+        return shuffle.routine(for: song, at: now, pick: pick)
     }
 }
 
@@ -90,13 +90,26 @@ private final class NotchMusicSideCache: @unchecked Sendable {
 
 /// Deals each new song a dance other than the last one, and keeps the same
 /// dance for the same song, so the island's copies on other displays and a
-/// strip on its way out all agree.
+/// strip on its way out all agree. Songs are keys from
+/// NotchMascotShuffle.songKey; nil, a reading with no names, tells nothing
+/// apart and keeps the dance.
 struct NotchDanceShuffle: Equatable {
     private(set) var song: String?
     private(set) var routine: NotchDanceRoutine?
+    /// A new song waiting for its names to settle. Its `due` says when to
+    /// ask again, nil while no song waits.
+    private(set) var settle = NotchSongSettle()
 
-    mutating func routine(for song: String, pick: (Int) -> Int) -> NotchDanceRoutine {
-        if song == self.song, let routine { return routine }
+    /// The dance for `song`, read at `now`. The first song is dealt one at
+    /// once, as there is nothing to keep; a later one keeps the last dance
+    /// until the same song has been read for a settle. Asking for the song
+    /// already dealt, as a strip on its way out does, leaves a waiting one
+    /// waiting.
+    mutating func routine(for song: String?, at now: TimeInterval, pick: (Int) -> Int) -> NotchDanceRoutine {
+        if let routine {
+            guard let song, song != self.song else { return routine }
+            guard settle.hears(song, at: now) else { return routine }
+        }
         let choices = NotchDanceRoutine.allCases.filter { $0 != routine }
         let next = choices[min(choices.count - 1, max(0, pick(choices.count)))]
         self.song = song
@@ -155,6 +168,16 @@ enum NotchDanceTiming {
     /// long enough not to fire between two beats of a slow song.
     static func fallbackDelay(afterBeatInterval interval: Double) -> Double {
         max(0.9, (interval.isFinite ? interval : defaultInterval) * 1.6)
+    }
+
+    /// Whether a move held back half a beat, for `beat` of the dance counted
+    /// as `generation`, still plays once its wait is over: only in that same
+    /// dance, and only while no later beat has come. A quick beat, or a
+    /// stand-in step landing just before one, can bring the next count
+    /// first, and the late move would then cut short the one that count
+    /// started, the eighth count's shared jump among them.
+    static func heldStepPlays(beat: Int, generation: Int, latestBeat: Int, latestGeneration: Int) -> Bool {
+        beat == latestBeat && generation == latestGeneration
     }
 
     /// Points along the settle, as shares of its duration. Each is drawn as

@@ -8,7 +8,9 @@ import SwiftUI
 /// Dancers in place of the closed strip's bars: a dance from the "Music
 /// side" setting, on the island's beat, in the song's colours. Like the
 /// bars, only this small view observes what it draws from, so its updates
-/// never re-render the island.
+/// never re-render the island. Under Reduce Motion, and in Low Power Mode,
+/// they stand in one pose and only their colours change, as the agents'
+/// rings rest.
 struct NotchDancers: View {
     let routine: NotchDanceRoutine
     var isPlaying = true
@@ -16,10 +18,11 @@ struct NotchDancers: View {
     var palette: NotchArtworkPalette?
     var height: CGFloat
     @ObservedObject private var paint = NotchSongPaint.shared
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        NotchDancersBridge(routine: routine, playing: isPlaying, moves: !reduceMotion,
+        NotchDancersBridge(routine: routine, playing: isPlaying, moves: !reduceMotion && !lowPower.isOn,
                            paint: NotchDancePaint(paint.palette ?? palette ?? NotchArtworkPalette.coverless()),
                            height: height)
             .frame(width: NotchDanceFloor.width, height: height)
@@ -38,14 +41,45 @@ extension NotchDancePaint {
 
 /// Which dance the strip shows for a song. Shuffle's deal is shared, so the
 /// island's copies on other displays and a strip on its way out agree on it.
-/// Main thread only.
-enum NotchDanceSelection {
-    private static var shuffle = NotchDanceShuffle()
+/// A song is told by its title and artist, as the companion's shuffle tells
+/// it, and a new one keeps the last dance until its names settle: players
+/// send the title before the artist, and a deal on each reading would change
+/// the dance twice for one song. The strips observe this, so they are drawn
+/// again, and ask again, once the wait is up; with no song waiting, nothing
+/// is scheduled. Main thread only.
+final class NotchDanceSelection: ObservableObject {
+    static let shared = NotchDanceSelection()
+    private var shuffle = NotchDanceShuffle()
+    private var askWork: DispatchWorkItem?
+    private var askAt: TimeInterval?
 
-    static func routine(for side: NotchMusicSide, track: RadialNowPlayingSnapshot) -> NotchDanceRoutine? {
-        let song = [track.title, track.artist, track.album, track.appBundleIdentifier]
-            .map { $0 ?? "" }.joined(separator: "\u{1F}")
-        return side.routine(for: song, shuffle: &shuffle) { Int.random(in: 0..<max(1, $0)) }
+    private init() {}
+
+    func routine(for side: NotchMusicSide, track: RadialNowPlayingSnapshot) -> NotchDanceRoutine? {
+        guard side == .shuffle else { return side.routine }
+        let song = NotchMascotShuffle.songKey(title: track.title, artist: track.artist)
+        let now = ProcessInfo.processInfo.systemUptime
+        let routine = side.routine(for: song, at: now, shuffle: &shuffle) { Int.random(in: 0..<max(1, $0)) }
+        askAgain(at: shuffle.settle.due, now: now)
+        return routine
+    }
+
+    /// Asked from a strip's body, so it only schedules: the strips are drawn
+    /// again on a later turn of the main queue, once the waiting song is due.
+    private func askAgain(at due: TimeInterval?, now: TimeInterval) {
+        guard due != askAt else { return }
+        askWork?.cancel()
+        askWork = nil
+        askAt = due
+        guard let due else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.askWork = nil
+            self.askAt = nil
+            self.objectWillChange.send()
+        }
+        askWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, due - now), execute: work)
     }
 }
 
@@ -68,8 +102,9 @@ private struct NotchDancersBridge: NSViewRepresentable {
 /// Hosts the dancers' layers and decides when they move. While a song plays
 /// and the view is on screen they join the conductor, which hands them each
 /// beat; paused, they settle into their rest; hidden, covered or closed,
-/// they stop listening and nothing runs. Reduce Motion stands them in one
-/// pose and changes only their colours.
+/// they stop listening and nothing runs. Without `moves`, under Reduce
+/// Motion or in Low Power Mode, they stand in one pose with no timer
+/// running, and only their colours change.
 final class NotchDancersView: NSView {
     private let stage = NotchDanceStage()
     private var routine: NotchDanceRoutine?
@@ -106,9 +141,10 @@ final class NotchDancersView: NSView {
             self.routine = routine
             generation &+= 1
             // A new song's dance mid-song starts in its groove; the next
-            // beat moves it on.
+            // beat moves it on. Seen, another dance cross-fades in over the last.
             let poses = isDancing && moves ? routine.dancers.indices.map(routine.groove) : standingPoses(routine)
-            stage.configure(routine: routine, floorHeight: height, poses: poses, contentsScale: backingScale)
+            stage.configure(routine: routine, floorHeight: height, poses: poses, contentsScale: backingScale,
+                            fades: window != nil)
             stage.layer.frame = CGRect(x: 0, y: 0, width: NotchDanceFloor.width, height: height)
         }
         stage.wear(paint, animated: window != nil)
@@ -126,7 +162,8 @@ final class NotchDancersView: NSView {
 
     /// One beat from the conductor. The middle of the Farewell Three answers
     /// half a beat late, so its move waits; one that would start after the
-    /// dance stopped is dropped.
+    /// dance stopped or changed, or after the next beat already came, is
+    /// dropped (NotchDanceTiming.heldStepPlays).
     func dance(beat: Int, energy: Double, interval: Double) {
         guard isDancing, let routine else { return }
         let token = generation
@@ -135,7 +172,10 @@ final class NotchDancersView: NSView {
                                     settle: NotchSongMotion.beatReturn)
             if step.delay > 0.005 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + step.delay) { [weak self] in
-                    guard let self, self.isDancing, self.generation == token else { return }
+                    guard let self, self.isDancing,
+                          NotchDanceTiming.heldStepPlays(beat: beat, generation: token,
+                                                         latestBeat: NotchDanceConductor.shared.beat,
+                                                         latestGeneration: self.generation) else { return }
                     self.stage.play(step, dancer: index)
                 }
             } else {
@@ -150,7 +190,7 @@ final class NotchDancersView: NSView {
             && window?.occlusionState.contains(.visible) == true
     }
 
-    /// Paused, standing at rest; under Reduce Motion, the dance's one pose.
+    /// Paused, standing at rest; without `moves`, the dance's one pose.
     private func standingPoses(_ routine: NotchDanceRoutine) -> [NotchDancerPose] {
         routine.dancers.indices.map { moves ? routine.rest($0) : routine.still($0) }
     }
@@ -231,6 +271,9 @@ final class NotchDanceConductor {
     func join(_ view: NotchDancersView) {
         dancers.add(view)
         guard beatSubscription == nil else { return }
+        // The first to join starts the count again, so a new song's dance
+        // opens on the loop's first beat, not wherever the last one stopped.
+        beat = -1
         tempo.reset()
         beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] bounce in self?.hear(bounce) }
         // The first step comes as the groove settles in, beats or not.
