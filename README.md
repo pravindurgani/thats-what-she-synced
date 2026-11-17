@@ -90,7 +90,11 @@ While you're there, **General → Launch at login** keeps it running after a res
 
 Play a song, hover over the notch, and turn it up. 🎶
 
-Colours and beat work with any player Vorssaint supports. Genre-aware motion is Apple Music only: the first time you press play from the island, allow it to control **Music**.
+**Works with** Apple Music, Spotify, and music or video in Safari, Chrome and Firefox:
+
+- **Colours** come from the cover. Firefox shares no cover with macOS, so there the island grows colours from your companion's instead. For the real cover, turn on **Find covers for Firefox and Zen** in the app's music settings; it looks the cover up online.
+- **The beat** follows whatever your Mac is playing.
+- **Genre-aware motion** is Apple Music only. The first time you press play from the island, allow it to control **Music**.
 
 ### Already use Vorssaint?
 
@@ -106,6 +110,7 @@ This installs as a separate app, with its own settings, next to the official one
 | You see | Try this |
 |---|---|
 | No colours | Black-and-white covers stay neutral on purpose. Try a colourful album, and check **Dynamic Island** is on. |
+| Firefox shows my companion's colours, not the cover's | Firefox shares no cover with macOS. Turn on **Find covers for Firefox and Zen** in the app's music settings. |
 | Colours, but no beat | Allow **System Audio Recording** (step 2) and turn on **Bars follow the music**, then quit and reopen the app. |
 | Every genre moves the same | Allow Vorssaint (Developer) to control Music in **System Settings → Privacy & Security → Automation**. |
 | No card when headphones connect | Turn on **Accessory alerts**. The card skips devices that were already connected when the app started, and stays quiet over full-screen apps. |
