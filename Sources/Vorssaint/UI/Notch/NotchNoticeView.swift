@@ -27,6 +27,8 @@ struct NotchNoticeView: View {
     /// Headphones or a speaker joining get the connect flourish.
     private var connects: Bool { NotchConnectFlourish.applies(to: notice) }
     private var connectKey: String { "\(notice.title)|\(notice.detail)|\(notice.symbol)" }
+    /// The Office moment keeps the island in colour even without a song or companion.
+    private var connectColors: [Color] { notice.office != nil ? NotchOfficeInk.colors() : NotchConnectFlourish.colors() }
     /// A new song arrives as a moment: its cover springs in lit by its own
     /// colour, and its title and artist follow out of a blur, over the strip's
     /// aurora (see NotchMusicBackdrop).
@@ -37,6 +39,19 @@ struct NotchNoticeView: View {
     /// its reactions are off.
     private var companionReaction: NotchMascotReaction? {
         NotchMascotSupport.isEnabled() ? notice.mascot : nil
+    }
+    /// The Office moment's caption, where the strip has room for a second line.
+    private var officeCaption: String? {
+        NotchOfficeMoments.stripFitsCaption(geometry.stripHeight) ? notice.office?.caption : nil
+    }
+    /// Changes once per Office moment, so a new reading of the same one, as
+    /// the charge moving a percent, does not play it again.
+    private var officeKey: String? {
+        notice.office.map { "\($0.kind)|\(notice.title)|\(notice.notificationID?.uuidString ?? "")" }
+    }
+    /// The rule turns beet red for a battery running out.
+    private var officeAccent: Color {
+        notice.office?.kind == .battery(.low) ? NotchOfficeInk.beet : NotchOfficeInk.mustard
     }
 
     var body: some View {
@@ -56,7 +71,7 @@ struct NotchNoticeView: View {
         .foregroundStyle(.white)
         .frame(height: geometry.stripHeight)
         .overlay {
-            if connects { NotchConnectSweep(colors: NotchConnectFlourish.colors(), trigger: connectKey).id(connectKey) }
+            if connects { NotchConnectSweep(colors: connectColors, trigger: connectKey).id(connectKey) }
         }
         // Each side is as wide as what it shows, so the island reaches
         // further toward the wider one and the camera's gap stays over it.
@@ -75,7 +90,9 @@ struct NotchNoticeView: View {
     }
 
     @ViewBuilder private var leading: some View {
-        if let content = notice.notification {
+        if let content = notice.notification, notice.office != nil {
+            officeBanner(content)
+        } else if let content = notice.notification {
             HStack(spacing: NotchNotificationBannerLayout.spacing) {
                 NotchNotificationAppIcon(app: content.app, size: min(NotchNotificationBannerLayout.iconSize, geometry.stripHeight - 4))
                 Text(content.compactTitle)
@@ -85,46 +102,19 @@ struct NotchNoticeView: View {
             }
         } else {
             HStack(spacing: 8) {
-                Group {
-                    // A notice about the agent itself wears its mark, and a
-                    // warning keeps a symbol that says what happened.
-                    if let reaction = companionReaction {
-                        let size = NotchMascotSupport.noticeSize
-                        NotchMascotView(look: NotchMascotSupport.islandLook(), mood: NotchService.shared.mascotRestingMood,
-                                        size: size, reaction: NotchMascotSupport.reacts() ? reaction : nil)
-                            .frame(width: size, height: size)
-                            // Half a point low, on the line it rests on beside
-                            // the camera, so it steps in and out with no jump.
-                            .offset(y: 0.5)
-                            // One notice in place of another plays its own reaction,
-                            // swapped at once: two of it crossfading in one place dimmed it.
-                            .id("\(notice.event)|\(notice.title)|\(notice.detail)|\(reaction.rawValue)")
-                            .transition(.identity)
-                            .opacity(hidesMascot ? 0 : 1)
-                            .animation(nil, value: hidesMascot)
-                    } else if notice.event == .agents, let agent = notice.agent, notice.symbol == agent.symbol {
-                        NotchAgentMark(provider: agent, size: 13)
-                    } else if notice.event == .track {
-                        NotchTrackArtwork(size: min(18, geometry.stripHeight - 6), trigger: trackKey ?? "")
-                    } else if connects {
-                        NotchConnectIcon(symbol: notice.symbol, colors: NotchConnectFlourish.colors(), trigger: connectKey)
-                            .id(connectKey)
-                    } else {
-                        Image(systemName: notice.symbol)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(levelColors?.first ?? tint)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
+                mark
+                if notice.office != nil {
+                    officeTitle
+                } else {
+                    Text(notice.level == nil ? notice.title : notice.detail)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(textTint)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .truncationMode(notice.event == .track ? .tail : .middle)
+                        .contentTransition(.numericText())
+                        .notchArrival(connects ? connectKey : trackKey)
                 }
-                .frame(width: 18)
-                Text(notice.level == nil ? notice.title : notice.detail)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(textTint)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .truncationMode(notice.event == .track ? .tail : .middle)
-                    .contentTransition(.numericText())
-                    .notchArrival(connects ? connectKey : trackKey)
             }
             // A level's mark keeps its place while a shorter reading leaves
             // room it holds for the widest.
@@ -134,8 +124,100 @@ struct NotchNoticeView: View {
         }
     }
 
+    /// The symbol, or what stands in for it, at the leading end.
+    private var mark: some View {
+        Group {
+            // A notice about the agent itself wears its mark, and a
+            // warning keeps a symbol that says what happened.
+            if let reaction = companionReaction {
+                let size = NotchMascotSupport.noticeSize
+                NotchMascotView(look: NotchMascotSupport.islandLook(), mood: NotchService.shared.mascotRestingMood,
+                                size: size, reaction: NotchMascotSupport.reacts() ? reaction : nil)
+                    .frame(width: size, height: size)
+                    // Half a point low, on the line it rests on beside
+                    // the camera, so it steps in and out with no jump.
+                    .offset(y: 0.5)
+                    // One notice in place of another plays its own reaction,
+                    // swapped at once: two of it crossfading in one place dimmed it.
+                    .id("\(notice.event)|\(notice.title)|\(notice.detail)|\(reaction.rawValue)")
+                    .transition(.identity)
+                    .opacity(hidesMascot ? 0 : 1)
+                    .animation(nil, value: hidesMascot)
+            } else if notice.event == .agents, let agent = notice.agent, notice.symbol == agent.symbol {
+                NotchAgentMark(provider: agent, size: 13)
+            } else if notice.event == .track {
+                NotchTrackArtwork(size: min(18, geometry.stripHeight - 6), trigger: trackKey ?? "")
+            } else if connects {
+                NotchConnectIcon(symbol: notice.symbol, colors: connectColors, trigger: connectKey)
+                    .id(connectKey)
+            } else {
+                Image(systemName: notice.symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(levelColors?.first ?? tint)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+        }
+        .frame(width: 18)
+    }
+
+    /// The title with its Office caption under it: the real words first and
+    /// large, the joke small beside its rule, and both punching in.
+    private var officeTitle: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(notice.level == nil ? notice.title : notice.detail)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(textTint)
+                .monospacedDigit()
+                .lineLimit(1)
+                .truncationMode(notice.event == .track ? .tail : .middle)
+                .contentTransition(.numericText())
+                .notchArrival(connects ? connectKey : trackKey)
+            if let officeCaption {
+                NotchLowerThird(caption: officeCaption, accent: officeAccent, trigger: officeKey)
+            }
+        }
+        .notchPunchIn(officeKey)
+    }
+
+    /// A mirrored message as a talking head: the sender is the lower third's
+    /// name and the role picked for them its title; a call keeps ringing
+    /// around its app's icon. The message keeps the far side, whole.
+    private func officeBanner(_ content: NotchNotificationContent) -> some View {
+        let iconSize = min(NotchNotificationBannerLayout.iconSize, geometry.stripHeight - 4)
+        return HStack(spacing: NotchNotificationBannerLayout.spacing) {
+            NotchNotificationAppIcon(app: content.app, size: iconSize)
+                .background {
+                    if notice.office?.kind == .call {
+                        NotchOfficeRing(colors: NotchOfficeInk.colors(), symbol: nil, side: iconSize + 2)
+                            .frame(width: iconSize * 2, height: iconSize * 2)
+                    }
+                }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(content.compactTitle)
+                    .font(Font(NotchNotificationBannerLayout.titleFont as CTFont))
+                    .lineLimit(1)
+                if let officeCaption {
+                    NotchLowerThird(caption: officeCaption, trigger: officeKey)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .notchPunchIn(officeKey)
+        }
+    }
+
     @ViewBuilder private var trailing: some View {
-        if let content = notice.notification {
+        if let cue = notice.office, case .battery(let state) = cue.kind, notice.notification == nil, notice.level == nil {
+            // The charge, with the mug filled to it beside.
+            HStack(spacing: NotchOfficeMoments.mugGap) {
+                NotchOfficeMug(state: state, level: cue.level ?? 0, coffee: NotchOfficeInk.coffee(), trigger: officeKey ?? "")
+                Text(notice.detail)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(textTint.opacity(0.8))
+                    .lineLimit(1)
+                    .notchPunchIn(officeKey)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        } else if let content = notice.notification {
             // At the far end, as far from it as the sender is from the other
             // one, with the air that fits it beside the camera.
             Text(content.compactDetail)

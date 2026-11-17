@@ -158,7 +158,15 @@ struct NotchNotificationPreviewView: View {
                 NotchIconButton(symbol: "xmark", title: text.dismiss) { service.dismissNotification(notice) }
             }
             .frame(height: NotchNotificationPreviewLayout.headerHeight)
-            if !content.title.isEmpty {
+            if !content.title.isEmpty, notice.office?.kind == .message, let role = notice.office?.caption {
+                // The sender as the talking head's name, the role picked for them under it.
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(content.title)
+                        .font(Font(NotchNotificationPreviewLayout.titleFont as CTFont))
+                        .lineLimit(NotchNotificationPreviewLayout.titleLines)
+                    NotchLowerThird(caption: role, size: .card)
+                }
+            } else if !content.title.isEmpty {
                 Text(content.title)
                     .font(Font(NotchNotificationPreviewLayout.titleFont as CTFont))
                     .lineLimit(NotchNotificationPreviewLayout.titleLines)

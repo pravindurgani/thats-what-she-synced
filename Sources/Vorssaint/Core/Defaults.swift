@@ -896,6 +896,8 @@ enum DefaultsKey {
     static let notchPomodoroTotalSessions = "notchPomodoroTotalSessions"
     static let notchCameraEnabled = "notchCameraEnabled"
     static let notchAccessoriesEnabled = "notchAccessoriesEnabled"
+    /// The Office moments on the island's notices (NotchOfficeMoments).
+    static let notchOfficeModeEnabled = "notchOfficeModeEnabled"
     static let notchLyricsEnabled = "notchLyricsEnabled"
     static let notchLyricsOnline = "notchLyricsOnline"
     static let notchBrowserCovers = "notchBrowserCovers"
@@ -1519,6 +1521,7 @@ enum Defaults {
         DefaultsKey.notchPomodoroTotalSessions: 4,
         DefaultsKey.notchCameraEnabled: true,
         DefaultsKey.notchAccessoriesEnabled: true,
+        DefaultsKey.notchOfficeModeEnabled: true,
         DefaultsKey.notchCalendarEnabled: true,
         DefaultsKey.notchCalendarCountdown: false,
         DefaultsKey.notchCalendarCountdownLead: NotchCalendarSupport.defaultCountdownLeadMinutes,

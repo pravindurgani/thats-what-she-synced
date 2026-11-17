@@ -126,6 +126,7 @@ struct MetricsTests {
             }),
             ("transient-paste", { TransientPasteTests.run(suite) }),
             ("notch-music", { NotchMusicExtrasTests.run(suite) }),
+            ("notch-office", { NotchOfficeMomentsTests.run(suite) }),
             ("notch", {
                 NotchTests.run(suite)
                 NotchCompactTests.run(suite)
