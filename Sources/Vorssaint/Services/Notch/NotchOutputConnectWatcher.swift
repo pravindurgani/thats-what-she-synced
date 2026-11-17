@@ -33,6 +33,9 @@ final class NotchOutputConnectWatcher {
     private var baselineTaken = false
     private var quietUntil = Date.distantPast
     private var retry: DispatchWorkItem?
+    /// Earphones announced lately, so one re-listing itself (as some do when
+    /// a call starts) does not open the card again.
+    private var announcedAt: [String: Date] = [:]
     private init() {}
 
     func syncWithPreferences() {
@@ -88,7 +91,10 @@ final class NotchOutputConnectWatcher {
         }
         // Earphones are announced as they connect, not seconds later when
         // macOS moves the sound to them.
-        if NotchAccessorySupport.isEnabled(), let device = joined.first(where: Self.isEarphones) {
+        announcedAt = announcedAt.filter { now.timeIntervalSince($0.value) < 120 }
+        if NotchAccessorySupport.isEnabled(),
+           let device = joined.first(where: { Self.isEarphones($0) && announcedAt[$0.uid] == nil }) {
+            announcedAt[device.uid] = now
             announce(device: device, symbol: NotchAccessorySupport.symbol(for: .audio, name: device.name), retrying: true)
         }
         guard let uid, uid != lastUID else { return }

@@ -100,11 +100,12 @@ final class NotchMascotRig: NSObject {
     /// new look at the same size cross-fades in, as a choice in Settings does.
     func configure(look: NotchMascotLook, size: CGFloat, contentsScale scale: CGFloat) {
         guard !configured || look != self.look || size != self.size || scale != root.contentsScale else { return }
-        let restyled = configured && look != self.look && size == self.size && !reduceMotion
         // A song's colours arriving or changing flow in on the song's colour
-        // timing; a new style or palette chosen in Settings swaps quickly.
+        // timing, a fade even under Reduce Motion; a new style or palette
+        // chosen in Settings swaps quickly.
         let recoloured = configured && look.style == self.look.style && look.shape == self.look.shape
             && look.palette == self.look.palette
+        let restyled = configured && look != self.look && size == self.size && (!reduceMotion || recoloured)
         configured = true
         self.look = look
         self.size = size

@@ -152,10 +152,10 @@ struct NotchSongText: Equatable {
         tertiary = Color(nsColor: palette.textTertiary)
     }
 
-    /// Words drawn as white at a fixed opacity: the brighter take the primary,
-    /// the softer the secondary.
+    /// Words drawn as white at a fixed opacity: the brightest take the primary,
+    /// the rest the secondary, so a dimmed line still reads as dimmed.
     func soft(_ opacity: Double) -> Color {
-        opacity >= 0.6 ? primary.opacity(max(opacity, 0.88)) : secondary
+        opacity >= 0.7 ? primary.opacity(max(opacity, 0.88)) : secondary
     }
 }
 
@@ -175,6 +175,10 @@ extension Optional where Wrapped == NotchSongText {
     /// White at the given opacity, as the island draws it, or the song's
     /// matching colour while it wears one.
     func soft(_ opacity: Double) -> Color { self?.soft(opacity) ?? .white.opacity(opacity) }
+
+    /// Small words that must stand out over the colour: the full primary tint
+    /// while a song is worn, otherwise white at the given opacity.
+    func strong(_ opacity: Double) -> Color { self?.primary ?? .white.opacity(opacity) }
 }
 
 private extension NotchMascotColor {
@@ -239,6 +243,8 @@ enum NotchAuroraVeil {
 /// gallery, with the bubbles beside them, and the strip that names a new song.
 enum NotchSongMode {
     /// On unless turned off: `defaults write <bundle id> notchSongModeEnabled -bool false`.
+    /// It turns off the island's colour, glow, bubbles, text tints and the
+    /// companion's; the player's own cover-tinted controls stay.
     static var enabled: Bool { UserDefaults.standard.object(forKey: "notchSongModeEnabled") as? Bool ?? true }
 
 
@@ -537,9 +543,10 @@ final class NotchMusicAuroraView: NSView {
         let lead = colors[0], second = colors[min(1, colors.count - 1)], third = colors[min(2, colors.count - 1)]
         let poolColors = [lead, second, third]
         let poolStrength: [CGFloat] = [0.96, 0.88, 0.84]
-        // A cross-fade under way carries the newer colours to its end, so
-        // skipping songs quickly never snaps to the colours in between.
-        if animated, stage.animation(forKey: "colors") == nil {
+        // A new cross-fade replaces one under way. On the settle curve the
+        // old one is nearly done within a few frames, so what it skips is small;
+        // leaving it running would show the new colours at its own progress.
+        if animated {
             let crossFade = CATransition()
             crossFade.type = .fade
             crossFade.duration = Self.colorChange
@@ -823,12 +830,9 @@ final class NotchMusicAuroraView: NSView {
 
     // MARK: Motion
 
-    /// Adds the pools' drift and breath when the view first has a size in a
-    /// window, when Reduce Motion changes, and once a resize has settled at a
-    /// size well apart from the one the drift was made for. A re-made drift
-    /// keeps each loop's begin time, so it carries on from where it was.
-    /// Made from rest, once the island settles; a resize only stretches it
-    /// (see layout), so it is never re-made mid-flight.
+    /// Adds the pools' drift and breath, from rest, once the island settles
+    /// after it first shows, and when Reduce Motion changes. A resize only
+    /// stretches it (see layout), so it is never re-made mid-flight.
     private func installMotion() {
         let size = bounds.size
         for blob in blobs {

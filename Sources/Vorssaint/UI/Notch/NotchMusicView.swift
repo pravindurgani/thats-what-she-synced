@@ -309,7 +309,6 @@ struct NotchMusicView: View {
             }
             NotchMusicTimeline(playback: playback, service: service, tint: palette.map { Color(nsColor: $0.marks[0]) } ?? accent,
                                timesBeside: true, onColor: palette != nil)
-                .animation(NotchSongMotion.colour, value: palette)
                 .padding(.top, NotchLayout.musicHeadSpacing)
             transportRow {
                 if !preview && shuffle.isOffered { shuffleButton }

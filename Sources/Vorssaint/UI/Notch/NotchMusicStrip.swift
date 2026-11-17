@@ -155,7 +155,7 @@ struct NotchMusicStrip: View {
             if showsArtist, let artist {
                 Text(artist)
                     .font(Font(Layout.artistFont as CTFont))
-                    .foregroundStyle(songText.soft(0.62))
+                    .foregroundStyle(songText.strong(0.62))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -173,7 +173,7 @@ struct NotchMusicStrip: View {
             if showsArtist, let artist {
                 Text(artist)
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(songText.soft(0.62))
+                    .foregroundStyle(songText.strong(0.62))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

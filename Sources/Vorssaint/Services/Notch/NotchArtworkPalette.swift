@@ -35,7 +35,7 @@ struct NotchArtworkPalette: Equatable {
         glow = pure.map { $0.notchToned(maxLuminance: 0.18, minLuminance: 0.07) }
         marks = pure.map { $0.notchToned(maxLuminance: 0.8, minLuminance: 0.64) }
         plate = pure[0].notchToned(maxLuminance: 0.22, minLuminance: 0.09)
-        textPrimary = pure[0].notchToned(maxLuminance: 0.9, minLuminance: 0.82)
+        textPrimary = pure[0].notchToned(maxLuminance: 0.94, minLuminance: 0.88)
         textSecondary = pure[0].notchToned(maxLuminance: 0.5, minLuminance: 0.42)
         textTertiary = pure[0].notchToned(maxLuminance: 0.26, minLuminance: 0.2)
         companionLight = pure[0].notchToned(maxLuminance: 0.86, minLuminance: 0.76)
