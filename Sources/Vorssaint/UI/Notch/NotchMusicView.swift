@@ -664,6 +664,9 @@ struct NotchMusicTimeline: View {
     @State private var scrubTrack: RadialNowPlayingSnapshot?
     @State private var scrubContext: NotchPlaybackContext?
     @State private var pendingSeek: UUID?
+    /// The tint on screen, which eases to a new cover's colour on the song's
+    /// colour timing while the playhead itself never animates.
+    @State private var shownTint: Color?
 
     var body: some View {
         if playback.duration > 0 {
@@ -700,6 +703,8 @@ struct NotchMusicTimeline: View {
                 .foregroundStyle(onColor ? AnyShapeStyle(Color.white) : AnyShapeStyle(.secondary))
             }
             .frame(height: timesBeside ? NotchLayout.musicTimelineHeight : 30)
+            .onAppear { shownTint = tint }
+            .onChange(of: tint) { _, next in withAnimation(NotchSongMotion.colour) { shownTint = next } }
             .onChange(of: playback.track) { clearScrub() }
             .onChange(of: playback.commandContext) { clearScrub() }
             .onChange(of: playback.sampledAt) {
@@ -729,7 +734,7 @@ struct NotchMusicTimeline: View {
                 }),
                 label: FeatureStrings.notch(l10n.language).playbackPosition,
                 range: 0...playback.duration,
-                tint: tint,
+                tint: shownTint ?? tint,
                 valueLabel: timestamp(position),
                 scrollable: false,
                 onEditingChanged: { editing in
@@ -743,7 +748,7 @@ struct NotchMusicTimeline: View {
                 .frame(height: 10)
                 .disabled(service.commandPending)
         } else {
-            NotchMeter(value: position / playback.duration, height: 6, tint: tint)
+            NotchMeter(value: position / playback.duration, height: 6, tint: shownTint ?? tint)
         }
     }
 

@@ -62,6 +62,7 @@ final class NotchOutputConnectWatcher {
         retry?.cancel(); retry = nil
         lastUID = nil
         present = [:]
+        announcedAt = [:]
         baselineTaken = false
     }
 
@@ -94,7 +95,6 @@ final class NotchOutputConnectWatcher {
         announcedAt = announcedAt.filter { now.timeIntervalSince($0.value) < 120 }
         if NotchAccessorySupport.isEnabled(),
            let device = joined.first(where: { Self.isEarphones($0) && announcedAt[$0.uid] == nil }) {
-            announcedAt[device.uid] = now
             announce(device: device, symbol: NotchAccessorySupport.symbol(for: .audio, name: device.name), retrying: true)
         }
         guard let uid, uid != lastUID else { return }
@@ -114,6 +114,8 @@ final class NotchOutputConnectWatcher {
         let notice = NotchNotice(event: .accessory, title: text.connected, detail: device.name, symbol: symbol)
         if NotchService.shared.showConnect(notice) {
             NotchConnectFlourish.noteAnnounced(device.name)
+            // Remembered only once it is actually seen.
+            announcedAt[device.uid] = Date()
         } else if retrying {
             // A notice of the switch itself (volume) may hold the strip for a moment.
             let work = DispatchWorkItem { [weak self] in
