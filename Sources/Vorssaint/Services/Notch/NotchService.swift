@@ -1494,6 +1494,8 @@ final class NotchService: ObservableObject {
             // The open island covers a mirrored banner, and the inbox keeps
             // the message; a held one must not reappear after collapsing.
             if notice?.notificationID != nil { noticeWork?.cancel(); noticeWork = nil; notice = nil; noticeExpanded = false }
+            // An open island takes the place of a connect card too.
+            else if noticeExpanded { noticeWork?.cancel(); noticeWork = nil; notice = nil; noticeExpanded = false }
         }
         inside = windowHost?.containsHover(NSEvent.mouseLocation) == true
         installEventMonitors()
@@ -2340,7 +2342,8 @@ final class NotchService: ObservableObject {
     @discardableResult
     func show(_ incoming: NotchNotice) -> Bool {
         guard showsSystemFeedback, NotchSupport.routes(incoming.event),
-              NotchSupport.shouldReplace(notice?.event, with: incoming.event, held: noticeExpanded) else { return false }
+              NotchSupport.shouldReplace(notice?.event, with: incoming.event,
+                                         held: noticeExpanded && notice?.notificationID != nil) else { return false }
         noticeWork?.cancel(); noticeWork = nil
         var incoming = incoming
         if incoming.notification != nil, let shown = notice, shown.notification != nil, noticeCanPresent, !noticeExpanded {
@@ -2378,6 +2381,7 @@ final class NotchService: ObservableObject {
     @discardableResult
     func showConnect(_ incoming: NotchNotice) -> Bool {
         let opensCard = !expanded && !peeking && !dragPlaceholder && captureControls == nil && !showingCommandBar
+            && !fullscreenCompact
         guard show(incoming) else { return false }
         guard opensCard, noticeCanPresent, notice == incoming else { return true }
         mutatePresentation(transitionContent: .reveal) { noticeExpanded = true }

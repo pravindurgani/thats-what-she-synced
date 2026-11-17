@@ -96,6 +96,8 @@ final class NotchAccessoryService: NSObject {
     private func presentNext() {
         noticeWork = nil
         pending.removeAll { $0.expiresAt <= Date() }
+        // A queued connection the sound's route has announced meanwhile is not shown again.
+        pending.removeAll { NotchConnectFlourish.applies(to: $0.notice) && NotchConnectFlourish.wasAnnounced($0.device) }
         guard active, NotchAccessorySupport.isEnabled(), let first = pending.first else { return }
         let notch = NotchService.shared
         let connects = NotchConnectFlourish.applies(to: first.notice)

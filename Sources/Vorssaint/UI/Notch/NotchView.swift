@@ -136,13 +136,15 @@ struct NotchView: View {
                     .frame(width: service.surfaceSize.width, height: service.surfaceSize.height, alignment: .top)
                     .id(notice.clickTarget)
             } else if service.noticeExpanded, NotchConnectFlourish.applies(to: notice) {
-                NotchConnectCard(notice: notice)
-                    .padding(.horizontal, NotchLayout.horizontalInset)
-                    .padding(.top, service.geometry.safeContentTop)
-                    .padding(.bottom, NotchLayout.bottomInset)
-                    .frame(width: service.surfaceSize.width, height: service.surfaceSize.height, alignment: .top)
-                    .contentShape(Rectangle())
-                    .onTapGesture { service.activateNotice(notice) }
+                Button { service.activateNotice(notice) } label: {
+                    NotchConnectCard(notice: notice)
+                        .padding(.horizontal, NotchLayout.horizontalInset)
+                        .padding(.top, service.geometry.safeContentTop)
+                        .padding(.bottom, NotchLayout.bottomInset)
+                        .frame(width: service.surfaceSize.width, height: service.surfaceSize.height, alignment: .top)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             } else {
                 Button {
                     service.activateNotice(notice)
