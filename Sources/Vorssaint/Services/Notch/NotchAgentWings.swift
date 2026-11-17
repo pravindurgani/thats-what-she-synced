@@ -279,42 +279,100 @@ enum NotchAgentWings {
 
 /// Turns that ended, held long enough for their agent's ring to close and
 /// show a check. A turn's end is reported a moment before its agent leaves
-/// the working list, so the check starts when the agent does, not before;
-/// one whose agent keeps working (another of its turns) shows nothing.
+/// the working list, so the check starts when the agent does, not before.
+/// It shows only when the turn reported was the agent's last at work: one
+/// whose agent keeps working (another of its turns), or whose last turn
+/// left without a report, as an interrupted turn does, shows nothing. While
+/// a notice covers the strip the check waits, and it starts again as the
+/// strip comes back, so its moment is seen.
 struct NotchAgentFinishLog: Equatable {
     /// How long the check holds once its agent stops working.
     static let check: TimeInterval = 1.6
     /// How long a reported end waits for its agent to stop working.
     static let wait: TimeInterval = 4
+    /// The longest checks wait under a notice, should its leaving go unheard.
+    static let coverLimit: TimeInterval = 30
 
-    private(set) var reported: [AgentProvider: Date] = [:]
+    /// An agent's turns reported ended, and when the latest was.
+    struct Report: Equatable {
+        var sessions: Set<String>
+        var time: Date
+    }
+
+    private(set) var reported: [AgentProvider: Report] = [:]
     private(set) var checks: [AgentProvider: Date] = [:]
+    /// Each agent's turns as last seen at work.
+    private(set) var seen: [AgentProvider: Set<String>] = [:]
+    /// Since when a notice has covered the strip, nil while none does.
+    private(set) var covered: Date?
 
     /// The agents showing their check now.
     var finished: Set<AgentProvider> { Set(checks.keys) }
 
-    mutating func ended(_ provider: AgentProvider, at now: Date) {
-        checks[provider] = nil
-        reported[provider] = now
+    /// The agents showing their check with `live` the turns at work now: a
+    /// reported end counts as soon as its agent has left the list, before
+    /// the log has caught up, so nothing between the two can drop the wing.
+    func finished(live: [AgentLiveSession]) -> Set<AgentProvider> {
+        let working = Set(live.map(\.provider))
+        return finished.union(reported.keys.filter { !working.contains($0) && closes($0) })
     }
 
-    /// Moves on to `now` with the agents at work. Returns when it next needs
-    /// to move on by itself, or nil when nothing is pending.
+    mutating func ended(_ end: AgentTurnEnd, at now: Date) {
+        checks[end.provider] = nil
+        var report = reported[end.provider] ?? Report(sessions: [], time: now)
+        report.sessions.insert(end.session)
+        report.time = now
+        reported[end.provider] = report
+    }
+
+    /// A notice covers the strip: the checks wait for it to go.
+    mutating func cover(at now: Date) {
+        if covered == nil { covered = now }
+    }
+
+    /// The notice has gone. Each check that waited under it starts again
+    /// now if the agents' strip comes back to show it, and goes if not.
+    mutating func uncover(at now: Date, stripShows: Bool) {
+        guard covered != nil else { return }
+        covered = nil
+        for provider in checks.keys { checks[provider] = stripShows ? now : nil }
+    }
+
+    /// Moves on to `now` with `live` the turns at work. Returns when it next
+    /// needs to move on by itself, or nil when nothing is pending.
     @discardableResult
-    mutating func update(working: Set<AgentProvider>, now: Date) -> Date? {
-        for (provider, time) in reported {
+    mutating func update(live: [AgentLiveSession], now: Date) -> Date? {
+        let working = Set(live.map(\.provider))
+        for (provider, report) in reported {
             if !working.contains(provider) {
                 reported[provider] = nil
-                checks[provider] = now
-            } else if now.timeIntervalSince(time) >= Self.wait {
+                if closes(provider, report) { checks[provider] = now }
+            } else if now.timeIntervalSince(report.time) >= Self.wait {
                 reported[provider] = nil
             }
         }
-        for (provider, time) in checks where working.contains(provider) || now.timeIntervalSince(time) >= Self.check {
+        // Noted after the reports are weighed, against the turns at work before.
+        for provider in working { seen[provider] = Set(live.filter { $0.provider == provider }.map(\.id)) }
+        if let since = covered, now.timeIntervalSince(since) >= Self.coverLimit { covered = nil }
+        let holds = covered != nil
+        for (provider, time) in checks
+        where working.contains(provider) || !holds && now.timeIntervalSince(time) >= Self.check {
             checks[provider] = nil
         }
-        let deadlines = reported.values.map { $0.addingTimeInterval(Self.wait) }
-            + checks.values.map { $0.addingTimeInterval(Self.check) }
+        var deadlines = reported.values.map { $0.time.addingTimeInterval(Self.wait) }
+        if let since = covered, !checks.isEmpty {
+            deadlines.append(since.addingTimeInterval(Self.coverLimit))
+        } else if !holds {
+            deadlines += checks.values.map { $0.addingTimeInterval(Self.check) }
+        }
         return deadlines.min()
+    }
+
+    /// Whether `provider`'s reported end closes its ring once it has stopped:
+    /// every turn last seen at work was reported ended, so the last to go
+    /// finished its work.
+    private func closes(_ provider: AgentProvider, _ report: Report? = nil) -> Bool {
+        guard let report = report ?? reported[provider] else { return false }
+        return (seen[provider] ?? []).isSubset(of: report.sessions)
     }
 }

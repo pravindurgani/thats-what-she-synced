@@ -24,7 +24,7 @@ final class NotchAgentFinishes: ObservableObject {
     func start() {
         guard subscriptions.isEmpty else { return }
         let usage = AgentUsageService.shared
-        usage.turnsEnded.sink { [weak self] provider in self?.ended(provider) }.store(in: &subscriptions)
+        usage.turnsEnded.sink { [weak self] end in self?.ended(end) }.store(in: &subscriptions)
         // The published value arrives before the snapshot changes, so it is
         // read here rather than from the service.
         usage.$snapshot.map(\.live).removeDuplicates()
@@ -33,12 +33,7 @@ final class NotchAgentFinishes: ObservableObject {
     }
 
     /// The agents whose ring has closed, with `live` the turns at work now.
-    /// A reported end counts as soon as its agent has left the list, before
-    /// the log has caught up, so nothing between the two can drop the wing.
-    func finished(live: [AgentLiveSession]) -> Set<AgentProvider> {
-        let working = Set(live.map(\.provider))
-        return log.finished.union(log.reported.keys.filter { !working.contains($0) })
-    }
+    func finished(live: [AgentLiveSession]) -> Set<AgentProvider> { log.finished(live: live) }
 
     func model(live: [AgentLiveSession]) -> NotchAgentStripModel {
         NotchAgentStripModel(live: live, finished: finished(live: live))
@@ -50,12 +45,22 @@ final class NotchAgentFinishes: ObservableObject {
         wing.finished ? lastSessions[wing.provider] ?? [] : live.filter { $0.provider == wing.provider }
     }
 
-    private func ended(_ provider: AgentProvider) {
+    /// A notice covering the closed island holds the checks, so they are
+    /// seen once it goes; `stripShows` tells, as it goes, whether the
+    /// agents' strip comes back to show them.
+    func cover(_ covered: Bool, stripShows: Bool = false) {
+        var next = log
+        if covered { next.cover(at: Date()) } else { next.uncover(at: Date(), stripShows: stripShows) }
+        guard next != log else { return }
+        apply(next, live: AgentUsageService.shared.snapshot.live)
+    }
+
+    private func ended(_ end: AgentTurnEnd) {
         // A turn the island never showed at work, too short for a reading
         // to land, has no ring to close.
-        guard lastSessions[provider] != nil else { return }
+        guard lastSessions[end.provider] != nil else { return }
         var next = log
-        next.ended(provider, at: Date())
+        next.ended(end, at: Date())
         apply(next, live: AgentUsageService.shared.snapshot.live)
     }
 
@@ -67,7 +72,7 @@ final class NotchAgentFinishes: ObservableObject {
     private func apply(_ candidate: NotchAgentFinishLog, live: [AgentLiveSession]) {
         var next = candidate
         let working = Set(live.map(\.provider))
-        let deadline = next.update(working: working, now: Date())
+        let deadline = next.update(live: live, now: Date())
         lastSessions = lastSessions.filter { working.contains($0.key) || next.finished.contains($0.key)
             || next.reported[$0.key] != nil }
         if next != log { log = next }

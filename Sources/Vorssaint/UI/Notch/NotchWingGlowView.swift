@@ -34,6 +34,10 @@ final class NotchWingGlowView: NSView {
     private var camera: CGFloat = 0
     private var veil: NotchAuroraVeil = .open
     private var entered = false
+    /// The glow changed between an agents' and the resting island's, whose
+    /// edges and camera ink differ: the next layout eases them across with
+    /// the colours instead of cutting.
+    private var edgesChanging = false
 
     /// How far the black over the camera fades out into each wing: well
     /// into an agent's wing, so the two glows stand apart, and only a little
@@ -105,6 +109,7 @@ final class NotchWingGlowView: NSView {
             fade.timingFunction = NotchSongMotion.settleCurve
             stage.add(fade, forKey: "colors")
         }
+        let edgesChange = !first && next.fadesEdges != colors?.fadesEdges
         colors = next
         let moved = nextCamera != camera
         camera = nextCamera
@@ -117,9 +122,12 @@ final class NotchWingGlowView: NSView {
             scrim.colors = veil.stops.map { NSColor.black.withAlphaComponent($0).cgColor }
             stage.opacity = veil.strength
         }
-        ends.isHidden = !next.fadesEdges
-        floor.isHidden = !next.fadesEdges
         CATransaction.commit()
+        if edgesChange { edgesChanging = true }
+        // The resting island's edges fade in and out with its colours.
+        easingEdges(edgesChange) {
+            for edge in [ends, floor] { edge.opacity = next.fadesEdges ? 1 : 0 }
+        }
         if moved || recolor { needsLayout = true }
         if !entered {
             entered = true
@@ -167,11 +175,31 @@ final class NotchWingGlowView: NSView {
         accents.left.position = CGPoint(x: wing * 0.24, y: size.height * 0.42)
         accents.right.bounds = CGRect(origin: .zero, size: accentSize)
         accents.right.position = CGPoint(x: size.width - wing * 0.24, y: size.height * 0.42)
-        paintInk(width: size.width)
-        let end = Double(min(0.5, wing * 0.22 / size.width))
         ends.colors = [NSColor.black.withAlphaComponent(0.6).cgColor, NSColor.black.withAlphaComponent(0).cgColor,
                        NSColor.black.withAlphaComponent(0).cgColor, NSColor.black.withAlphaComponent(0.6).cgColor]
-        ends.locations = [0, end, 1 - end, 1].map { NSNumber(value: $0) }
+        CATransaction.commit()
+        // The camera's ink reaches further into an agent's wing than into the
+        // resting island's: a change between the two eases across with the colours.
+        let easing = edgesChanging
+        edgesChanging = false
+        easingEdges(easing) {
+            paintInk(width: size.width)
+            let end = Double(min(0.5, wing * 0.22 / size.width))
+            ends.locations = [0, end, 1 - end, 1].map { NSNumber(value: $0) }
+        }
+    }
+
+    /// Changes made in `change`, eased over the colours' cross-fade when
+    /// `eased`, otherwise at once.
+    private func easingEdges(_ eased: Bool, _ change: () -> Void) {
+        CATransaction.begin()
+        if eased {
+            CATransaction.setAnimationDuration(NotchSongMotion.colorChange)
+            CATransaction.setAnimationTimingFunction(NotchSongMotion.settleCurve)
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        change()
         CATransaction.commit()
     }
 

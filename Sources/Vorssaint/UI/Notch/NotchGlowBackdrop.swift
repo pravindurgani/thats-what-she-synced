@@ -20,22 +20,30 @@ final class NotchLowPowerMode: ObservableObject {
     }
 }
 
-/// The companion's colours as the island wears them with no song: a palette
-/// grown from its body (NotchIslandGlow.idleSeeds), toned as a cover's is, so
-/// it stands as vivid as the music look. Read through the island's own look,
-/// so whatever the companion wears, the glow follows. Main thread only.
+/// The companion's colours as the island wears them with no song: a cast
+/// member's own, or a palette grown from the minimal body's or the robot's
+/// (NotchIslandGlow.idleSeeds), toned as a cover's is, so it stands as vivid
+/// as the music look. Read through the island's own look and the member a
+/// shuffle dealt, as the companion's rig draws it, so the glow follows
+/// whoever is out. Main thread only.
 enum NotchIdlePalette {
-    private static var held: (paint: NotchMascotPaint, palette: NotchArtworkPalette)?
+    /// What the palette was made for: the style chosen, the member dealt and the colour chosen.
+    private struct Key: Equatable {
+        let style: NotchMascotStyle
+        let member: NotchMascotStyle
+        let palette: NotchMascotPalette
+    }
+
+    private static var held: (key: Key, palette: NotchArtworkPalette)?
 
     static func current() -> NotchArtworkPalette {
-        let paint = NotchMascotSupport.islandLook().paint
-        if let held, held.paint == paint { return held.palette }
-        func rgb(_ color: NotchMascotColor) -> NotchRGB {
-            NotchRGB(red: Double(color.red), green: Double(color.green), blue: Double(color.blue))
-        }
-        let palette = NotchIslandGlow.idleSeeds(light: rgb(paint.light), shade: rgb(paint.shade))
+        let look = NotchMascotSupport.islandLook()
+        let member = NotchMascotShuffleService.shared.member
+        let key = Key(style: look.style, member: look.dealing(member).style, palette: look.palette)
+        if let held, held.key == key { return held.palette }
+        let palette = NotchIslandGlow.idleSeeds(look: look, dealt: member)
             .map { NotchArtworkPalette(pure: $0.map(\.nsColor)) } ?? NotchArtworkPalette.coverless()
-        held = (paint, palette)
+        held = (key, palette)
         return palette
     }
 }
@@ -95,6 +103,9 @@ struct NotchGlowBackdrop: View {
     @ObservedObject private var usage = AgentUsageService.shared
     @ObservedObject private var finishes = NotchAgentFinishes.shared
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
+    /// A shuffle dealing another member recolours the companion's glow,
+    /// cross-faded as the member is.
+    @ObservedObject private var shuffle = NotchMascotShuffleService.shared
     @Environment(\.colorSchemeContrast) private var contrast
     /// Each glow's colours, held while it fades out, so it leaves with a fade, not a cut.
     @State private var heldWings: NotchWingGlowColors?

@@ -152,6 +152,14 @@ struct AgentLiveSession: Equatable, Identifiable {
     var cost: Double
 }
 
+/// A turn that ended with its work done: its agent, and the turn's own
+/// session (AgentLiveSession.id), so the island can tell it from another
+/// turn the same agent is still working on.
+struct AgentTurnEnd: Equatable {
+    let provider: AgentProvider
+    let session: String
+}
+
 /// Something worth a moment in the closed island.
 enum AgentUsageEvent: Equatable {
     case finished(provider: AgentProvider, duration: TimeInterval, cost: Double, tokens: Int, project: String)

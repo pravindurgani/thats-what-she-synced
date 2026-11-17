@@ -58,6 +58,27 @@ enum NotchIslandGlow: Equatable {
     /// The hues that read as yellow, between orange and green.
     static func isYellow(_ hue: Double) -> Bool { (0.1...0.22).contains(hue - floor(hue)) }
 
+    /// The glow's colours for the companion the island draws: `look`, with
+    /// a shuffle resolved to `member`, the one it dealt, as the companion's
+    /// rig resolves it. A member of the cast lends its own colours
+    /// (NotchMascotStyle.glowColors); the minimal body and the robot grow
+    /// theirs from their body's colours (idleSeeds(light:shade:)). Each is
+    /// made as vivid as a song's. Nil for a grey body, which takes
+    /// NotchArtworkPalette.coverless().
+    static func idleSeeds(look: NotchMascotLook, dealt member: NotchMascotStyle) -> [NotchRGB]? {
+        let drawn = look.dealing(member)
+        if let own = drawn.style.glowColors {
+            return own.map { NotchRGB($0).hsb }.map { vivid(hue: $0.hue, saturation: $0.saturation) }
+        }
+        return idleSeeds(light: NotchRGB(drawn.paint.light), shade: NotchRGB(drawn.paint.shade))
+    }
+
+    /// A colour at the glow's full strength: its own hue, at least as
+    /// saturated as a song's glow colours, at the brightness they are drawn from.
+    private static func vivid(hue: Double, saturation: Double) -> NotchRGB {
+        NotchRGB(hue: hue, saturation: min(1, max(saturation, 0.7)), brightness: 0.95)
+    }
+
     /// Three vivid colours grown from the companion's body: its most
     /// colourful one, then its other one where that is a colour of its own,
     /// and close neighbours on the colour wheel for the rest, so the glow
@@ -67,9 +88,7 @@ enum NotchIslandGlow: Equatable {
         let (lead, other) = shade.hsb.saturation >= light.hsb.saturation ? (shade, light) : (light, shade)
         let leading = lead.hsb
         guard leading.saturation >= 0.12 else { return nil }
-        func vivid(_ hue: Double, _ saturation: Double) -> NotchRGB {
-            NotchRGB(hue: hue, saturation: min(1, max(saturation, 0.7)), brightness: 0.95)
-        }
+        func vivid(_ hue: Double, _ saturation: Double) -> NotchRGB { Self.vivid(hue: hue, saturation: saturation) }
         func distance(_ a: Double, _ b: Double) -> Double {
             let d = abs(a - b).truncatingRemainder(dividingBy: 1)
             return min(d, 1 - d)
@@ -86,6 +105,13 @@ enum NotchIslandGlow: Equatable {
         let own = second.saturation >= 0.25 && distance(second.hue, leading.hue) >= 0.06
         return [vivid(leading.hue, leading.saturation),
                 own ? vivid(second.hue, second.saturation) : neighbour(0.1), neighbour(-0.1)]
+    }
+}
+
+extension NotchRGB {
+    /// A companion's colour as plain numbers, its alpha left behind.
+    init(_ color: NotchMascotColor) {
+        self.init(red: Double(color.red), green: Double(color.green), blue: Double(color.blue))
     }
 }
 

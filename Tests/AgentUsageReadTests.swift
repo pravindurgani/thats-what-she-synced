@@ -75,6 +75,8 @@ enum AgentUsageReadTests {
         var snapshot = AgentUsageSnapshot()
         var publications: [AgentUsageSnapshot] = []
         var events: [AgentUsageEvent] = []
+        /// The session each finished turn was reported with.
+        var endedTurns: [String?] = []
         var savedMark: Int?
         var progressMark: Int { 0 }
         func saveProgress() {}
@@ -91,7 +93,10 @@ enum AgentUsageReadTests {
             snapshot = store.snapshot(plans: [:], providers: enabled, now: Date())
             publications.append(snapshot)
         }
-        func report(_ event: AgentUsageEvent) { events.append(event) }
+        func report(_ event: AgentUsageEvent, session: String? = nil) {
+            events.append(event)
+            if case .finished = event { endedTurns.append(session) }
+        }
         func checkLimits() {}
         func schedulePublish() {}
     }
@@ -332,6 +337,8 @@ enum AgentUsageReadTests {
         ], append: true)
         suite.expect(host.store.live.isEmpty && host.events.count == 1,
                      "the reverted thread's task ends exactly once and clears the running indicator")
+        suite.expect(host.endedTurns == [reverted.path],
+                     "a finished turn is reported with the session it was shown working under")
         // A subagent can be read before its thread's log, and that log can move.
         let early = Host()
         let other = "01a14099-2222-7000-8000-000000000003"

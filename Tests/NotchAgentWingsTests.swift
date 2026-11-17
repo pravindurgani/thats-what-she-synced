@@ -161,29 +161,99 @@ enum NotchAgentWingsTests {
     }
 
     private static func finishes(_ suite: TestSuite) {
+        typealias Log = NotchAgentFinishLog
         let now = Date(timeIntervalSince1970: 5_000_000)
-        var log = NotchAgentFinishLog()
-        log.ended(.claude, at: now)
-        var next = log.update(working: [.claude, .codex], now: now)
-        suite.expect(log.finished.isEmpty && next == now.addingTimeInterval(NotchAgentFinishLog.wait),
-                     "a reported end waits for its agent to stop working")
-        next = log.update(working: [.codex], now: now.addingTimeInterval(1))
-        suite.expect(log.finished == [.claude] && next == now.addingTimeInterval(1 + NotchAgentFinishLog.check),
+        func at(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(seconds) }
+        func turn(_ provider: AgentProvider, _ id: String) -> AgentLiveSession {
+            AgentLiveSession(id: id, provider: provider, started: now, lastActivity: now, model: "", project: "",
+                             tokens: AgentTokens(), cost: 0)
+        }
+        func end(_ session: AgentLiveSession) -> AgentTurnEnd {
+            AgentTurnEnd(provider: session.provider, session: session.id)
+        }
+        let claude = turn(.claude, "claude-a"), codex = turn(.codex, "codex-a")
+        var log = Log()
+        log.update(live: [claude, codex], now: now)
+        log.ended(end(claude), at: now)
+        var next = log.update(live: [claude, codex], now: now)
+        suite.expect(log.finished.isEmpty && next == at(Log.wait), "a reported end waits for its agent to stop working")
+        suite.expect(log.finished(live: [codex]) == [.claude],
+                     "a reported end counts as soon as its agent leaves the list, before the log moves on")
+        next = log.update(live: [codex], now: at(1))
+        suite.expect(log.finished == [.claude] && next == at(1 + Log.check),
                      "the check starts when the agent leaves the working list")
-        log.update(working: [.codex], now: now.addingTimeInterval(1 + NotchAgentFinishLog.check - 0.1))
+        log.update(live: [codex], now: at(1 + Log.check - 0.1))
         suite.expect(log.finished == [.claude], "the check holds for its moment")
-        next = log.update(working: [.codex], now: now.addingTimeInterval(1 + NotchAgentFinishLog.check))
+        next = log.update(live: [codex], now: at(1 + Log.check))
         suite.expect(log.finished.isEmpty && next == nil, "then the wing goes")
 
-        log.ended(.codex, at: now)
-        log.update(working: [.codex], now: now.addingTimeInterval(NotchAgentFinishLog.wait))
+        log.ended(end(codex), at: now)
+        log.update(live: [codex], now: at(Log.wait))
         suite.expect(log.finished.isEmpty && log.reported.isEmpty,
                      "an agent still at work after its turn's end, on another turn, shows no check")
 
-        log.ended(.claude, at: now)
-        log.update(working: [], now: now)
-        log.update(working: [.claude], now: now.addingTimeInterval(0.5))
+        log.ended(end(claude), at: now)
+        log.update(live: [], now: now)
+        log.update(live: [claude], now: at(0.5))
         suite.expect(log.finished.isEmpty, "an agent back at work loses its check at once")
+
+        // Two turns of one agent: only the turn that was its last at work closes its ring.
+        let first = turn(.claude, "claude-1"), second = turn(.claude, "claude-2")
+        var interrupted = Log()
+        interrupted.update(live: [first, second], now: now)
+        interrupted.ended(end(first), at: now)
+        interrupted.update(live: [second], now: at(1))
+        suite.expect(interrupted.finished(live: []).isEmpty, "a stale end never counts once its agent's other turn goes")
+        interrupted.update(live: [], now: at(3))
+        suite.expect(interrupted.finished.isEmpty,
+                     "a turn interrupted moments after another of its agent's finished closes no ring green")
+        var together = Log()
+        together.update(live: [first, second], now: now)
+        together.ended(end(first), at: now)
+        together.update(live: [], now: at(1))
+        suite.expect(together.finished.isEmpty, "two turns gone at once, one without a report, close no ring green")
+        var both = together
+        both.update(live: [first, second], now: at(2))
+        both.ended(end(first), at: at(2))
+        both.ended(end(second), at: at(2))
+        both.update(live: [], now: at(3))
+        suite.expect(both.finished == [.claude], "two turns both finished close the ring")
+        var lastFinished = Log()
+        lastFinished.update(live: [first, second], now: now)
+        lastFinished.update(live: [first], now: at(1))
+        lastFinished.ended(end(first), at: at(2))
+        lastFinished.update(live: [], now: at(3))
+        suite.expect(lastFinished.finished == [.claude], "the last turn at work finishing closes the ring")
+
+        // The finish notice covers the strip: the check waits, and starts as the strip comes back.
+        var covered = Log()
+        covered.update(live: [claude], now: now)
+        covered.ended(end(claude), at: now)
+        covered.cover(at: now)
+        covered.update(live: [], now: at(1))
+        next = covered.update(live: [], now: at(1 + Log.check + 2))
+        suite.expect(covered.finished == [.claude] && next == at(Log.coverLimit),
+                     "a check waits under the notice that covers it")
+        covered.uncover(at: at(5), stripShows: true)
+        next = covered.update(live: [], now: at(5))
+        suite.expect(covered.finished == [.claude] && next == at(5 + Log.check),
+                     "the check starts again as the strip comes back")
+        covered.update(live: [], now: at(5 + Log.check))
+        suite.expect(covered.finished.isEmpty, "and holds only its moment")
+        var elsewhere = Log()
+        elsewhere.update(live: [claude], now: now)
+        elsewhere.ended(end(claude), at: now)
+        elsewhere.cover(at: now)
+        elsewhere.update(live: [], now: at(1))
+        elsewhere.uncover(at: at(5), stripShows: false)
+        suite.expect(elsewhere.finished.isEmpty, "a check goes with the notice when the strip does not come back")
+        var unheard = Log()
+        unheard.update(live: [claude], now: now)
+        unheard.ended(end(claude), at: now)
+        unheard.cover(at: now)
+        unheard.update(live: [], now: at(1))
+        unheard.update(live: [], now: at(Log.coverLimit))
+        suite.expect(unheard.finished.isEmpty && unheard.covered == nil, "a notice never heard leaving holds a check no longer than its limit")
     }
 }
 

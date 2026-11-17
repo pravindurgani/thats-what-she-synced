@@ -103,7 +103,9 @@ final class NotchAgentCometView: NSView {
         if ending {
             show(finished: finished, animated: true, from: wasFinished)
         } else if !configured {
-            show(finished: finished, animated: false, from: finished)
+            // A ring that first shows finished, as the strip comes back from
+            // the finish notice that covered it, still closes as it arrives.
+            show(finished: finished, animated: finished, from: false)
         }
         configured = true
         sync()
