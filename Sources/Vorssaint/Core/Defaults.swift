@@ -930,6 +930,10 @@ enum DefaultsKey {
     static let notchAgentsLimitDisplay = "notchAgentsLimitDisplay"
     static let notchAgentsLimitFocus = "notchAgentsLimitFocus"
     static let notchAgentsLiveActivity = "notchAgentsLiveActivity"
+    /// The companion's colours glowing in the island while no song does
+    /// (NotchIdleGlowPreferences). On unless set false; Terminal only, like
+    /// the song mode's switch, and read again on the next launch.
+    static let notchIdleGlowEnabled = "notchIdleGlowEnabled"
     static let notchAgentsReadout = "notchAgentsReadout"
     static let notchAgentsFinishAlert = "notchAgentsFinishAlert"
     static let notchAgentsFinishMinimum = "notchAgentsFinishMinimum"

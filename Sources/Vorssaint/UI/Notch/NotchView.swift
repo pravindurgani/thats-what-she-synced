@@ -6,6 +6,7 @@ import SwiftUI
 
 struct NotchView: View {
     @ObservedObject private var songPaint = NotchSongPaint.shared
+    @ObservedObject private var idlePaint = NotchIdlePaint.shared
     @ObservedObject var service: NotchService
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var music = NotchMusicService.shared
@@ -34,16 +35,17 @@ struct NotchView: View {
                 transaction.animation = .easeInOut(duration: NotchMascotMotion.restCrossfade)
             }
             .frame(width: service.surfaceSize.width, height: service.surfaceSize.height, alignment: .top)
-            // Words take the song's tints while the island wears it; otherwise
+            // Words take the song's tints while the island wears it, or the
+            // companion's while the open island wears its colours; otherwise
             // white at the island's own levels (measured: 0.502 and 0.251), so
-            // nothing changes without a song.
+            // nothing changes on a plain ground.
             .animation(NotchSongMotion.fade) {
-                $0.foregroundStyle(songPaint.text?.primary ?? .white,
-                                   songPaint.text?.secondary ?? .white.opacity(0.502),
-                                   songPaint.text?.tertiary ?? .white.opacity(0.251))
+                $0.foregroundStyle(wornText?.primary ?? .white,
+                                   wornText?.secondary ?? .white.opacity(0.502),
+                                   wornText?.tertiary ?? .white.opacity(0.251))
             }
             .foregroundStyle(.white)
-            .environment(\.notchSongText, songPaint.text)
+            .environment(\.notchSongText, wornText)
             // The window server leaves SwiftUI content that ignores hit tests
             // out of its own hit test unless it is fully opaque. The backdrop
             // ignores them (allowsHitTesting(false) in NotchSurfaceBackground),
@@ -72,6 +74,9 @@ struct NotchView: View {
             .tint(.white)
             .accessibilityIdentifier("notch.surface")
     }
+
+    /// The tints the island's words wear: a song's first, then the companion's.
+    private var wornText: NotchSongText? { songPaint.text ?? idlePaint.text }
 
     private var usesGlassSurface: Bool {
 #if compiler(>=6.2)

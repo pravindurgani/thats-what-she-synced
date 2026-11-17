@@ -540,8 +540,12 @@ final class NotchService: ObservableObject {
         return NotchSupport.showsMusicActivity(isPlaying: held || playback?.isPlaying == true)
     }
 
+    /// An agent at work, or one whose turn just ended, which keeps its wing
+    /// a moment longer to close its ring.
     var hasAgentActivity: Bool {
-        NotchAgentSupport.showsLiveActivity() && !AgentUsageService.shared.snapshot.live.isEmpty
+        guard NotchAgentSupport.showsLiveActivity() else { return false }
+        let live = AgentUsageService.shared.snapshot.live
+        return !live.isEmpty || !NotchAgentFinishes.shared.finished(live: live).isEmpty
     }
 
     var hasCalendarActivity: Bool {
@@ -684,7 +688,7 @@ final class NotchService: ObservableObject {
         case .downloads:
             let name = NotchDownloadService.shared.items.first { $0.active && !$0.completed }?.name
             return geometry.compactDownloadGeometry(wing: NotchDownloadSupport.compactWing(for: name, in: geometry))
-        case .agents: return geometry.compactAgentGeometry(wing: agentStripWing(in: geometry))
+        case .agents: return agentStripGeometry(in: geometry)
         case .watch: return geometry.compactWatchGeometry(wing: watchStripWing(in: geometry))
         case .calendar:
             return geometry.compactCalendarGeometry(wing: calendarStripWing(for: companion, in: geometry),
@@ -800,27 +804,42 @@ final class NotchService: ObservableObject {
             ]).width.rounded(.up)
     }
 
-    /// The wider of the two sides, the reading or the working agents' marks,
-    /// with the clearance from the silhouette's curve that the strip keeps
-    /// and air beside the camera.
-    private func agentStripWing(in geometry: NotchGeometry) -> CGFloat {
-        let provisional = geometry.compactAgentGeometry(wing: NotchAgentSupport.stripWingRange.lowerBound)
-        let size = NotchAgentSupport.stripTextSize(height: provisional.compactActivityContentHeight)
-        let shape = NotchAgentSupport.readingShape(NotchAgentSupport.stripReading(
-            AgentUsageService.shared.snapshot, readout: NotchAgentSupport.readout(),
-            display: NotchAgentSupport.limitDisplay(), focus: NotchAgentSupport.limitFocus(), now: Date()))
-        let width = (shape as NSString).size(withAttributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .medium)
-        ]).width
-        let reading = width.rounded(.up) + provisional.compactActivityEdgeInset(boxHeight: size * 0.72, radius: 0)
-        // The marks on the other side, drawn as the strip draws them: two
-        // working agents share a smaller size, each in a frame wider than it.
-        let working = Set(AgentUsageService.shared.snapshot.live.map(\.provider)).count
-        let mark = CGFloat(working > 1 ? 11 : 14)
-        let frame = mark * 1.45 + 1
-        let marks = CGFloat(max(1, working)) * frame + CGFloat(max(0, working - 1))
-            + provisional.compactActivityEdgeInset(boxHeight: mark + 4, radius: (mark + 4) / 2)
-        return max(reading, marks) + NotchAgentSupport.stripCameraGap
+    /// One agent's strip, or two agents' wider wings, each a side.
+    private func agentStripGeometry(in geometry: NotchGeometry) -> NotchGeometry {
+        let model = NotchAgentFinishes.shared.model(live: AgentUsageService.shared.snapshot.live)
+        return geometry.compactAgentGeometry(wing: agentStripWing(model, in: geometry), twoSided: model.twoSided)
+    }
+
+    /// The width each wing needs, drawn as the strip draws it, with the
+    /// clearance from the silhouette's curve and air beside the camera. One
+    /// agent: the wider of its ring and the chosen reading. Two: the wider
+    /// of the two agents' ring and reading, which both wings take.
+    private func agentStripWing(_ model: NotchAgentStripModel, in geometry: NotchGeometry) -> CGFloat {
+        let provisional = geometry.compactAgentGeometry(wing: NotchAgentSupport.stripWingRange.lowerBound,
+                                                        twoSided: model.twoSided)
+        let height = provisional.compactActivityContentHeight
+        let ring = NotchAgentWings.ringDiameter(contentHeight: height)
+        let ringInset = provisional.compactActivityEdgeInset(boxHeight: ring, radius: ring / 2)
+        let snapshot = AgentUsageService.shared.snapshot
+        let readout = NotchAgentSupport.readout(), display = NotchAgentSupport.limitDisplay()
+        let focus = NotchAgentSupport.limitFocus(), now = Date()
+        func reading(_ wing: NotchAgentWing) -> String {
+            NotchAgentWings.reading(snapshot, sessions: NotchAgentFinishes.shared.sessions(for: wing, live: model.live),
+                                    finished: wing.finished, readout: readout, display: display, focus: focus, now: now)
+        }
+        if model.twoSided {
+            let size = NotchAgentWings.readingSize(contentHeight: height)
+            return NotchAgentWings.wingWidth(ring: ring, ringInset: ringInset,
+                                             readings: model.wings.map { NotchAgentWings.readingWidth(reading($0), size: size) },
+                                             readingInset: 0, twoSided: true, cameraGap: NotchAgentSupport.stripCameraGap)
+        }
+        let size = NotchAgentSupport.stripTextSize(height: height)
+        let text = model.wings.first.map(reading) ?? NotchAgentSupport.stripReading(
+            snapshot, readout: readout, display: display, focus: focus, now: now)
+        return NotchAgentWings.wingWidth(ring: ring, ringInset: ringInset,
+                                         readings: [NotchAgentWings.readingWidth(text, size: size)],
+                                         readingInset: provisional.compactActivityEdgeInset(boxHeight: size * 0.72, radius: 0),
+                                         twoSided: false, cameraGap: NotchAgentSupport.stripCameraGap)
     }
 
     var musicShowsVolume: Bool { NotchSupport.showsMusicVolume() }
@@ -1089,10 +1108,18 @@ final class NotchService: ObservableObject {
             return layout.downloadSurface(name: download?.name ?? FeatureStrings.notchFiles(language).downloadsTitle,
                                           hasProgress: download?.fraction != nil, geometry: geometry, language: language)
         case .agents:
-            let reading = NotchAgentSupport.stripReading(AgentUsageService.shared.snapshot, readout: NotchAgentSupport.readout(),
-                                                         display: NotchAgentSupport.limitDisplay(),
-                                                         focus: NotchAgentSupport.limitFocus(), now: Date())
-            return layout.agentSurface(reading: reading, working: working, geometry: geometry)
+            // Each wing's own reading, as the capsule draws it: one agent's
+            // chosen reading, or two agents' each beside its ring.
+            let snapshot = AgentUsageService.shared.snapshot
+            let finishes = NotchAgentFinishes.shared
+            let model = finishes.model(live: snapshot.live)
+            let readings = model.wings.map { wing in
+                NotchAgentWings.reading(snapshot, sessions: finishes.sessions(for: wing, live: model.live),
+                                        finished: wing.finished, readout: NotchAgentSupport.readout(),
+                                        display: NotchAgentSupport.limitDisplay(),
+                                        focus: NotchAgentSupport.limitFocus(), now: Date())
+            }
+            return layout.agentSurface(readings: readings, geometry: geometry)
         case .calendar:
             guard let countdown = NotchCalendarService.shared.countdown else { return geometry.restingSize(showsContent: false) }
             if let companion {
@@ -4268,6 +4295,16 @@ final class NotchService: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.syncMenuSpaceMonitoring()
+                    self?.objectWillChange.send()
+                    self?.refreshPresentation()
+                }.store(in: &subscriptions)
+            // A turn ending closes its agent's ring and holds its wing a
+            // moment, which can keep the strip or change its wings.
+            let finishes = NotchAgentFinishes.shared
+            finishes.start()
+            finishes.$log.map(\.finished).removeDuplicates().dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
                     self?.objectWillChange.send()
                     self?.refreshPresentation()
                 }.store(in: &subscriptions)

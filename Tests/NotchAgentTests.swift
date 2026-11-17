@@ -45,6 +45,7 @@ enum NotchAgentTests {
         formatting(suite)
         AgentUsageEventDeliveryTests.run(suite)
         NotchAgentAnimationTests.run { suite.expect($0, $1) }
+        NotchAgentWingsTests.run(suite)
     }
 
     private static func line(_ json: String) -> Data { Data(json.utf8) }
