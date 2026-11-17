@@ -111,7 +111,7 @@ a:hover { color: var(--beet); }
 html.paused .ctl .i-play { display: block; }
 .controls .note { margin-left: auto; font-family: var(--mono); font-size: 15px; color: var(--muted); }
 html:not(.ready) .js-only { visibility: hidden; }
-html:not(.js) .js-only, html.static .js-only { display: none; }
+html:not(.js) :is(.js-only, .pickhint), html.static :is(.js-only, .pickhint) { display: none; }
 
 /* ---------- palettes: c1..c3 drive glows; song* recolour accents only ---------- */
 .pal-scarn { --c1: #2A5FC4; --c2: #D2343F; --c3: #8FB4F2; }
@@ -387,7 +387,8 @@ html:not(.js) .js-only, html.static .js-only { display: none; }
 .sheetgroup + .sheetgroup .grouplabel { padding-top: 24px; }
 .crow { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 18px; align-items: center; width: 100%; padding: 12px 14px 12px 12px; min-height: 88px; text-align: left; cursor: pointer;
         background: transparent; border: 0; border-bottom: 1px solid var(--beige); color: var(--ink); font: inherit; border-radius: 0; transition: background-color .15s ease; }
-.crow:hover { background: #ECE3C6; }
+.crow:not(:disabled):hover { background: #ECE3C6; }
+.crow:disabled { cursor: default; }
 .crow[aria-pressed="true"] { background: var(--manila); }
 .crow .ctile { width: 64px; height: 64px; }
 .crow .cn { display: block; font-family: var(--display-75); font-weight: 800; font-stretch: 75%; font-size: 23px; line-height: 1.1; text-transform: uppercase; color: var(--navy); }
@@ -574,6 +575,8 @@ html.paused *, html.paused *::before, html.paused *::after,
 .rest *, .rest *::before, .rest *::after { animation-play-state: paused !important; }
 /* entrances never wait on a paused clock: they finish instantly */
 html.paused :is(.slot.enter, .lower.wipe .nm, .lower.wipe .rl, .shot.snap, .boot .pad, .boot .glow) { animation: none !important; }
+/* the looping demos wait for site.js, which sets .live once Pause works (WCAG 2.2.2); until then they hold a still frame */
+html:not(.live) :is(.mem, .dn, .ag) :is(*, *::before, *::after) { animation: none !important; }
 /* no JS (or JS that never arrived): a finished, still page */
 html:not(.js) *, html:not(.js) *::before, html:not(.js) *::after,
 html.static *, html.static *::before, html.static *::after { animation: none !important; transition: none !important; }

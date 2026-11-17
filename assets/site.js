@@ -125,12 +125,20 @@ function setPaused(paused) {
 
 $$('[data-action="pause"]').forEach((b) => b.addEventListener('click', () => setPaused(!state.paused)));
 $$('[data-scene-btn]').forEach((b) => b.addEventListener('click', () => go(b.dataset.sceneBtn)));
+// when the screen test is out of view (it stops being sticky on short screens), bring it back so a pick is seen
+function showTest() {
+  const r = test.getBoundingClientRect();
+  if (r.top < 0 || r.bottom > innerHeight) {
+    $('.screentest').scrollIntoView({ block: 'nearest', behavior: reduce.matches ? 'auto' : 'smooth' });
+  }
+}
 $$('.crow[data-who]').forEach((row) => row.addEventListener('click', () => {
   state.who = row.dataset.who;
   state.last = 'cast';
   [heroIsl, testIsl].forEach(putMember);
   renderTest();
   go('idle');
+  showTest();
 }));
 $$('.crow[data-dancer]').forEach((row) => row.addEventListener('click', () => {
   state.dancer = row.dataset.dancer;
@@ -138,6 +146,7 @@ $$('.crow[data-dancer]').forEach((row) => row.addEventListener('click', () => {
   [heroIsl, testIsl].forEach(putDancer);
   renderTest();
   go('music');
+  showTest();
 }));
 
 // off-screen regions rest (their loops pause); the hero also stops its cycle
@@ -267,6 +276,9 @@ if (!reduce.matches && 'IntersectionObserver' in window) {
 // ---------- start ----------
 putDancer(testIsl);
 markScrollers();
+$$('.crow').forEach((row) => { row.disabled = false; });
 root.classList.remove('static');
 root.classList.add('ready');
 setPaused(state.paused);
+// Pause is wired, so the looping demos may start
+root.classList.add('live');
