@@ -259,7 +259,7 @@ struct NotchMusicView: View {
             Color.clear.frame(width: slot).overlay { leading() }
             middle(slot).frame(width: slot * 3)
             Color.clear.frame(width: slot).overlay {
-                if AppFeature.mixer.isAvailable { NotchMusicOutputButton() }
+                if AppFeature.mixer.isAvailable { NotchMusicOutputButton(onColor: palette != nil) }
             }
         }
         .frame(height: NotchLayout.musicTransportHeight)
@@ -446,6 +446,8 @@ private enum NotchPlayerApps {
 /// The output the island plays to, at the end of the player's row as on a
 /// phone's island: its glyph opens the list of outputs, and the mixer.
 private struct NotchMusicOutputButton: View {
+    /// Over the music's colours, set by the player, which knows its palette.
+    var onColor = false
     @ObservedObject private var notch = NotchService.shared
     @ObservedObject private var mixer = AppVolumeMixer.shared
     @ObservedObject private var l10n = L10n.shared
@@ -470,7 +472,7 @@ private struct NotchMusicOutputButton: View {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .semibold))
                 // Brighter over the music's colours, where 0.55 white loses its 3:1.
-                .foregroundStyle(.white.opacity(NotchArtworkPalette.of(NotchMusicService.shared.artwork) == nil ? 0.55 : 0.85))
+                .foregroundStyle(.white.opacity(onColor ? 0.85 : 0.55))
                 .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }

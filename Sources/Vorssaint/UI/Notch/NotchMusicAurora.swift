@@ -473,14 +473,14 @@ final class NotchMusicAuroraView: NSView {
         let resting = bounce < 0.01 && appliedBounce < 0.01
         if resting { bounce = 0 } else { appliedBounce = bounce }
         if !resting {
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(onset ? 0.06 : 0.09)
-        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-        scrim.opacity = Float(1 - min(1 - Self.thinnestVeil, bounce * 0.55))
-        let swell = 1 + 0.07 * bounce
-        stage.transform = CATransform3DMakeScale(swell, swell, 1)
-        lift.transform = CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)
-        CATransaction.commit()
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(onset ? 0.06 : 0.09)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+            scrim.opacity = Float(1 - min(1 - Self.thinnestVeil, bounce * 0.55))
+            let swell = 1 + 0.07 * bounce
+            stage.transform = CATransform3DMakeScale(swell, swell, 1)
+            lift.transform = CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)
+            CATransaction.commit()
         }
         if resting { appliedBounce = 0 }
 
@@ -627,17 +627,22 @@ final class NotchMusicAuroraView: NSView {
             blob.position = CGPoint(x: size.width * rest.x, y: size.height * rest.y)
         }
         CATransaction.commit()
+        // The island opening, or lyrics unfolding, resizes the view frame by
+        // frame. The drift is made, or its reach re-made, once that settles,
+        // so it starts from rest at the size it will run at.
         if !motionInstalled {
-            installMotion()
+            scheduleMotion(keepingPhase: false)
         } else if installedSize.width > 1, installedSize.height > 1,
                   abs(size.width / installedSize.width - 1) > 0.1 || abs(size.height / installedSize.height - 1) > 0.1 {
-            // The island opening, or lyrics unfolding, resizes it frame by
-            // frame; the drift's reach is re-made once it has settled.
-            reinstall?.cancel()
-            let work = DispatchWorkItem { [weak self] in self?.installMotion(keepingPhase: true) }
-            reinstall = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+            scheduleMotion(keepingPhase: true)
         }
+    }
+
+    private func scheduleMotion(keepingPhase: Bool) {
+        reinstall?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.installMotion(keepingPhase: keepingPhase) }
+        reinstall = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
     override func viewDidMoveToWindow() {
@@ -655,7 +660,7 @@ final class NotchMusicAuroraView: NSView {
         occlusionObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
         ) { [weak self] _ in self?.syncClock() }
-        installMotion()
+        scheduleMotion(keepingPhase: false)
     }
 }
 
