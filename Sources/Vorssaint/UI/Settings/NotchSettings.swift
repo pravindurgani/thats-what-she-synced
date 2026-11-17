@@ -31,6 +31,7 @@ struct NotchSettings: View {
     @AppStorage(DefaultsKey.notchBrowserCovers) private var browserCovers = false
     @AppStorage(DefaultsKey.notchQueueEnabled) private var queueEnabled = true
     @AppStorage(DefaultsKey.notchLiveEqualizer) private var liveEqualizer = false
+    @AppStorage(DefaultsKey.notchMusicSide) private var musicSide = NotchMusicSide.bars.rawValue
     @AppStorage(DefaultsKey.notchEnabled) private var enabled = false
     @AppStorage(DefaultsKey.notchMascotEnabled) private var mascotEnabled = false
     @AppStorage(DefaultsKey.notchMascotHidesWhenIdle) private var mascotHidesWhenIdle = true
@@ -455,6 +456,12 @@ struct NotchSettings: View {
             SettingsFeatureSwitchRow(symbol: "waveform", title: music.liveEqualizer,
                                      caption: NotchAudioLevelSupport.isSupported ? music.liveEqualizerHint : music.liveEqualizerUnavailable,
                                      isOn: $liveEqualizer, feature: .notchLiveEqualizer, enabled: NotchAudioLevelSupport.isSupported)
+            let dancers = FeatureStrings.notchDancers(l10n.language)
+            SettingsMenuRow(symbol: "figure.dance", title: dancers.musicSide, selection: $musicSide) {
+                ForEach(NotchMusicSide.allCases) { side in
+                    Text(dancers.name(side)).tag(side.rawValue)
+                }
+            }
         case .notifications:
             let notifications = FeatureStrings.notchNotifications(l10n.language)
             switchRow("bell.slash", notifications.hideSystemBanner, caption: notifications.hideSystemBannerHint,

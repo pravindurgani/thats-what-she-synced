@@ -56,6 +56,13 @@ struct NotchMusicStrip: View {
         max(0, min(geometry.compactMusicBarsInset,
                    geometry.compactActivityWingWidth - NotchLayout.compactMusicBarsWidth - innerInset))
     }
+    /// The dance on the camera's right in place of the bars, when the
+    /// "Music side" setting asks for one and the wing has room for it.
+    private var routine: NotchDanceRoutine? {
+        let side = NotchMusicSide.current
+        guard side.dances, Layout.fitsDancers(geometry), let track = playback?.track else { return nil }
+        return NotchDanceSelection.routine(for: side, track: track)
+    }
 
     private var title: String { playback?.track.title ?? FeatureStrings.radialMenu(l10n.language).mediaNowPlaying }
     private var artist: String? {
@@ -75,6 +82,7 @@ struct NotchMusicStrip: View {
     var body: some View {
         let wing = geometry.compactActivityWingWidth
         let named = namedWing
+        let dance = routine
         Button { live ? service.activateMusicStrip() : service.openActivity(.music) } label: {
             HStack(spacing: 0) {
                 HStack(spacing: Layout.spacing) {
@@ -99,10 +107,10 @@ struct NotchMusicStrip: View {
                 .frame(width: geometry.compactActivityCameraGap, height: geometry.compactActivityContentHeight)
                 .clipped()
                 HStack {
-                    if wing > 0 { bars }
+                    if wing > 0 { side(dance) }
                 }
                 .padding(.leading, innerInset)
-                .padding(.trailing, barsInset)
+                .padding(.trailing, dance == nil ? barsInset : Layout.dancersInset(geometry))
                 .frame(width: wing, height: geometry.compactActivityContentHeight, alignment: .trailing)
                 .contentShape(Rectangle())
                 .onHover { if live { service.hoverMusicStrip(.bars, entered: $0) } }
@@ -124,17 +132,24 @@ struct NotchMusicStrip: View {
         .frame(width: (named ?? wing) * 2 + geometry.compactActivityCameraGap, alignment: .leading)
     }
 
-    /// The bars, or the button they become while the pointer rests on them.
-    /// Both stay in place and cross-fade, and hidden bars hold still.
-    private var bars: some View {
+    /// The bars or the dancers, or the button they become while the pointer
+    /// rests on them. Both stay in place and cross-fade, and hidden ones hold still.
+    private func side(_ dance: NotchDanceRoutine?) -> some View {
         ZStack {
-            NotchLiveEqualizerBars(isPlaying: playing && !showsControl,
-                                   bars: NotchLayout.compactMusicBarCount,
-                                   barWidth: NotchLayout.compactMusicBarWidth,
-                                   height: geometry.compactMusicBarHeight,
-                                   tint: tint?.color ?? .white,
-                                   tints: NotchArtworkPalette.song(artwork, remembers: false)?.marks)
-                .opacity(showsControl ? 0 : 1)
+            if let dance {
+                NotchDancers(routine: dance, isPlaying: playing && !showsControl,
+                             palette: NotchArtworkPalette.song(artwork, remembers: false),
+                             height: geometry.compactActivityContentHeight)
+                    .opacity(showsControl ? 0 : 1)
+            } else {
+                NotchLiveEqualizerBars(isPlaying: playing && !showsControl,
+                                       bars: NotchLayout.compactMusicBarCount,
+                                       barWidth: NotchLayout.compactMusicBarWidth,
+                                       height: geometry.compactMusicBarHeight,
+                                       tint: tint?.color ?? .white,
+                                       tints: NotchArtworkPalette.song(artwork, remembers: false)?.marks)
+                    .opacity(showsControl ? 0 : 1)
+            }
             if showsControl {
                 NotchMusicStripButton(playing: playing, tint: tint?.color ?? .white,
                                       height: geometry.compactMusicBarHeight)

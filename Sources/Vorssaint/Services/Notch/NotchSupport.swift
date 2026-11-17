@@ -784,6 +784,18 @@ enum NotchMusicStripLayout {
 
     static func showsArtist(_ geometry: NotchGeometry) -> Bool { geometry.compactActivityContentHeight >= 28 }
 
+    /// The dancers' floor fits the right wing beside the camera, clear of
+    /// the strip's rounded end; otherwise the strip shows the bars.
+    static func fitsDancers(_ geometry: NotchGeometry) -> Bool {
+        geometry.compactActivityWingWidth - innerInset(geometry) - geometry.compactMusicDancersInset
+            >= NotchDanceFloor.width - 0.5
+    }
+
+    static func dancersInset(_ geometry: NotchGeometry) -> CGFloat {
+        max(0, min(geometry.compactMusicDancersInset,
+                   geometry.compactActivityWingWidth - NotchDanceFloor.width - innerInset(geometry)))
+    }
+
     private static var measuredWords: (title: String, artist: String?, width: CGFloat)?
 
     /// The wider of the title and the artist below it, measured once per song.
@@ -2502,6 +2514,33 @@ struct NotchGeometry: Equatable {
     private var compactMusicContentWing: CGFloat {
         max(compactMusicArtworkInset + compactMusicArtworkSide,
             compactMusicBarsInset + NotchLayout.compactMusicBarsWidth).rounded(.up)
+    }
+    /// Dancers in place of the bars keep the same even gap from the strip's
+    /// rounded end as everything else in it.
+    var compactMusicDancersInset: CGFloat {
+        compactActivityEdgeInset(boxHeight: NotchDanceFloor.figureBox * NotchDanceFloor.scale(height: compactActivityContentHeight),
+                                 radius: NotchDanceFloor.figureCorner)
+    }
+    private var compactMusicDanceWing: CGFloat {
+        max(compactMusicArtworkInset + compactMusicArtworkSide,
+            compactMusicDancersInset + NotchDanceFloor.width).rounded(.up)
+    }
+    /// The music strip with dancers on the camera's right. Beside a physical
+    /// camera both wings grow to the dancers' floor, so the island stays
+    /// balanced and the cover keeps its place at the left end. Where the
+    /// menus leave less room than that, the strip keeps the bars' wings and
+    /// shows the bars; a simulated camera's wings already hold the dancers
+    /// when the menus allow them their full width.
+    func compactMusicGeometry(dancing: Bool) -> NotchGeometry {
+        guard dancing, isNotched else { return compactMusicGeometry }
+        var compact = self
+        compact.allowsActivityFooter = false
+        let room = compactSideRoom ?? 0
+        let wing = compact.compactMusicDanceWing
+        guard room.isFinite, room >= wing else { return compactMusicGeometry }
+        compact.compactSideRoom = wing
+        compact.minimumWing = wing
+        return compact
     }
     var musicCameraGap: CGFloat { cameraWidth }
     var compactMusicLabelInset: CGFloat {
