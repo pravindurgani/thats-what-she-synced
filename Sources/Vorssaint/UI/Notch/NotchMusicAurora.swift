@@ -211,7 +211,7 @@ enum NotchSongMode {
     /// On unless turned off: `defaults write <bundle id> notchSongModeEnabled -bool false`.
     /// It turns off the island's colour, glow, bubbles, text tints and the
     /// companion's; the player's own cover-tinted controls stay.
-    static var enabled: Bool { UserDefaults.standard.object(forKey: "notchSongModeEnabled") as? Bool ?? true }
+    static var enabled: Bool { NotchSongPreferences.enabled }
 
     /// Pages showing an image the person is judging keep their plain ground.
     private static let plainPages: Set<NotchModule> = [.camera, .captures]
@@ -636,7 +636,6 @@ final class NotchMusicAuroraView: NSView {
     }
 
     private func targetRate() -> Float {
-        // The genre sets the character; the song's drive and the volume lean it.
         // The genre sets the character; the song's drive, the volume and the
         // cover's liveliness lean it.
         let lean = Float((0.75 + 0.6 * min(1, drive)) * (0.85 + 0.3 * loudness) * (0.85 + 0.3 * coverEnergy))

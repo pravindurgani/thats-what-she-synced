@@ -43,7 +43,9 @@ struct NotchArtworkPalette: Equatable {
         marks = pure.map { $0.notchToned(maxLuminance: 0.8, minLuminance: 0.64) }
         plate = pure[0].notchToned(maxLuminance: 0.22, minLuminance: 0.09)
         textPrimary = words.notchToned(maxLuminance: 0.94, minLuminance: 0.88)
-        textSecondary = words.notchToned(maxLuminance: 0.5, minLuminance: 0.42)
+        // Bright enough that secondary icons on the colour, as the player's
+        // lyrics and queue buttons, clear 3:1 on the brightest covers.
+        textSecondary = words.notchToned(maxLuminance: 0.56, minLuminance: 0.48)
         textTertiary = words.notchToned(maxLuminance: 0.26, minLuminance: 0.2)
         companionLight = pure[0].notchToned(maxLuminance: 0.86, minLuminance: 0.76)
         companionShade = pure[min(1, pure.count - 1)].notchToned(maxLuminance: 0.6, minLuminance: 0.48)
@@ -325,8 +327,29 @@ import SwiftUI
 enum NotchSongLook: String {
     case vivid, duotone
 
-    static var current: NotchSongLook {
-        NotchSongLook(rawValue: UserDefaults.standard.string(forKey: "notchSongLook") ?? "") ?? .vivid
+    static var current: NotchSongLook { NotchSongPreferences.look }
+}
+
+/// The song mode's two settings, read once and again only after a change,
+/// since the island asks for them on every frame of a resize. Main thread only.
+enum NotchSongPreferences {
+    private static var cached: (look: NotchSongLook, enabled: Bool)?
+    private static var observer: NSObjectProtocol?
+
+    static var look: NotchSongLook { read().look }
+    static var enabled: Bool { read().enabled }
+
+    private static func read() -> (look: NotchSongLook, enabled: Bool) {
+        if let cached { return cached }
+        if observer == nil {
+            observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+                                                              object: nil, queue: .main) { _ in cached = nil }
+        }
+        let defaults = UserDefaults.standard
+        let fresh = (look: NotchSongLook(rawValue: defaults.string(forKey: "notchSongLook") ?? "") ?? .vivid,
+                     enabled: defaults.object(forKey: "notchSongModeEnabled") as? Bool ?? true)
+        cached = fresh
+        return fresh
     }
 }
 
