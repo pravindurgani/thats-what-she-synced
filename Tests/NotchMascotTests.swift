@@ -29,33 +29,206 @@ enum NotchMascotTests {
         dropletContracts(suite)
         calendarContracts(suite)
         centeringContracts(suite)
+        castContracts(suite)
+        shuffleContracts(suite)
     }
 
     /// Placed by its box, a minimal body sat below the middle it was given,
     /// a capsule's included: the box keeps room above it for the robot's
-    /// antenna. Every look now meets the line it is centred on.
+    /// antenna. Every look now meets the line it is centred on, each of the
+    /// cast by what it always shows, and a shuffle as whichever it deals.
     private static func centeringContracts(_ suite: TestSuite) {
         for style in NotchMascotStyle.allCases {
             for shape in NotchMascotShape.allCases {
-                let look = NotchMascotLook(style: style, shape: shape, palette: .pearl)
-                for size: CGFloat in [10, 16, 18, 20] {
-                    let middle: CGFloat = 15
-                    let boxTop = middle - NotchMascotGeometry.figureOffset(look) * size - size / 2
-                    let figure: CGRect
-                    if style == .robot {
-                        let parts = NotchMascotGeometry.robot(size: size)
-                        figure = [parts.ears, parts.antenna, parts.bulb]
-                            .reduce(parts.head.boundingBoxOfPath) { $0.union($1.boundingBoxOfPath) }
-                    } else {
-                        figure = NotchMascotGeometry.body(shape, size: size).boundingBoxOfPath
+                let chosen = NotchMascotLook(style: style, shape: shape, palette: .pearl)
+                let drawn = style == .shuffle ? NotchMascotStyle.cast.map { chosen.dealing($0) } : [chosen]
+                for look in drawn {
+                    for size: CGFloat in [10, 16, 18, 20] {
+                        let middle: CGFloat = 15
+                        let boxTop = middle - NotchMascotGeometry.figureOffset(look) * size - size / 2
+                        let figure: CGRect
+                        if look.style == .robot {
+                            let parts = NotchMascotGeometry.robot(size: size)
+                            figure = [parts.ears, parts.antenna, parts.bulb]
+                                .reduce(parts.head.boundingBoxOfPath) { $0.union($1.boundingBoxOfPath) }
+                        } else if look.style.isCast {
+                            figure = NotchMascotGeometry.castOutline(look.style, size: size)
+                                .reduce(CGRect.null) { $0.union($1.boundingBoxOfPath) }
+                        } else {
+                            figure = NotchMascotGeometry.body(shape, size: size).boundingBoxOfPath
+                        }
+                        suite.expect(abs(boxTop + figure.midY - middle) < 0.001,
+                                     "a \(style.rawValue) \(look.style.rawValue) \(shape.rawValue) companion of "
+                                        + "\(size) points is centred on its line")
                     }
-                    suite.expect(abs(boxTop + figure.midY - middle) < 0.001,
-                                 "a \(style.rawValue) \(shape.rawValue) companion of \(size) points is centred on its line")
                 }
             }
         }
         suite.expect(NotchMascotGeometry.figureOffset(.standard) > 0.03,
                      "a minimal ball sits low in its box, which the placement makes up for")
+    }
+
+    /// The cast: five members that each keep two eyes on their own face,
+    /// fit their square, and wear a song only where it keeps them accurate.
+    private static func castContracts(_ suite: TestSuite) {
+        suite.expect(NotchMascotStyle.cast == [.scarn, .goldenface, .jello, .mug, .beet]
+                     && NotchMascotStyle.cast.allSatisfy(\.isCast)
+                     && ![NotchMascotStyle.minimal, .robot, .shuffle].contains(where: \.isCast),
+                     "the cast is five members, apart from the minimal body, the robot and the shuffle")
+        suite.expect(NotchMascotStyle.pickerOrder.first == .shuffle
+                     && Set(NotchMascotStyle.pickerOrder) == Set(NotchMascotStyle.allCases)
+                     && NotchMascotStyle.pickerOrder.count == NotchMascotStyle.allCases.count,
+                     "Settings offers every style once, Shuffle first")
+        suite.expect(NotchMascotStyle.minimal.rawValue == "minimal" && NotchMascotStyle.robot.rawValue == "robot"
+                     && ["scarn", "goldenface", "jello", "mug", "beet", "shuffle"].allSatisfy {
+                         NotchMascotStyle(rawValue: $0) != nil
+                     },
+                     "the upstream styles keep their saved names, and the cast and shuffle have their own")
+        let domain = "com.vorssaint.tests.notch-mascot-cast"
+        let defaults = UserDefaults(suiteName: domain)!
+        defaults.removePersistentDomain(forName: domain)
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set("shuffle", forKey: DefaultsKey.notchMascotStyle)
+        let shuffled = NotchMascotSupport.look(in: defaults)
+        defaults.set("beet", forKey: DefaultsKey.notchMascotStyle)
+        suite.expect(shuffled.style == .shuffle && NotchMascotSupport.look(in: defaults).style == .beet,
+                     "Shuffle and each member are read back as chosen")
+        suite.expect(NotchMascotStyle.cast.allSatisfy { shuffled.dealing($0).style == $0 }
+                     && shuffled.dealing(.robot).style == .shuffle
+                     && NotchMascotLook.standard.dealing(.mug) == .standard
+                     && NotchMascotLook(style: .jello, shape: .ball, palette: .pearl).dealing(.mug).style == .jello,
+                     "a shuffle is drawn as the member it dealt, and any other style as itself")
+
+        let size: CGFloat = 20
+        for member in NotchMascotStyle.cast {
+            let face = NotchMascotLook(style: member, shape: .ball, palette: .pearl).face
+            let region = NotchMascotGeometry.castFaceRegion(member, size: size)
+            let eyes = [face.leftEye, face.rightEye].map { CGPoint(x: $0.x * size, y: $0.y * size) }
+            // The whole open eye, not only its middle, is on the face.
+            let onFace = eyes.allSatisfy { eye in
+                let half = CGSize(width: face.eyeSize.width * size / 2, height: face.eyeSize.height * size / 2)
+                return [CGPoint(x: eye.x - half.width, y: eye.y), CGPoint(x: eye.x + half.width, y: eye.y),
+                        CGPoint(x: eye.x, y: eye.y - half.height), CGPoint(x: eye.x, y: eye.y + half.height)]
+                    .allSatisfy { region?.contains($0) == true }
+            }
+            suite.expect(region != nil && onFace && abs(face.leftEye.y - face.rightEye.y) < 0.001
+                         && face.rightEye.x > face.leftEye.x,
+                         "\(member.rawValue) keeps two eyes side by side on its own face")
+            let box = NotchMascotGeometry.castBounds(member, size: size)
+            suite.expect(box.minX >= 0 && box.minY >= 0 && box.maxX <= size && box.maxY <= size
+                         && box.width > size * 0.55 && box.height > size * 0.6,
+                         "\(member.rawValue) fills its square without leaving it")
+            suite.expect(abs(NotchMascotGeometry.castBounds(member, size: 1).midX - 0.5) < 0.04,
+                         "\(member.rawValue) stands in the middle of its square")
+        }
+        let mug = NotchMascotGeometry.mug(size: size)
+        suite.expect(mug.steam.count >= 2 && mug.steam.count <= 3 && mug.notes.count == mug.steam.count
+                     && mug.steam.allSatisfy { $0.boundingBoxOfPath.maxY <= mug.rim.boundingBoxOfPath.minY + 1 },
+                     "the mug's two or three wisps rise from above its coffee, each with a note to turn into")
+        let beet = NotchMascotGeometry.beet(size: size)
+        suite.expect(beet.leaves.count == 3 && beet.veins.count == 3 && beet.leafBases.count == 3
+                     && beet.leaves.allSatisfy { $0.boundingBoxOfPath.maxY < beet.bulb.boundingBoxOfPath.minY + 1 },
+                     "the beet's three leaves grow above its bulb")
+
+        // A song tints only the member's accents; its own colours stay.
+        let song = NotchMascotPaint(light: NotchMascotColor(red: 0.5, green: 0.9, blue: 0.95),
+                                    shade: NotchMascotColor(red: 0.1, green: 0.4, blue: 0.8))
+        let resting = NotchMascotLook(style: .scarn, shape: .ball, palette: .mint, followsSong: true)
+        let rest = NotchMascotCastTint(look: resting)
+        let singing = NotchMascotCastTint(look: resting.wearing(song))
+        suite.expect(singing.accent == song.shade && singing.rim == song.light && singing.glow == song.light
+                     && singing.wash?.alpha == NotchMascotCastTint.washShare && NotchMascotCastTint.washShare == 0.35,
+                     "a song goes on the tie, the rims, the glow and a 35% wash over the jelly")
+        suite.expect(rest.glow == nil && rest.wash == nil && rest.accent == NotchMascotPalette.mint.shade
+                     && rest.rim == NotchMascotPalette.mint.light
+                     && NotchMascotCastTint(look: NotchMascotLook.standard).accent == NotchMascotCastColor.navy,
+                     "at rest the accents take the chosen colour, navy for pearl, with no glow and no wash")
+        let brief: [(NotchMascotColor, UInt32)] = [
+            (NotchMascotCastColor.suit, 0x1B1B1F), (NotchMascotCastColor.shirt, 0xF4F1E8),
+            (NotchMascotCastColor.gold, 0xE3B23C), (NotchMascotCastColor.goldLight, 0xF7D774),
+            (NotchMascotCastColor.jello, 0xF4D03F), (NotchMascotCastColor.stapler, 0x2B2D31),
+            (NotchMascotCastColor.mug, 0xF7F5F0), (NotchMascotCastColor.beet, 0x7A1F3D),
+            (NotchMascotCastColor.beetLight, 0xA12C52), (NotchMascotCastColor.leaf, 0x3F7D3A),
+        ]
+        let accurate = brief.allSatisfy { color, hex in
+            abs(color.red * 255 - CGFloat((hex >> 16) & 0xFF)) < 0.01
+                && abs(color.green * 255 - CGFloat((hex >> 8) & 0xFF)) < 0.01
+                && abs(color.blue * 255 - CGFloat(hex & 0xFF)) < 0.01 && color.alpha == 1
+        }
+        suite.expect(accurate, "the suit, shirt, gold, jelly, stapler, mug, beet and leaves keep the brief's colours")
+    }
+
+    /// The shuffle deals another member for each new song and, with nothing
+    /// playing, once an hour, and never deals the one already out.
+    private static func shuffleContracts(_ suite: TestSuite) {
+        var noRepeat = true, onlyCast = true
+        for previous in [nil] + NotchMascotStyle.cast.map(Optional.some) {
+            var seen = Set<NotchMascotStyle>()
+            for step in 0...100 {
+                let member = NotchMascotShuffle.deal(after: previous, random: Double(step) / 100)
+                noRepeat = noRepeat && member != previous
+                onlyCast = onlyCast && member.isCast
+                seen.insert(member)
+            }
+            for wild in [-1.0, 1.0, 7.0] {
+                let member = NotchMascotShuffle.deal(after: previous, random: wild)
+                noRepeat = noRepeat && member != previous
+                onlyCast = onlyCast && member.isCast
+            }
+            suite.expect(seen.count == NotchMascotStyle.cast.count - (previous == nil ? 0 : 1),
+                         "after \(previous?.rawValue ?? "nothing"), any other member can come out")
+        }
+        suite.expect(noRepeat && onlyCast, "a deal is always one of the cast, never the one already out")
+
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var hand = NotchMascotShuffle.first(at: start, random: 0.42)
+        var consecutive = true
+        for index in 0..<300 {
+            let before = hand.member
+            let dealt = hand.hears(song: "song \(index)", at: start.addingTimeInterval(Double(index) * 200),
+                                   random: Double.random(in: 0..<1))
+            consecutive = consecutive && dealt && hand.member != before && hand.member.isCast
+        }
+        suite.expect(consecutive, "each new song deals another member, never the same twice in a row")
+        let playing = hand.member
+        let now = hand.dealt
+        suite.expect(!hand.hears(song: "song 299", at: now.addingTimeInterval(30), random: 0.9)
+                     && hand.member == playing && hand.dealt == now,
+                     "the same song paused and played again keeps the member it brought")
+        suite.expect(!hand.rests(at: now.addingTimeInterval(3599), random: 0.5) && hand.member == playing
+                     && hand.quietDealDue == now.addingTimeInterval(NotchMascotShuffle.quietInterval)
+                     && NotchMascotShuffle.quietInterval == 3600,
+                     "with nothing playing, nobody new comes out within the hour")
+        suite.expect(hand.rests(at: now.addingTimeInterval(3600), random: 0.5) && hand.member != playing
+                     && !hand.rests(at: now.addingTimeInterval(3700), random: 0.5),
+                     "an hour on, another member comes out, and then not again for an hour")
+
+        let shuffled = NotchMascotLook(style: .shuffle, shape: .egg, palette: .rose)
+        let resolved = shuffled.dealing(hand.member)
+        suite.expect(resolved.style == hand.member && resolved.style.isCast && resolved.shape == .egg
+                     && resolved.palette == .rose,
+                     "a shuffled look resolves to the member out, keeping the chosen colour")
+        suite.expect(NotchMascotShuffle(member: .robot, dealt: start).member.isCast
+                     && NotchMascotShuffle(member: .shuffle, dealt: start).member.isCast,
+                     "a hand never holds anything but a member of the cast")
+        // Saved and read back, the hand keeps its member, its quiet hour and
+        // its song; anything damaged or not of the cast deals afresh.
+        let reloaded = NotchMascotShuffle(stored: hand.stored, now: hand.dealt.addingTimeInterval(60))
+        var damaged = hand.stored
+        damaged["member"] = "robot"
+        let ahead = NotchMascotShuffle(stored: hand.stored, now: hand.dealt.addingTimeInterval(-600))
+        suite.expect(reloaded == hand && reloaded?.song != nil
+                     && NotchMascotShuffle(stored: damaged, now: start) == nil
+                     && NotchMascotShuffle(stored: ["member": "beet"], now: start) == nil
+                     && NotchMascotShuffle(stored: nil, now: start) == nil
+                     && ahead?.dealt == hand.dealt.addingTimeInterval(-600) && ahead?.member == hand.member,
+                     "a relaunch keeps the member out until the next deal, and a clock set back never delays it")
+        let boogie = NotchMascotShuffle.songKey(title: "Boogie", artist: "A", album: nil)
+        suite.expect(NotchMascotShuffle.songKey(title: nil, artist: " ", album: "") == nil
+                     && boogie == NotchMascotShuffle.songKey(title: " Boogie ", artist: "A", album: "")
+                     && boogie != NotchMascotShuffle.songKey(title: "Wonderland", artist: "A", album: nil)
+                     && boogie?.contains("Boogie") == false,
+                     "a song is told apart by its names, saved as a digest, and a reading with none tells nothing")
     }
 
     private static func calendarContracts(_ suite: TestSuite) {

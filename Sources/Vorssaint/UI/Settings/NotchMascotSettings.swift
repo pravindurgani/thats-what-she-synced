@@ -114,9 +114,13 @@ struct NotchMascotSettings: View {
     private var appearance: some View {
         SettingsCard(title: text.appearance) {
             SettingsRow(symbol: "paintpalette", title: text.style) { EmptyView() }
-            HStack(spacing: 10) {
-                ForEach(NotchMascotStyle.allCases) { item in
+            // Shuffle and the cast first, then the upstream companions, four
+            // to a row. Each tile draws the companion it gives, live; Shuffle
+            // draws the member it dealt, and picked again deals another.
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
+                ForEach(NotchMascotStyle.pickerOrder) { item in
                     NotchMascotChoiceTile(title: text.style(item), selected: look.style == item) {
+                        if item == .shuffle, look.style == .shuffle { NotchMascotShuffleService.shared.dealNow() }
                         style = item.rawValue
                     } preview: {
                         NotchMascotView(look: NotchMascotLook(style: item, shape: look.shape, palette: look.palette),
@@ -124,10 +128,29 @@ struct NotchMascotSettings: View {
                             .frame(width: 30, height: 30)
                             .frame(width: 64, height: 42)
                             .background(Color.black, in: Capsule())
+                            .overlay(alignment: .topTrailing) {
+                                if item == .shuffle {
+                                    Image(systemName: "shuffle")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 15, height: 15)
+                                        .background(Color.accentColor, in: Circle())
+                                        .offset(x: 3, y: -3)
+                                        .accessibilityHidden(true)
+                                }
+                            }
                     }
                 }
             }
             .padding(.leading, settingsRowTextInset)
+            if look.style == .shuffle {
+                Text(text.shuffleHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, settingsRowTextInset)
+                    .transition(.opacity)
+            }
             if look.style == .minimal {
                 SettingsRow(symbol: "circle.square", title: text.shape) {
                     Text(text.shape(look.shape)).foregroundStyle(.secondary)
