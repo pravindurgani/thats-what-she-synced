@@ -12,6 +12,9 @@ struct NotchEqualizerBars: View {
     var barWidth: CGFloat = 2.5
     var height: CGFloat = 14
     var tint: Color = .white
+    /// One colour per bar, repeating, in place of the single tint: a cover's
+    /// palette across the bars.
+    var tints: [Color]? = nil
     /// Band levels from 0 to 1 read from the player's audio. When present the
     /// bars follow them instead of the stepped synthetic motion.
     var live: [Double]? = nil
@@ -21,6 +24,7 @@ struct NotchEqualizerBars: View {
         let count = max(1, bars)
         NotchEqualizerBridge(animates: isPlaying && !reduceMotion, bars: count,
                              barWidth: barWidth, height: height, tint: NSColor(tint),
+                             tints: tints?.map { NSColor($0) },
                              levels: isPlaying && !reduceMotion ? live : nil)
             .frame(width: CGFloat(count) * barWidth + CGFloat(count - 1) * barWidth * 0.85,
                    height: height)
@@ -40,13 +44,14 @@ private struct NotchEqualizerBridge: NSViewRepresentable {
     let barWidth: CGFloat
     let height: CGFloat
     let tint: NSColor
+    let tints: [NSColor]?
     let levels: [Double]?
 
     func makeNSView(context: Context) -> NotchEqualizerView { NotchEqualizerView() }
 
     func updateNSView(_ view: NotchEqualizerView, context: Context) {
         view.configure(animates: animates, bars: bars, barWidth: barWidth, height: height,
-                       tint: tint, levels: levels)
+                       tint: tint, tints: tints, levels: levels)
     }
 
     static func dismantleNSView(_ view: NotchEqualizerView, coordinator: ()) { view.stop() }
@@ -92,7 +97,7 @@ final class NotchEqualizerView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func configure(animates: Bool, bars count: Int, barWidth: CGFloat, height: CGFloat,
-                   tint: NSColor, levels: [Double]? = nil) {
+                   tint: NSColor, tints: [NSColor]? = nil, levels: [Double]? = nil) {
         let count = max(1, count)
         self.animates = animates
         self.levels = levels
@@ -100,7 +105,8 @@ final class NotchEqualizerView: NSView {
         self.height = height
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        if bars.count != count {
+        let fresh = bars.count != count
+        if fresh {
             bars.forEach { $0.removeFromSuperlayer() }
             bars = (0..<count).map { _ in
                 let bar = CALayer()
@@ -108,7 +114,17 @@ final class NotchEqualizerView: NSView {
                 return bar
             }
         }
-        for bar in bars { bar.backgroundColor = tint.cgColor }
+        CATransaction.commit()
+        // A new song's colours flow into the bars instead of snapping; new bars
+        // take theirs at once.
+        CATransaction.begin()
+        CATransaction.setDisableActions(fresh)
+        CATransaction.setAnimationDuration(0.6)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1))
+        for (index, bar) in bars.enumerated() {
+            let color = tints.flatMap { $0.isEmpty ? nil : $0[index % $0.count] } ?? tint
+            if bar.backgroundColor != color.cgColor { bar.backgroundColor = color.cgColor }
+        }
         CATransaction.commit()
         updateBars()
     }

@@ -49,6 +49,12 @@ if (( DEV )); then
     BUILD_VARIANT_FLAGS=(-D VORSSAINT_DEVELOPMENT)
     APP_OPTIMIZATION_FLAGS=(-Onone)
     BUILD_CONFIGURATION="debug"
+    # Opt-in: an optimized Developer build for daily use, with the same
+    # bundle id and development flag. VORSSAINT_DEV_OPTIMIZE=1 ./build.sh --dev --install
+    if [[ "${VORSSAINT_DEV_OPTIMIZE:-0}" == "1" ]]; then
+        APP_OPTIMIZATION_FLAGS=(-O)
+        BUILD_CONFIGURATION="optimized developer"
+    fi
 else
     APP_NAME="Vorssaint"
     EXECUTABLE="Vorssaint"

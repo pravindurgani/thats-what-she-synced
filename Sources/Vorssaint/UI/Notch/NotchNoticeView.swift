@@ -22,6 +22,8 @@ struct NotchNoticeView: View {
         default: return .white
         }
     }
+    /// The volume meter wears the music's colours (see NotchLevelPaint).
+    private var levelColors: [Color]? { notice.event == .volume ? NotchLevelPaint.volume() : nil }
     /// The words of a timer's notice share its orange too.
     private var textTint: Color { notice.event == .timer ? .orange : .white }
     /// With the companion on, it stands in for the symbol, and reacts unless
@@ -97,7 +99,8 @@ struct NotchNoticeView: View {
                     } else {
                         Image(systemName: notice.symbol)
                             .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(tint)
+                            .foregroundStyle(levelColors?.first ?? tint)
+                            .contentTransition(.symbolEffect(.replace))
                     }
                 }
                 .frame(width: 18)
@@ -127,7 +130,7 @@ struct NotchNoticeView: View {
                 .lineLimit(NotchNotificationBannerLayout.messageLines(stripHeight: geometry.stripHeight))
                 .frame(maxWidth: .infinity, alignment: .trailing)
         } else if let level = notice.level {
-            NotchMeter(value: level, height: 5, tint: tint)
+            NotchMeter(value: level, height: 5, tint: tint, colors: levelColors)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: level)
                 .transaction { $0.disablesAnimations = false }
         } else {
@@ -158,9 +161,12 @@ struct NotchExpandedLevelView: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            let colors = notice.event == .volume ? NotchLevelPaint.volume() : nil
             Image(systemName: notice.symbol)
+                .foregroundStyle(colors?.first ?? .white)
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 18)
-            NotchMeter(value: notice.level ?? 0, height: 5, tint: .white)
+            NotchMeter(value: notice.level ?? 0, height: 5, tint: .white, colors: colors)
                 .frame(maxWidth: 96)
             if showsDetail {
                 Text(notice.detail)

@@ -46,11 +46,12 @@ struct NotchLiveEqualizerBars: View {
     var barWidth: CGFloat = 2.5
     var height: CGFloat = 14
     var tint: Color = .white
+    var tints: [Color]? = nil
     @ObservedObject private var audio = NotchAudioLevelService.shared
 
     var body: some View {
         NotchEqualizerBars(isPlaying: isPlaying, bars: bars, barWidth: barWidth, height: height, tint: tint,
-                           live: audio.levels)
+                           tints: tints, live: audio.levels)
     }
 }
 
@@ -60,15 +61,27 @@ struct NotchMeter: View {
     let value: Double
     var height: CGFloat = 5
     var tint: Color = .white
+    /// A spectrum laid across the whole track in place of the tint. The fill
+    /// uncovers it, so a higher level shows more of the colours.
+    var colors: [Color]? = nil
 
     var body: some View {
         let fraction = value.isFinite ? min(1, max(0, value)) : 0
         GeometryReader { proxy in
+            let filled = max(fraction > 0 ? height : 0, proxy.size.width * fraction)
             ZStack(alignment: .leading) {
                 Capsule(style: .continuous).fill(.white.opacity(0.14))
-                Capsule(style: .continuous)
-                    .fill(tint.opacity(0.9))
-                    .frame(width: max(fraction > 0 ? height : 0, proxy.size.width * fraction))
+                if let colors, colors.count > 1 {
+                    LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+                        .frame(width: proxy.size.width)
+                        .mask(alignment: .leading) {
+                            Capsule(style: .continuous).frame(width: filled)
+                        }
+                } else {
+                    Capsule(style: .continuous)
+                        .fill(tint.opacity(0.9))
+                        .frame(width: filled)
+                }
             }
         }
         .frame(height: height)
@@ -531,7 +544,11 @@ struct NotchWindowBackground: View {
     @AppStorage(DefaultsKey.notchTranslucentBackground) private var translucent = false
 
     var body: some View {
-        NotchSurfaceBackground(presentation: presentation, glass: glass, translucent: translucent)
+        ZStack {
+            NotchSurfaceBackground(presentation: presentation, glass: glass, translucent: translucent)
+            // The music page's colours, over the glass and under the page.
+            NotchMusicBackdrop(presentation: presentation)
+        }
     }
 }
 

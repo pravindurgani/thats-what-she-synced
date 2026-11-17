@@ -23,6 +23,9 @@ struct NotchMusicView: View {
     /// The cover's own colour, used for the moving parts that belong to this
     /// track. Neutral covers keep them white.
     private var accent: Color { service.artworkTint?.color ?? .white }
+    /// The cover's palette, which colours the page while a song is loaded.
+    /// Neutral covers have none, and the player keeps its plain look for them.
+    private var palette: NotchArtworkPalette? { preview ? nil : NotchArtworkPalette.of(service.artwork) }
     private var showsLyrics: Bool { lyricsEnabled && AppFeature.notchLyrics.isAvailable }
     private var showsQueue: Bool { queueEnabled && AppFeature.notchQueue.isAvailable }
     private var showsVolume: Bool { showVolume && AppFeature.mixer.isAvailable }
@@ -284,7 +287,9 @@ struct NotchMusicView: View {
                     Text(service.commandFailed ? FeatureStrings.notchMusicExtras(l10n.language).playbackFailed
                          : playback.track.artist ?? playback.track.album ?? text.mediaNowPlaying)
                         .font(.system(size: 13))
-                        .foregroundStyle(service.commandFailed ? .orange : .secondary)
+                        .foregroundStyle(service.commandFailed ? AnyShapeStyle(Color.orange)
+                                         : palette != nil ? AnyShapeStyle(Color.white.opacity(0.82))
+                                         : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                 }
             } accessory: {
@@ -295,13 +300,15 @@ struct NotchMusicView: View {
                 // Quiet beside the song, as the timeline's times are. The
                 // bars rest flat while paused, so the title keeps its width.
                 NotchLiveEqualizerBars(isPlaying: playback.isPlaying, bars: 4, barWidth: 2.5, height: 15,
-                                       tint: .white.opacity(0.5))
+                                       tint: .white.opacity(0.5),
+                                       tints: palette?.marks.map { Color(nsColor: $0) })
                 if band.besideCamera { sectionsButton }
             } corner: {
                 extraButtons
                 sectionsButton
             }
-            NotchMusicTimeline(playback: playback, service: service, tint: accent, timesBeside: true)
+            NotchMusicTimeline(playback: playback, service: service, tint: palette.map { Color(nsColor: $0.marks[0]) } ?? accent,
+                               timesBeside: true, onColor: palette != nil)
                 .padding(.top, NotchLayout.musicHeadSpacing)
             transportRow {
                 if !preview && shuffle.isOffered { shuffleButton }
@@ -528,6 +535,12 @@ private struct NotchMusicTransport: View {
     private var text: RadialMenuFeatureStrings { FeatureStrings.radialMenu(l10n.language) }
     private var height: CGFloat { compact ? 36 : 44 }
     private var showsPlaying: Bool { requestedPlaying ?? playback.isPlaying }
+    /// The main action takes the cover's lead colour as a plate, deep enough
+    /// that the white glyph keeps its contrast; neutral covers keep no plate.
+    private var plate: Color? {
+        guard !preview, let palette = NotchArtworkPalette.of(service.artwork) else { return nil }
+        return Color(nsColor: palette.plate)
+    }
 
     var body: some View {
         if !playback.canSendCommandsDirectly, service.automationAvailability?.access != .granted {
@@ -585,6 +598,16 @@ private struct NotchMusicTransport: View {
                 .contentTransition(.symbolEffect(.replace))
                 .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: showsPlaying)
                 .frame(width: height, height: height)
+                .background {
+                    if let plate {
+                        Circle()
+                            .fill(plate.gradient)
+                            .padding(height * 0.04)
+                            .shadow(color: .black.opacity(0.38), radius: 7, x: 0, y: 3)
+                            .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    }
+                }
+                .animation(.smooth(duration: 0.6), value: plate)
                 .contentShape(Circle())
         }
         .buttonStyle(NotchButtonStyle(cornerRadius: height / 2))
@@ -629,6 +652,9 @@ struct NotchMusicTimeline: View {
     /// The island's player sets the times beside the bar, as a phone's
     /// island does, which leaves its short row room for the artist.
     var timesBeside = false
+    /// Over the music's colours the times step up from secondary grey to a
+    /// near-white that keeps its contrast on the colour.
+    var onColor = false
     @ObservedObject private var l10n = L10n.shared
     @State private var scrubPosition: Double?
     @State private var scrubTrack: RadialNowPlayingSnapshot?
@@ -667,7 +693,7 @@ struct NotchMusicTimeline: View {
                 }
                 .font(.system(size: 10, weight: .medium))
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(onColor ? AnyShapeStyle(Color.white.opacity(0.85)) : AnyShapeStyle(.secondary))
             }
             .frame(height: timesBeside ? NotchLayout.musicTimelineHeight : 30)
             .onChange(of: playback.track) { clearScrub() }
