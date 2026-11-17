@@ -49,7 +49,7 @@ defaults write com.vorssaint.utils.dev notchSongModeEnabled -bool false  # back:
 
 Quit and reopen the app after changing either one.
 
-<p align="center"><img src="docs/thats-what-she-synced/duotone.jpg" width="60%" alt="Duotone look"></p>
+<p align="center"><img src="docs/thats-what-she-synced/duotone-look.jpg" width="60%" alt="Duotone look"></p>
 
 ## Not working?
 
