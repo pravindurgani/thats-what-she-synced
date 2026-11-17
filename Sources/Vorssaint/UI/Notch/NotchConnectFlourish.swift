@@ -68,7 +68,7 @@ struct NotchConnectCard: View {
                            center: .center, startRadius: 4, endRadius: 120)
                 .scaleEffect(arrived ? 1 : 0.4)
                 .opacity(arrived ? 1 : 0)
-                .animation(.easeOut(duration: 0.8), value: arrived)
+                .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.glow, value: arrived)
             if !reduceMotion {
                 ForEach(0..<4, id: \.self) { ring in
                     Circle()
@@ -86,7 +86,7 @@ struct NotchConnectCard: View {
                     .foregroundStyle(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 54, height: 54)
                     .scaleEffect(arrived || reduceMotion ? 1 : 0.3)
-                    .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.55),
+                    .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring,
                                value: arrived)
                     .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !reduceMotion)
                 VStack(alignment: .leading, spacing: 3) {
@@ -101,7 +101,7 @@ struct NotchConnectCard: View {
                 .offset(x: arrived || reduceMotion ? 0 : 14)
                 .blur(radius: arrived || reduceMotion ? 0 : 6)
                 .opacity(arrived ? 1 : 0)
-                .animation(.easeOut(duration: 0.45).delay(reduceMotion ? 0 : 0.12), value: arrived)
+                .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.arrive.delay(0.12), value: arrived)
             }
             .foregroundStyle(.white)
             NotchConnectSweep(colors: colors, trigger: key)
@@ -149,7 +149,7 @@ struct NotchConnectIcon: View {
                 .foregroundStyle(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
                 .scaleEffect(arrived || reduceMotion ? 1 : 0.35)
                 .opacity(arrived || reduceMotion ? 1 : 0)
-                .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.55),
+                .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring,
                            value: arrived)
                 .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !reduceMotion)
         }
@@ -178,7 +178,7 @@ struct NotchArrival: ViewModifier {
             .offset(x: shown || reduceMotion ? 0 : 10)
             .blur(radius: shown || reduceMotion ? 0 : 5)
             .opacity(shown ? 1 : 0)
-            .animation(.easeOut(duration: 0.4).delay(reduceMotion ? 0 : delay), value: arrived)
+            .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.arrive.delay(delay), value: arrived)
             .task(id: trigger) {
                 var reset = Transaction(animation: nil)
                 reset.disablesAnimations = true

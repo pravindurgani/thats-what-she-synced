@@ -651,7 +651,7 @@ final class NotchService: ObservableObject {
             && compactActivity != nil
     }
 
-    private var compactMusicIsVisible: Bool { compactActivityIsVisible && compactActivity == .music }
+    var compactMusicIsVisible: Bool { compactActivityIsVisible && compactActivity == .music }
 
     /// The song the closed island drew at its last refresh, for the frames
     /// between the music stopping and the refresh that lets it depart. The

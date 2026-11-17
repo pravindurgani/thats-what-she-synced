@@ -176,7 +176,7 @@ private struct NotchTrackArtwork: View {
             .scaleEffect(arrived || reduceMotion ? 1 : 0.4)
             .rotationEffect(.degrees(arrived || reduceMotion ? 0 : -14))
             .opacity(arrived || reduceMotion ? 1 : 0)
-            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.62), value: arrived)
+            .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring, value: arrived)
             .task(id: trigger) {
                 var reset = Transaction(animation: nil)
                 reset.disablesAnimations = true

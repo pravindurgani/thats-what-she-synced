@@ -82,15 +82,19 @@ struct NotchQuickAccessView: View {
         return false
     }
 
-    /// While the open island wears the song, its bubbles wear it too.
+    /// While the open island wears the song, its bubbles wear it too, and
+    /// keep it as they slide back into a closed island still glowing with it.
     private var songColors: [NSColor]? {
-        guard NotchSongMode.wearsSong(service, music) else { return nil }
+        guard NotchSongMode.wearsSong(service, music) || NotchSongMode.glowsClosed(service, music) else { return nil }
         return NotchArtworkPalette.of(music.artwork)?.glow
     }
 
     var body: some View {
-        let drops = NotchQuickAccessDrops(placements: motion.placements, progress: motion.progress)
         let song = songColors
+        // The drops joining each bubble to the island take the island's edge
+        // colour while it wears the song, so the bubbles melt into it.
+        let drops = NotchQuickAccessDrops(placements: motion.placements, progress: motion.progress,
+                                          tint: song.flatMap { $0.first }.map { Color(nsColor: $0.blended(withFraction: 0.3, of: .black) ?? $0) })
         let playing = music.playback?.isPlaying == true
         let buttons = ZStack(alignment: .topLeading) {
             ForEach(motion.placements) { placement in
@@ -165,7 +169,7 @@ struct NotchQuickAccessView: View {
                                 .transition(.opacity)
                         }
                     }
-                    .animation(NotchSongMode.fade, value: song != nil)
+                    .animation(NotchSongMotion.fade, value: song != nil)
                 }
                 .overlay {
                     Circle().strokeBorder(.white.opacity(selected || contrast == .increased ? 0.6 : 0.16), lineWidth: 0.75)
@@ -185,15 +189,17 @@ struct NotchQuickAccessView: View {
 private struct NotchQuickAccessDrops: View {
     let placements: [NotchQuickAccessPlacement]
     let progress: CGFloat
+    var tint: Color? = nil
 
     var body: some View {
         ZStack {
             ForEach(placements) { placement in
                 NotchQuickAccessDrop(progress: progress, index: placement.index, edge: placement.edge,
                                      top: placement.top, side: placement.side)
-                    .fill(.black)
+                    .fill(tint ?? .black)
             }
         }
+        .animation(NotchSongMotion.fade, value: tint != nil)
         .allowsHitTesting(false)
     }
 }
@@ -211,7 +217,8 @@ private struct NotchQuickAccessGlassSurface: ViewModifier {
         let island = presentation.usesGlass ? presentation.contour : Path()
         content
             .background {
-                if presentation.usesGlass {
+                // Wearing the song, the drops take its colour over glass too.
+                if presentation.usesGlass, drops.tint == nil {
                     GeometryReader { proxy in
                         // Past the island the shade keeps the lip's tone,
                         // measured from the top edge as the island's own.

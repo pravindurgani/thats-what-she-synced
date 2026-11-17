@@ -25,14 +25,16 @@ struct NotchMusicBackdrop: View {
            let playback = music.playback, let palette = NotchArtworkPalette.of(music.artwork) {
             let track = playback.track
             let page = NotchSongMode.wearsSong(notch, music)
-            let strip = !page && NotchSongMode.announcesSong(notch)
+            let announcing = !page && NotchSongMode.announcesSong(notch)
+            let glowing = !page && !announcing && NotchSongMode.glowsClosed(notch, music)
+            let strip = announcing || glowing
             let genreKey = page || strip ? [track.title, track.artist, track.album, track.appBundleIdentifier]
                 .map { $0 ?? "" }.joined(separator: "\u{1F}") : ""
             NotchMusicAurora(palette: palette, isPlaying: playback.isPlaying, mood: mood,
-                             // Every page but the player itself, with lyrics and the queue,
-                             // has smaller and softer text: a calmer ground.
-                             deepVeil: contrast == .increased || notch.musicDetailVisible
-                                || (page && !NotchSongMode.onMusicPage(notch)),
+                             veil: NotchSongMode.veil(page: page, notch: notch, increasedContrast: contrast == .increased),
+                             // Always in view, the closed island glows and swells
+                             // with the beat but never flares.
+                             quiet: glowing,
                              shown: page || strip)
                 // The open island's camera row stays black, meeting the
                 // housing as the resting island does, and the colour rises
@@ -43,7 +45,7 @@ struct NotchMusicBackdrop: View {
                                            .init(color: .black.opacity(0), location: 1)],
                                    startPoint: .top, endPoint: .bottom)
                         .frame(height: presentation.stripHeight + 20)
-                        .animation(NotchSongMode.fade) { $0.opacity(strip ? 0 : 1) }
+                        .animation(NotchSongMotion.fade) { $0.opacity(strip ? 0 : 1) }
                 }
                 .frame(width: box.width, height: box.height)
                 .mask(NotchBackdropShape(contour: presentation.contour.offsetBy(dx: -box.minX, dy: -box.minY)))
@@ -52,7 +54,7 @@ struct NotchMusicBackdrop: View {
                 // Only the showing and hiding ease; the shape follows the island
                 // frame by frame. Its own ground keeps it whole over glass, so it
                 // needs no part of the glass's fade.
-                .animation(NotchSongMode.fade) { $0.opacity(page || strip ? 1 : 0) }
+                .animation(NotchSongMotion.fade) { $0.opacity(page || strip ? 1 : 0) }
                 // The genre is read only for a song the island shows.
                 .task(id: genreKey) {
                     guard !genreKey.isEmpty else { return }
@@ -67,17 +69,96 @@ struct NotchMusicBackdrop: View {
     }
 }
 
+/// One motion vocabulary for everything the song paints, in SwiftUI and
+/// Core Animation alike: the same curve, and a few durations by role.
+enum NotchSongMotion {
+    /// Quick to start, long gentle settle: arrivals, fades and colour.
+    static let settleCurve = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+    /// A surface wearing the song arriving or leaving: an even, standard
+    /// curve, since a front-loaded one makes a fade read as a cut.
+    static let fade = Animation.timingCurve(0.4, 0, 0.2, 1, duration: 0.35)
+    /// Words arriving out of a blur.
+    static let arrive = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.45)
+    /// A glow opening behind something arriving.
+    static let glow = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.8)
+    /// An icon or a cover springing in.
+    static let spring = Animation.spring(response: 0.5, dampingFraction: 0.6)
+    /// Reduce Motion: a plain short fade in place of any of these.
+    static let reduced = Animation.easeOut(duration: 0.2)
+    /// A cover's colours replacing the last's.
+    static let colorChange: CFTimeInterval = 0.9
+}
+
+/// How strongly the aurora is veiled for what sits over it.
+enum NotchAuroraVeil {
+    case open, calm, page
+
+    /// The colour's strength under the veil.
+    var strength: Float {
+        switch self {
+        case .open: return 1
+        case .calm: return 0.55
+        // Measured on the busiest pages: their grey and orange text keeps
+        // 4.5:1 and their larger bold status text 3:1 over the colour.
+        case .page: return 0.45
+        }
+    }
+
+    /// The veil's stops, from the bottom up: darker under the controls and
+    /// the head row, lighter in the middle where the colour shows.
+    var stops: [CGFloat] {
+        switch self {
+        case .open: return [0.26, 0.12, 0.22]
+        case .calm: return [0.49, 0.23, 0.42]
+        case .page: return [0.49, 0.26, 0.42]
+        }
+    }
+
+    /// How far a beat may thin the veil, as a share of itself.
+    var thinnest: Double { self == .page ? 0.92 : 0.8 }
+
+    /// How far a new song's bloom lifts the veil.
+    var bloomDepth: Double {
+        switch self {
+        case .open: return 0.5
+        case .calm: return 0.7
+        case .page: return 0.8
+        }
+    }
+}
+
 /// Where the island wears the song: the open music page and the sections
 /// gallery, with the bubbles beside them, and the strip that names a new song.
 enum NotchSongMode {
-    /// How everything that wears the song arrives and leaves.
-    static let fade = Animation.easeOut(duration: 0.3)
+
+    /// Pages showing an image the person is judging keep their plain ground.
+    private static let plainPages: Set<NotchModule> = [.camera, .captures]
 
     /// The open island wears the song on every page while it plays, and on
-    /// the player itself while paused too, dimmed and still.
+    /// the player itself while paused too, dimmed and still. The Command Bar,
+    /// which resizes with every keystroke, keeps its black.
     static func wearsSong(_ notch: NotchService, _ music: NotchMusicService) -> Bool {
-        guard notch.expanded, !notch.modules.isEmpty, music.playback != nil else { return false }
+        guard notch.expanded, !notch.modules.isEmpty, !notch.showingCommandBar, music.playback != nil else { return false }
+        if !notch.showingSections, notch.selectedMetric == nil, plainPages.contains(notch.selected) { return false }
         return music.playback?.isPlaying == true || onMusicPage(notch)
+    }
+
+    /// How strongly the colour is veiled: fullest behind the player's large
+    /// white type, calmer behind lyrics and the queue, calmest behind pages
+    /// of small, softer and coloured text, so all of it keeps AA contrast.
+    static func veil(page: Bool, notch: NotchService, increasedContrast: Bool) -> NotchAuroraVeil {
+        guard page else { return .open }
+        if !onMusicPage(notch) { return .page }
+        return increasedContrast || notch.musicDetailVisible ? .calm : .open
+    }
+
+    /// The closed island while it shows the playing song, a volume change
+    /// over it included, so the glow does not cut out for a second.
+    static func glowsClosed(_ notch: NotchService, _ music: NotchMusicService) -> Bool {
+        guard music.playback?.isPlaying == true, !notch.expanded, !notch.noticeExpanded else { return false }
+        if notch.compactMusicIsVisible { return true }
+        return notch.notice?.event == .volume && notch.compactActivity == .music
+            && notch.captureControls == nil && !notch.dragPlaceholder && !notch.peeking && !notch.fullscreenCompact
     }
 
     static func onMusicPage(_ notch: NotchService) -> Bool {
@@ -108,15 +189,16 @@ struct NotchMusicAurora: View {
     let palette: NotchArtworkPalette
     let isPlaying: Bool
     var mood: NotchMusicMood = .neutral
-    /// A heavier veil, for Increase Contrast and while lyrics or the queue are open.
-    var deepVeil = false
+    var veil: NotchAuroraVeil = .open
+    /// No bursts and no lifting of the veil: for the closed island, always in view.
+    var quiet = false
     /// Hidden, it holds still and stops listening; it stays only so it can return without a cut.
     var shown = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NotchMusicAuroraBridge(colors: palette.glow, playing: isPlaying, moves: !reduceMotion,
-                               mood: mood, deepVeil: deepVeil, shown: shown)
+                               mood: mood, veil: veil, quiet: quiet, shown: shown)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -127,32 +209,32 @@ private struct NotchMusicAuroraBridge: NSViewRepresentable {
     let playing: Bool
     let moves: Bool
     let mood: NotchMusicMood
-    let deepVeil: Bool
+    let veil: NotchAuroraVeil
+    let quiet: Bool
     let shown: Bool
 
     func makeNSView(context: Context) -> NotchMusicAuroraView { NotchMusicAuroraView() }
 
     func updateNSView(_ view: NotchMusicAuroraView, context: Context) {
-        view.apply(colors: colors, playing: playing, moves: moves, mood: mood, deepVeil: deepVeil, shown: shown)
+        view.apply(colors: colors, playing: playing, moves: moves, mood: mood, veil: veil, quiet: quiet, shown: shown)
     }
 
     static func dismantleNSView(_ view: NotchMusicAuroraView, coordinator: ()) { view.teardown() }
 }
 
 final class NotchMusicAuroraView: NSView {
-    /// Deceleration for arrivals: quick to start, long gentle settle.
-    private static let settle = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+    private static let settle = NotchSongMotion.settleCurve
     private static let entrance: CFTimeInterval = 0.55
-    private static let colorChange: CFTimeInterval = 0.9
+    private static let colorChange = NotchSongMotion.colorChange
     private static let pauseChange: CFTimeInterval = 0.7
     /// How bright the backdrop stands while paused, against 1 while playing.
     private static let pausedOpacity: Float = 0.5
-    /// The veil never thins below this share of itself, so text keeps its
-    /// contrast at the loudest beat.
-    private static let thinnestVeil: Double = 0.8
 
     /// Where each pool rests, as a fraction of the island, and its loops: how
     /// long one drift around its rest takes, and one breath in and out.
+    /// The side of the pools' proportional space, in points before scaling.
+    private static let unit: CGFloat = 240
+
     private static let pools: [(rest: CGPoint, drift: CFTimeInterval, breath: CFTimeInterval)] = [
         (CGPoint(x: 0.16, y: 0.56), 11, 6),
         (CGPoint(x: 0.58, y: 0.26), 14, 8),
@@ -177,7 +259,8 @@ final class NotchMusicAuroraView: NSView {
     private var playing = false
     private var moves = true
     private var mood: NotchMusicMood = .neutral
-    private var deepVeil = false
+    private var veil: NotchAuroraVeil = .open
+    private var quiet = false
     private var shown = true
     /// The cover changed while hidden: its colours bloom when it next shows.
     private var unseenSong = false
@@ -196,7 +279,6 @@ final class NotchMusicAuroraView: NSView {
     private var nextBurst = 0
     private var bloomUntil: CFTimeInterval = 0
     private var appliedBounce: Double = 0
-    private var installedSize: CGSize = .zero
     private var reinstall: DispatchWorkItem?
     private var lastKick: CFTimeInterval = 0
     private var previousLevels: [Double] = []
@@ -225,8 +307,10 @@ final class NotchMusicAuroraView: NSView {
         base.startPoint = CGPoint(x: 0, y: 1)
         base.endPoint = CGPoint(x: 1, y: 0)
         stage.addSublayer(base)
-        for _ in Self.pools {
+        for pool in Self.pools {
             let blob = Self.pool()
+            blob.bounds = CGRect(x: 0, y: 0, width: Self.unit * 0.78, height: Self.unit * 1.7)
+            blob.position = CGPoint(x: Self.unit * pool.rest.x, y: Self.unit * pool.rest.y)
             clock.addSublayer(blob)
             blobs.append(blob)
         }
@@ -270,7 +354,9 @@ final class NotchMusicAuroraView: NSView {
     // MARK: State
 
     func apply(colors newColors: [NSColor], playing newPlaying: Bool, moves newMoves: Bool,
-               mood newMood: NotchMusicMood, deepVeil newDeepVeil: Bool, shown newShown: Bool) {
+               mood newMood: NotchMusicMood, veil newVeil: NotchAuroraVeil, quiet newQuiet: Bool,
+               shown newShown: Bool) {
+        quiet = newQuiet
         let colorsChanged = newColors.map(\.cgColor) != colors.map(\.cgColor)
         let firstColors = colors.isEmpty
         colors = newColors
@@ -298,8 +384,8 @@ final class NotchMusicAuroraView: NSView {
             }
             syncClock()
         }
-        if newDeepVeil != deepVeil {
-            deepVeil = newDeepVeil
+        if newVeil != veil {
+            veil = newVeil
             paintVeil(animated: true)
             if entered { updatePlayback() }
         }
@@ -361,8 +447,7 @@ final class NotchMusicAuroraView: NSView {
     /// darker under the head row and the controls; heavier for Increase
     /// Contrast and behind lyrics or the queue.
     private func paintVeil(animated: Bool = false) {
-        let weight: CGFloat = deepVeil ? 1.9 : 1
-        let stops: [CGFloat] = [0.26, 0.12, 0.22].map { min(0.6, $0 * weight) }
+        let stops = veil.stops
         CATransaction.begin()
         CATransaction.setDisableActions(!animated)
         CATransaction.setAnimationDuration(0.3)
@@ -375,7 +460,7 @@ final class NotchMusicAuroraView: NSView {
     /// Reduce Motion as the one cue that the song changed.
     private func bloom() {
         let flare = CAKeyframeAnimation(keyPath: "opacity")
-        flare.values = [1, 0.5, 1]
+        flare.values = [1, veil.bloomDepth, 1]
         flare.keyTimes = [0, 0.22, 1]
         flare.timingFunctions = [CAMediaTimingFunction(name: .easeOut), Self.settle]
         flare.duration = 1.25
@@ -389,7 +474,7 @@ final class NotchMusicAuroraView: NSView {
         // Half strength behind lyrics, the queue or the gallery, whose softer
         // text needs a calmer ground. Only the colour dims: the dark ground
         // stays whole, so the island never turns see-through over glass.
-        let target: Float = (playing ? 1 : Self.pausedOpacity) * (deepVeil ? 0.55 : 1)
+        let target: Float = (playing ? 1 : Self.pausedOpacity) * veil.strength
         fadeOpacity(of: stage, to: target, duration: entered ? Self.pauseChange : Self.entrance)
         if !entered { fadeOpacity(of: canvas, to: 1, duration: Self.entrance) }
         entered = true
@@ -529,7 +614,7 @@ final class NotchMusicAuroraView: NSView {
         if onset {
             lastKick = now
             bounce = max(bounce, min(1, 0.45 + flux * 6) * mood.response * intensity)
-            if mood != .calm { kick(strength: bounce) }
+            if mood != .calm, !quiet { kick(strength: bounce) }
         } else {
             // A quick fall after each hit, so the light jumps on the beat and
             // drops between beats, as a meter's needle does.
@@ -544,7 +629,8 @@ final class NotchMusicAuroraView: NSView {
             CATransaction.begin()
             CATransaction.setAnimationDuration(onset ? 0.06 : 0.09)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-            scrim.opacity = Float(1 - min(1 - Self.thinnestVeil, bounce * 0.55))
+            // The veil never thins below its level's share, so text keeps its contrast at the loudest beat.
+            scrim.opacity = quiet ? 1 : Float(1 - min(1 - veil.thinnest, bounce * 0.55))
             let swell = 1 + 0.07 * bounce
             stage.transform = CATransform3DMakeScale(swell, swell, 1)
             lift.transform = CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)
@@ -634,8 +720,10 @@ final class NotchMusicAuroraView: NSView {
         motionInstalled = false
         guard moves, shown, window != nil, size.width > 1, size.height > 1 else { syncClock(); return }
         motionInstalled = true
-        installedSize = size
-        let reachX = size.width * 0.14, reachY = size.height * 0.26
+        // In the clock's proportional space (see layout), so the island
+        // resizing stretches the drift with it rather than re-making it.
+        let unit = Self.unit
+        let reachX = unit * 0.14, reachY = unit * 0.26
         let now = clock.convertTime(CACurrentMediaTime(), from: nil)
         for (index, blob) in blobs.enumerated() {
             let pool = Self.pools[index]
@@ -687,26 +775,19 @@ final class NotchMusicAuroraView: NSView {
         base.frame = stage.bounds
         lift.bounds = stage.bounds
         lift.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        clock.frame = lift.bounds
+        // The pools rest, breathe and drift in a square of proportional space,
+        // scaled to the island: the strip, the open island and lyrics
+        // unfolding all stretch the same motion, which never jumps or restarts.
+        let unit = Self.unit
+        clock.bounds = CGRect(x: 0, y: 0, width: unit, height: unit)
+        clock.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        clock.transform = CATransform3DMakeScale(max(size.width, 1) / unit, max(size.height, 1) / unit, 1)
         scrim.frame = canvas.bounds
-        let poolSize = CGSize(width: size.width * 0.78, height: size.height * 1.7)
-        for (index, blob) in blobs.enumerated() {
-            let rest = Self.pools[index].rest
-            blob.bounds = CGRect(origin: .zero, size: poolSize)
-            blob.position = CGPoint(x: size.width * rest.x, y: size.height * rest.y)
-        }
         CATransaction.commit()
-        // Hidden, the island's resizes need no drift.
-        guard shown else { return }
-        // The island opening, or lyrics unfolding, resizes the view frame by
-        // frame. The drift is made, or its reach re-made, once that settles,
-        // so it starts from rest at the size it will run at.
-        if !motionInstalled {
-            scheduleMotion(keepingPhase: false)
-        } else if installedSize.width > 1, installedSize.height > 1,
-                  abs(size.width / installedSize.width - 1) > 0.1 || abs(size.height / installedSize.height - 1) > 0.1 {
-            scheduleMotion(keepingPhase: true)
-        }
+        // Hidden, the island's resizes need no drift. Shown, it is made once,
+        // when the island first settles, from rest.
+        guard shown, !motionInstalled else { return }
+        scheduleMotion(keepingPhase: false)
     }
 
     private func scheduleMotion(keepingPhase: Bool) {
@@ -785,7 +866,7 @@ private struct NotchAuroraBubbleBridge: NSViewRepresentable {
 /// thins, never below what keeps the white glyph at 3:1.
 final class NotchAuroraBubbleView: NSView {
     private static let turn: CFTimeInterval = 14
-    private static let settle = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+    private static let settle = NotchSongMotion.settleCurve
     private let canvas = CALayer()
     private let swirl = CAGradientLayer()
     private let shine = CAGradientLayer()
@@ -836,7 +917,7 @@ final class NotchAuroraBubbleView: NSView {
             if !colors.isEmpty {
                 let crossFade = CATransition()
                 crossFade.type = .fade
-                crossFade.duration = 0.9
+                crossFade.duration = NotchSongMotion.colorChange
                 crossFade.timingFunction = Self.settle
                 canvas.add(crossFade, forKey: "colors")
             }
