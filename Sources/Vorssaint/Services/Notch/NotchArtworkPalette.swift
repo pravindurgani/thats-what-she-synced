@@ -66,14 +66,41 @@ struct NotchArtworkPalette: Equatable {
     /// grown from the companion's colour, so the island still wears the song.
     /// A cover with no colour of its own, black and white, stays neutral.
     static func song(_ artwork: NSImage?) -> NotchArtworkPalette? {
-        guard let artwork else { return coverless() }
-        return of(artwork)
+        if let artwork {
+            let palette = of(artwork)
+            lastCover = palette.map { ($0, Date()) }
+            return palette
+        }
+        // A cover that arrives late (a looked-up one, say) keeps the last
+        // song's colours a moment, rather than passing through the companion's.
+        if let held = lastCover {
+            let left = coverGrace - Date().timeIntervalSince(held.seen)
+            if left > 0 {
+                if graceWake == nil {
+                    // When the wait ends, the island's views read the colours again.
+                    let wake = DispatchWorkItem {
+                        graceWake = nil
+                        NotchMusicService.shared.objectWillChange.send()
+                    }
+                    graceWake = wake
+                    DispatchQueue.main.asyncAfter(deadline: .now() + left, execute: wake)
+                }
+                return held.palette
+            }
+        }
+        return coverless()
     }
+
+    /// How long a missing cover keeps the last one's colours.
+    static let coverGrace: TimeInterval = 3
+    private static var lastCover: (palette: NotchArtworkPalette, seen: Date)?
+    private static var graceWake: DispatchWorkItem?
 
     private static var coverlessPalette: (base: NotchMascotPalette, palette: NotchArtworkPalette)?
 
     /// The companion's colour and its two neighbours on the colour wheel,
-    /// vivid enough to tone like a cover's. Main thread only.
+    /// vivid enough to tone like a cover's. With the default pearl companion,
+    /// a near-grey, they come out blue and violet. Main thread only.
     static func coverless() -> NotchArtworkPalette {
         let base = NotchMascotSupport.look().palette
         if let held = coverlessPalette, held.base == base { return held.palette }
@@ -260,7 +287,9 @@ import SwiftUI
 enum NotchLevelPaint {
     static func volume() -> [Color]? {
         let music = NotchMusicService.shared
-        if music.playback != nil, let palette = NotchArtworkPalette.song(music.artwork) {
+        // A real cover's colours only: without one, the meter follows the
+        // companion rule below, white when the companion is off.
+        if music.playback != nil, let palette = NotchArtworkPalette.of(music.artwork) {
             return palette.marks.map { Color(nsColor: $0) }
         }
         // The companion's colours only while the companion is on; otherwise
