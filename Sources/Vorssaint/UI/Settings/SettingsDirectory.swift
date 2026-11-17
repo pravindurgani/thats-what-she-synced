@@ -244,6 +244,7 @@ enum SettingsDirectory {
         let notch = FeatureStrings.notch(language)
         let notchEditor = FeatureStrings.notchEditor(language)
         let notchMusic = FeatureStrings.notchMusicExtras(language)
+        let notchDancers = FeatureStrings.notchDancers(language)
         let notchCalendar = FeatureStrings.notchCalendar(language)
         let notchAgents = FeatureStrings.notchAgents(language)
         let notchLowBattery = NotchLowBatteryStrings.localized(language)
@@ -273,7 +274,7 @@ enum SettingsDirectory {
             .init([activities.keepAwakeActivity], notch: .module(.controls)),
             .init([notch.playingMusic, notchMusic.includeOtherPlayers, notchMusic.showVolume, notchMusic.preferredPlayer,
                    notchMusic.enableLyrics, notchMusic.browserCovers, notchMusic.enableQueue, notchMusic.liveEqualizer,
-                   "music"], notch: .module(.music)),
+                   notchDancers.musicSide, "dancers", "music"], notch: .module(.music)),
             .init([notchMusic.online], feature: .notchLyrics, notch: .module(.music), when: state.on(DefaultsKey.notchLyricsEnabled)),
             .init([notchCalendar.countdown, notchCalendar.countdownLead, notchCalendar.timeLeft, notchCalendar.weekNumbers],
                   feature: .notchCalendar, notch: .module(.calendar)),
