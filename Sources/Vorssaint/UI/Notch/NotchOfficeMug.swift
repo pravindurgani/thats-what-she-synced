@@ -31,7 +31,7 @@ struct NotchOfficeMug: View {
     @State private var steamShown = false
 
     /// The mug's own box: room above the brim for the pour and the steam.
-    static let size = CGSize(width: NotchOfficeMoments.mugSide, height: 22)
+    static let size = CGSize(width: NotchOfficeMoments.mugSide, height: NotchOfficeMoments.mugHeight)
     private static let cup = CGRect(x: 1, y: 7.5, width: 12, height: 14)
     private static let rim: CGFloat = 1.5
 

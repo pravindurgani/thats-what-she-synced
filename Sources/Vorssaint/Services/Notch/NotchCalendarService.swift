@@ -54,6 +54,11 @@ final class NotchCalendarService: NSObject, ObservableObject {
     static let shared = NotchCalendarService()
     @Published private(set) var events: [NotchCalendarEvent] = []
     @Published private(set) var countdown: NotchCalendarCountdown?
+    /// The next timed event starting within five minutes, which the Office
+    /// moments follow whatever the countdown strip shows or whether it is
+    /// on at all; always nil with the moments off. See
+    /// `NotchOfficeMoments.meeting(in:now:)`.
+    @Published private(set) var meeting: NotchCalendarCountdown?
     @Published private(set) var loading = false
     /// The event the Calendar page scrolls to once, after a click on the countdown.
     @Published var revealing: String?
@@ -68,6 +73,7 @@ final class NotchCalendarService: NSObject, ObservableObject {
     private var visibleMonth: Date?
     private var countdownEnabled = false
     private var timeLeftEnabled = false
+    private var followsMeetings = false
     /// How long before a start the island counts down, from Settings.
     private(set) var countdownLeadTime = NotchCalendarSupport.countdownLeadTime()
     private var excludedCalendars = Set<String>()
@@ -108,19 +114,23 @@ final class NotchCalendarService: NSObject, ObservableObject {
         guard NotchCalendarSupport.isEnabled() else { stop(); return }
         let countdownEnabled = NotchCalendarSupport.showsCountdown()
         let timeLeftEnabled = NotchCalendarSupport.showsTimeLeft()
+        let followsMeetings = NotchOfficeMoments.isEnabled()
         let countdownLeadTime = NotchCalendarSupport.countdownLeadTime()
         let excludedCalendars = NotchCalendarSupport.excludedCalendars()
         let chosenCountdowns = Set(NotchCalendarSupport.chosenCountdowns().keys)
         guard reader == nil else {
             if self.countdownEnabled != countdownEnabled || self.timeLeftEnabled != timeLeftEnabled
-                || self.countdownLeadTime != countdownLeadTime || self.excludedCalendars != excludedCalendars
-                || self.chosenCountdowns != chosenCountdowns {
+                || self.followsMeetings != followsMeetings || self.countdownLeadTime != countdownLeadTime
+                || self.excludedCalendars != excludedCalendars || self.chosenCountdowns != chosenCountdowns {
                 if !excludedCalendars.isSubset(of: self.excludedCalendars) {
                     events = []
                     countdown = nil
+                    meeting = nil
                 }
                 self.countdownEnabled = countdownEnabled
                 self.timeLeftEnabled = timeLeftEnabled
+                self.followsMeetings = followsMeetings
+                if !followsMeetings { meeting = nil }
                 self.countdownLeadTime = countdownLeadTime
                 self.excludedCalendars = excludedCalendars
                 if self.chosenCountdowns != chosenCountdowns { self.chosenCountdowns = chosenCountdowns }
@@ -131,6 +141,7 @@ final class NotchCalendarService: NSObject, ObservableObject {
         }
         self.countdownEnabled = countdownEnabled
         self.timeLeftEnabled = timeLeftEnabled
+        self.followsMeetings = followsMeetings
         self.countdownLeadTime = countdownLeadTime
         self.excludedCalendars = excludedCalendars
         if self.chosenCountdowns != chosenCountdowns { self.chosenCountdowns = chosenCountdowns }
@@ -152,7 +163,7 @@ final class NotchCalendarService: NSObject, ObservableObject {
         generation = UUID()
         guard NotchCalendarSupport.isEnabled(), let reader else { stop(); return }
         guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
-            events = []; countdown = nil; loading = false
+            events = []; countdown = nil; meeting = nil; loading = false
             return
         }
         let requested = generation
@@ -161,7 +172,7 @@ final class NotchCalendarService: NSObject, ObservableObject {
         let currentInterval = NotchCalendarSupport.readInterval(month: nil, now: now)
         let needsCurrentRead = NotchCalendarSupport.needsCurrentRead(
             visible: interval, current: currentInterval,
-            countdownEnabled: countdownEnabled || timeLeftEnabled || !chosenCountdowns.isEmpty)
+            countdownEnabled: countdownEnabled || timeLeftEnabled || !chosenCountdowns.isEmpty || followsMeetings)
         let excluded = excludedCalendars
         loading = events.isEmpty
         task = Task { @MainActor [weak self] in
@@ -172,7 +183,7 @@ final class NotchCalendarService: NSObject, ObservableObject {
                   NotchCalendarSupport.isEnabled() else { return }
             let now = Date()
             guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
-                self.events = []; self.countdown = nil; self.loading = false; self.task = nil
+                self.events = []; self.countdown = nil; self.meeting = nil; self.loading = false; self.task = nil
                 return
             }
             self.events = NotchCalendarSupport.ordered(result)
@@ -181,13 +192,18 @@ final class NotchCalendarService: NSObject, ObservableObject {
             self.countdown = NotchCalendarSupport.countdown(currentEvents, now: now, starts: self.countdownEnabled,
                                                             ends: self.timeLeftEnabled, chosen: self.chosenCountdowns,
                                                             leadTime: self.countdownLeadTime)
+            self.meeting = self.followsMeetings ? NotchOfficeMoments.meeting(in: currentEvents, now: now) : nil
             self.loading = false
             self.task = nil
             let agendaRefresh = NotchCalendarSupport.nextRefresh(self.events, now: now)
             let countdownRefresh = NotchCalendarSupport.countdownTransition(
                 currentEvents, now: now, starts: self.countdownEnabled, ends: self.timeLeftEnabled,
                 chosen: self.chosenCountdowns, leadTime: self.countdownLeadTime)
-            let nextRefresh = min(agendaRefresh, countdownRefresh ?? agendaRefresh)
+            // Five minutes before each start, and each start, for the Office moments.
+            let meetingRefresh = self.followsMeetings
+                ? NotchOfficeMoments.meetingTransition(in: currentEvents, now: now) : nil
+            let nextRefresh = ([agendaRefresh] + [countdownRefresh, meetingRefresh].compactMap { $0 }).min()
+                ?? agendaRefresh
             let timer = Timer(fireAt: nextRefresh,
                               interval: 0, target: self, selector: #selector(self.timedRefresh),
                               userInfo: nil, repeats: false)
@@ -222,8 +238,9 @@ final class NotchCalendarService: NSObject, ObservableObject {
         visibleMonth = nil
         countdownEnabled = false
         timeLeftEnabled = false
+        followsMeetings = false
         excludedCalendars = []
         if !chosenCountdowns.isEmpty { chosenCountdowns = [] }
-        events = []; countdown = nil; loading = false
+        events = []; countdown = nil; meeting = nil; loading = false
     }
 }

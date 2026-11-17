@@ -83,13 +83,16 @@ struct NotchCalendarStrip: View {
 
     private var rowInset: CGFloat { max(10, geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)) }
 
-    /// The Office caption five minutes before the event, in two halves
-    /// either side of the camera, while the strip has the height for it and
-    /// each half fits its wing; the countdown is what matters.
+    /// The Office caption five minutes before the next event starts, in two
+    /// halves either side of the camera, while the strip has the height for
+    /// it and each half fits its wing; the countdown is what matters. Read
+    /// from the meeting the moments follow, so an event under way that ends
+    /// as the next one begins still earns it for the next.
     private func officeCaption(_ countdown: NotchCalendarCountdown,
                                now: Date) -> (leading: String, trailing: String)? {
         guard NotchOfficeMoments.isEnabled(), geometry.compactActivityContentHeight >= 24,
-              let halves = NotchOfficeMoments.meetingSoonHalves(countdown, now: now, language: l10n.language) else { return nil }
+              let halves = NotchOfficeMoments.meetingSoonHalves(calendar.meeting, now: now,
+                                                                language: l10n.language) else { return nil }
         let room = geometry.compactActivityWingWidth - geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)
         guard NotchOfficeMoments.captionWidth(halves.leading) <= room,
               NotchOfficeMoments.captionWidth(halves.trailing, rule: false) <= room else { return nil }
@@ -99,7 +102,7 @@ struct NotchCalendarStrip: View {
     private func wings(_ countdown: NotchCalendarCountdown, title: String, remaining: String,
                        caption: (leading: String, trailing: String)? = nil) -> some View {
         let inset = geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)
-        let key = caption.map { _ in "soon|\(countdown.event.id)" }
+        let key = caption.map { _ in "soon|\(calendar.meeting?.event.id ?? countdown.event.id)" }
         return HStack(spacing: 0) {
             VStack(alignment: .trailing, spacing: 1) {
                 HStack(spacing: NotchCalendarSupport.stripTitleSpacing) {

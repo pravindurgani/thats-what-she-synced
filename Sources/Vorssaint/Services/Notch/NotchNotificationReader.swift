@@ -10,12 +10,18 @@ extension NotchNotificationReaderCore where Access == NotchNativeNotificationAcc
     convenience init(pid: pid_t, cancellation: DispatchWorkItem) {
         let bundle = Bundle(path: "/System/Library/CoreServices/NotificationCenter.app")
         let closeTitle = bundle?.localizedString(forKey: "Close", value: "Close", table: "Localizable") ?? "Close"
+        // The center's own controls, in its language as well as in English.
+        let keys = NotchNotificationSupport.centerControlKeys
+        let centerControls = Set(keys + keys.compactMap {
+            bundle?.localizedString(forKey: $0, value: $0, table: "Localizable")
+        })
         self.init(access: NotchNativeNotificationAccess(pid: pid),
                   allowed: { !cancellation.isCancelled && NotchNotificationSupport.isEnabled() && AXIsProcessTrusted() },
                   sourceApplicationName: { labels in
                       guard !labels.isEmpty else { return nil }
                       return NotchNotificationSources.source(for: labels)?.name
                   }, allowsNativeClose: { NotchNotificationSupport.dismissesNative() }, nativeCloseTitle: closeTitle,
+                  centerControls: centerControls,
                   displays: {
                       var count: UInt32 = 0
                       guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
