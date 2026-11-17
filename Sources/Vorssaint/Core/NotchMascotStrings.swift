@@ -11,6 +11,16 @@ struct NotchMascotStrings {
     let style: String
     let minimal: String
     let robot: String
+    /// The cast, by the names Settings gives them. They stay the same in
+    /// every language, as names do.
+    let scarn: String
+    let goldenface: String
+    let jello: String
+    let mug: String
+    let beet: String
+    /// A different member of the cast for each new song, and what it does.
+    let shuffle: String
+    let shuffleHint: String
     let shape: String
     let ball: String
     let egg: String
@@ -68,7 +78,16 @@ struct NotchMascotStrings {
     let keywords: String
 
     func style(_ style: NotchMascotStyle) -> String {
-        style == .robot ? robot : minimal
+        switch style {
+        case .minimal: return minimal
+        case .robot: return robot
+        case .scarn: return scarn
+        case .goldenface: return goldenface
+        case .jello: return jello
+        case .mug: return mug
+        case .beet: return beet
+        case .shuffle: return shuffle
+        }
     }
 
     func shape(_ shape: NotchMascotShape) -> String {
@@ -124,7 +143,7 @@ struct NotchMascotStrings {
     /// What a search finds its page by, besides its name.
     var searchKeywords: [String] {
         [hint, visits, reactions, hidesWhenIdle, appearance, style, robot, color, behavior,
-         commandBar, keywords]
+         commandBar, shuffle, scarn, goldenface, jello, mug, beet, keywords]
     }
 
     func frequency(_ frequency: NotchMascotVisitFrequency) -> String {
@@ -145,6 +164,9 @@ extension FeatureStrings {
             visits: "Appear now and then",
             visitsHint: "Every few minutes it passes through the island with a short animation.",
             style: "Style", minimal: "Minimal", robot: "Robot",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Shuffle",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Shape", ball: "Ball", egg: "Egg", squircle: "Rounded square", pill: "Pill",
             color: "Color", pearl: "Pearl", mint: "Mint", peach: "Peach", lilac: "Lilac", lemon: "Lemon", rose: "Rose",
             commandBar: "Command Bar in the island",
@@ -172,6 +194,9 @@ extension FeatureStrings {
             visits: "Aparecer de vez em quando",
             visitsHint: "A cada poucos minutos ele passa pela ilha com uma animação curta.",
             style: "Estilo", minimal: "Minimalista", robot: "Robô",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Aleatório",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Forma", ball: "Bolinha", egg: "Ovo", squircle: "Quadrado arredondado", pill: "Pílula",
             color: "Cor", pearl: "Pérola", mint: "Menta", peach: "Pêssego", lilac: "Lilás", lemon: "Limão", rose: "Rosa",
             commandBar: "Barra de comando na ilha",
@@ -199,6 +224,9 @@ extension FeatureStrings {
             visits: "Aparecer de vez en cuando",
             visitsHint: "Cada pocos minutos pasa por la isla con una animación corta.",
             style: "Estilo", minimal: "Minimalista", robot: "Robot",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Aleatorio",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Forma", ball: "Bolita", egg: "Huevo", squircle: "Cuadrado redondeado", pill: "Píldora",
             color: "Color", pearl: "Perla", mint: "Menta", peach: "Melocotón", lilac: "Lila", lemon: "Limón", rose: "Rosa",
             commandBar: "Barra de comandos en la isla",
@@ -226,6 +254,9 @@ extension FeatureStrings {
             visits: "Občas sa ukázať",
             visitsHint: "Každých pár minút prejde ostrovom s krátkou animáciou.",
             style: "Štýl", minimal: "Minimalistický", robot: "Robot",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Náhodne",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Tvar", ball: "Guľôčka", egg: "Vajíčko", squircle: "Zaoblený štvorec", pill: "Pilulka",
             color: "Farba", pearl: "Perleťová", mint: "Mätová", peach: "Broskyňová", lilac: "Orgovánová", lemon: "Citrónová", rose: "Ružová",
             commandBar: "Príkazová lišta na ostrove",
@@ -253,6 +284,9 @@ extension FeatureStrings {
             visits: "Ab und zu vorbeischauen",
             visitsHint: "Alle paar Minuten läuft er mit einer kurzen Animation durch die Insel.",
             style: "Stil", minimal: "Minimal", robot: "Roboter",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Zufall",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Form", ball: "Kugel", egg: "Ei", squircle: "Abgerundetes Quadrat", pill: "Pille",
             color: "Farbe", pearl: "Perle", mint: "Minze", peach: "Pfirsich", lilac: "Flieder", lemon: "Zitrone", rose: "Rosa",
             commandBar: "Befehlsleiste in der Insel",
@@ -280,6 +314,9 @@ extension FeatureStrings {
             visits: "Passer de temps en temps",
             visitsHint: "Toutes les quelques minutes, il traverse l’île avec une courte animation.",
             style: "Style", minimal: "Minimaliste", robot: "Robot",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Aléatoire",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Forme", ball: "Boule", egg: "Œuf", squircle: "Carré arrondi", pill: "Pilule",
             color: "Couleur", pearl: "Perle", mint: "Menthe", peach: "Pêche", lilac: "Lilas", lemon: "Citron", rose: "Rose",
             commandBar: "Barre de commande dans l’île",
@@ -307,6 +344,9 @@ extension FeatureStrings {
             visits: "Comparire ogni tanto",
             visitsHint: "Ogni pochi minuti attraversa l’isola con una breve animazione.",
             style: "Stile", minimal: "Minimale", robot: "Robot",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Casuale",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Forma", ball: "Pallina", egg: "Uovo", squircle: "Quadrato arrotondato", pill: "Pillola",
             color: "Colore", pearl: "Perla", mint: "Menta", peach: "Pesca", lilac: "Lilla", lemon: "Limone", rose: "Rosa",
             commandBar: "Barra dei comandi nell’isola",
@@ -334,6 +374,9 @@ extension FeatureStrings {
             visits: "Появляться время от времени",
             visitsHint: "Раз в несколько минут он пробегает по острову с короткой анимацией.",
             style: "Стиль", minimal: "Минимализм", robot: "Робот",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Вперемешку",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Форма", ball: "Шарик", egg: "Яйцо", squircle: "Скруглённый квадрат", pill: "Пилюля",
             color: "Цвет", pearl: "Жемчуг", mint: "Мята", peach: "Персик", lilac: "Сирень", lemon: "Лимон", rose: "Роза",
             commandBar: "Командная панель на острове",
@@ -361,6 +404,9 @@ extension FeatureStrings {
             visits: "Arada bir görün",
             visitsHint: "Birkaç dakikada bir kısa bir animasyonla adadan geçer.",
             style: "Stil", minimal: "Sade", robot: "Robot",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Karışık",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Şekil", ball: "Top", egg: "Yumurta", squircle: "Yuvarlak kare", pill: "Hap",
             color: "Renk", pearl: "İnci", mint: "Nane", peach: "Şeftali", lilac: "Leylak", lemon: "Limon", rose: "Gül",
             commandBar: "Komut çubuğu adada",
@@ -388,6 +434,9 @@ extension FeatureStrings {
             visits: "ときどき現れる",
             visitsHint: "数分ごとに、短いアニメーションでアイランドを通り抜けます。",
             style: "スタイル", minimal: "ミニマル", robot: "ロボット",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "シャッフル",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "形", ball: "まる", egg: "たまご", squircle: "角丸の四角", pill: "カプセル",
             color: "色", pearl: "パール", mint: "ミント", peach: "ピーチ", lilac: "ライラック", lemon: "レモン", rose: "ローズ",
             commandBar: "アイランドのコマンドバー",
@@ -415,6 +464,9 @@ extension FeatureStrings {
             visits: "가끔 나타나기",
             visitsHint: "몇 분마다 짧은 애니메이션으로 아일랜드를 지나갑니다.",
             style: "스타일", minimal: "미니멀", robot: "로봇",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "셔플",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "모양", ball: "공", egg: "달걀", squircle: "둥근 사각형", pill: "알약",
             color: "색상", pearl: "펄", mint: "민트", peach: "피치", lilac: "라일락", lemon: "레몬", rose: "로즈",
             commandBar: "아일랜드의 명령 막대",
@@ -442,6 +494,9 @@ extension FeatureStrings {
             visits: "偶尔出现",
             visitsHint: "每隔几分钟，它会以简短的动画从岛上经过。",
             style: "风格", minimal: "极简", robot: "机器人",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "随机",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "形状", ball: "圆球", egg: "鸡蛋", squircle: "圆角方形", pill: "药丸",
             color: "颜色", pearl: "珍珠", mint: "薄荷", peach: "蜜桃", lilac: "丁香", lemon: "柠檬", rose: "玫瑰",
             commandBar: "在岛中使用命令栏",
@@ -469,6 +524,9 @@ extension FeatureStrings {
             visits: "偶爾出現",
             visitsHint: "每隔幾分鐘，它會以簡短的動畫從動態島經過。",
             style: "風格", minimal: "極簡", robot: "機器人",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "隨機",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "形狀", ball: "圓球", egg: "雞蛋", squircle: "圓角方形", pill: "藥丸",
             color: "顏色", pearl: "珍珠", mint: "薄荷", peach: "蜜桃", lilac: "丁香", lemon: "檸檬", rose: "玫瑰",
             commandBar: "在動態島中使用指令列",
@@ -496,6 +554,9 @@ extension FeatureStrings {
             visits: "間中出現",
             visitsHint: "每隔幾分鐘，它會以簡短的動畫從動態島經過。",
             style: "風格", minimal: "極簡", robot: "機械人",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "隨機",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "形狀", ball: "圓球", egg: "雞蛋", squircle: "圓角方形", pill: "藥丸",
             color: "顏色", pearl: "珍珠", mint: "薄荷", peach: "蜜桃", lilac: "丁香", lemon: "檸檬", rose: "玫瑰",
             commandBar: "在動態島中使用指令列",
@@ -523,6 +584,9 @@ extension FeatureStrings {
             visits: "З’являтися час від часу",
             visitsHint: "Раз на кілька хвилин він пробігає острівцем із короткою анімацією.",
             style: "Стиль", minimal: "Мінімалізм", robot: "Робот",
+            scarn: "Agent Scarn", goldenface: "Goldenface", jello: "Jell-O Stapler", mug: "Best Boss Mug",
+            beet: "Schrute Beet", shuffle: "Вперемішку",
+            shuffleHint: "A different one comes out for each new song, and now and then while it is quiet. Pick Shuffle again to deal another.",
             shape: "Форма", ball: "Кулька", egg: "Яйце", squircle: "Заокруглений квадрат", pill: "Пігулка",
             color: "Колір", pearl: "Перлина", mint: "М’ята", peach: "Персик", lilac: "Бузок", lemon: "Лимон", rose: "Троянда",
             commandBar: "Панель команд в острівці",
