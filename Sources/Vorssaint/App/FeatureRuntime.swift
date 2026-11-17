@@ -351,7 +351,7 @@ final class FeatureRuntime: ObservableObject {
         },
         .notchAccessories: {
             if AppFeature.notch.isAvailable { NotchService.shared.syncWithPreferences() }
-            else { NotchAccessoryService.shared.stop() }
+            else { NotchAccessoryService.shared.stop(); NotchOutputConnectWatcher.shared.stop() }
         },
         .notchLyrics: {
             if !NotchLyricsSupport.isEnabled() { NotchLyricsService.shared.stop() }

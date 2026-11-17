@@ -108,7 +108,7 @@ struct NotchNotice: Equatable {
     }
 
     func previewContentHeight(width: CGFloat) -> CGFloat {
-        guard let notification else { return 0 }
+        guard let notification else { return NotchConnectFlourish.applies(to: self) ? NotchConnectFlourish.cardHeight : 0 }
         return NotchNotificationPreviewLayout.contentHeight(for: notification, width: width)
     }
 }
@@ -1199,6 +1199,7 @@ final class NotchService: ObservableObject {
         syncGestures()
         NotchTimerService.shared.syncWithPreferences()
         NotchAccessoryService.shared.syncWithPreferences()
+        NotchOutputConnectWatcher.shared.syncWithPreferences()
         let signature = NotchEvent.allCases.map { String(NotchSupport.routes($0)) }.joined()
             + NotchSupport.idleContent().rawValue + String(NotchSupport.watchesMusicActivity())
             + String(NotchKeepAwakeSupport.showsActivity())
@@ -1284,6 +1285,7 @@ final class NotchService: ObservableObject {
         running = false
         NotchTimerService.shared.stop()
         NotchAccessoryService.shared.stop()
+        NotchOutputConnectWatcher.shared.stop()
         NotchWatchService.shared.stop()
         let cancelCapture = captureControlsCancel
         endCaptureControls()
@@ -1341,6 +1343,7 @@ final class NotchService: ObservableObject {
         NotchAudioLevelService.shared.stop()
         CameraPreviewService.shared.hideEmbedded()
         NotchAccessoryService.shared.suspend()
+        NotchOutputConnectWatcher.shared.stop()
         NotchDownloadService.shared.stop()
         NotchCalendarService.shared.stop()
         NotchNotificationService.shared.stop()
@@ -2366,6 +2369,19 @@ final class NotchService: ObservableObject {
         } else {
             scheduleNoticeDismissal(after: incoming.event.duration)
         }
+        return true
+    }
+
+    /// Headphones or a speaker joining open the island into their connect
+    /// card, which closes by itself as a notice does. An island already open,
+    /// or holding something the person is doing, keeps it to the strip.
+    @discardableResult
+    func showConnect(_ incoming: NotchNotice) -> Bool {
+        let opensCard = !expanded && !peeking && !dragPlaceholder && captureControls == nil && !showingCommandBar
+        guard show(incoming) else { return false }
+        guard opensCard, noticeCanPresent, notice == incoming else { return true }
+        mutatePresentation(transitionContent: .reveal) { noticeExpanded = true }
+        scheduleNoticeDismissal(after: 3.2)
         return true
     }
 

@@ -22,6 +22,93 @@ enum NotchConnectFlourish {
         let paint = NotchLevelPaint.volume() ?? [.white, Color(white: 0.75)]
         return paint.count > 1 ? paint : paint + paint
     }
+
+    /// The opened island's card below the camera's row.
+    static let cardHeight: CGFloat = 112
+
+    // A device announced by one path (Bluetooth, or the sound's route) is not
+    // announced again by the other a moment later.
+    private static var announced: [String: Date] = [:]
+
+    static func noteAnnounced(_ name: String) {
+        announced = announced.filter { $0.value.timeIntervalSinceNow > -30 }
+        announced[name.lowercased()] = Date()
+    }
+
+    static func wasAnnounced(_ name: String, within seconds: TimeInterval = 8) -> Bool {
+        guard let when = announced[name.lowercased()] else { return false }
+        return -when.timeIntervalSinceNow < seconds
+    }
+}
+
+/// The opened island when headphones or a speaker join: the device's icon
+/// large in the cover's colours over a soft glow, sound-wave rings rippling out
+/// across the island, its name and "Connected" arriving out of a blur, and one
+/// sweep of colour. It closes by itself as a notice does.
+struct NotchConnectCard: View {
+    let notice: NotchNotice
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var arrived = false
+
+    var body: some View {
+        let colors = NotchConnectFlourish.colors()
+        let key = "\(notice.title)|\(notice.detail)|\(notice.symbol)"
+        ZStack {
+            // The glow the sound comes out of, breathing once as it arrives.
+            RadialGradient(colors: [colors[0].opacity(0.42), colors[1].opacity(0.12), .clear],
+                           center: .center, startRadius: 4, endRadius: 120)
+                .scaleEffect(arrived ? 1 : 0.4)
+                .opacity(arrived ? 1 : 0)
+                .animation(.easeOut(duration: 0.8), value: arrived)
+            if !reduceMotion {
+                ForEach(0..<4, id: \.self) { ring in
+                    Circle()
+                        .strokeBorder(colors[ring % colors.count].opacity(0.9), lineWidth: 2)
+                        .frame(width: 46, height: 46)
+                        .scaleEffect(arrived ? 4.2 : 0.7)
+                        .opacity(arrived ? 0 : 0.85)
+                        .animation(.easeOut(duration: 1.3).delay(0.15 + Double(ring) * 0.22).repeatCount(2, autoreverses: false),
+                                   value: arrived)
+                }
+            }
+            HStack(spacing: 16) {
+                Image(systemName: notice.symbol)
+                    .font(.system(size: 34, weight: .medium))
+                    .foregroundStyle(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 54, height: 54)
+                    .scaleEffect(arrived || reduceMotion ? 1 : 0.3)
+                    .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.55),
+                               value: arrived)
+                    .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !reduceMotion)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(notice.detail)
+                        .font(.system(size: 16, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(notice.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                .offset(x: arrived || reduceMotion ? 0 : 14)
+                .blur(radius: arrived || reduceMotion ? 0 : 6)
+                .opacity(arrived ? 1 : 0)
+                .animation(.easeOut(duration: 0.45).delay(reduceMotion ? 0 : 0.12), value: arrived)
+            }
+            .foregroundStyle(.white)
+            NotchConnectSweep(colors: colors, trigger: key)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(notice.accessibilityText)
+        .task(id: key) {
+            var reset = Transaction(animation: nil)
+            reset.disablesAnimations = true
+            withTransaction(reset) { arrived = false }
+            try? await Task.sleep(nanoseconds: 16_000_000)
+            arrived = true
+        }
+    }
 }
 
 /// The device's icon with its sound-wave rings.

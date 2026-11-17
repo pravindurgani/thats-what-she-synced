@@ -74,6 +74,8 @@ final class NotchAccessoryService: NSObject {
     private func handleConnection(_ event: NotchAccessoryConnectionEvent) {
         switch event {
         case let .connected(name, majorClass, minorClass):
+            // Headphones the sound's route already announced are not announced twice.
+            if NotchConnectFlourish.wasAnnounced(name) { return }
             let text = FeatureStrings.notchActivities(L10n.shared.language)
             // The status stays short beside its icon, so the name gets a
             // whole wing to itself before it has to be shortened.
@@ -96,7 +98,12 @@ final class NotchAccessoryService: NSObject {
         pending.removeAll { $0.expiresAt <= Date() }
         guard active, NotchAccessorySupport.isEnabled(), let first = pending.first else { return }
         let notch = NotchService.shared
-        if !notch.expanded, notch.captureControls == nil, notch.show(first.notice) { pending.removeFirst() }
+        let connects = NotchConnectFlourish.applies(to: first.notice)
+        if !notch.expanded, notch.captureControls == nil,
+           connects ? notch.showConnect(first.notice) : notch.show(first.notice) {
+            if connects { NotchConnectFlourish.noteAnnounced(first.device) }
+            pending.removeFirst()
+        }
         let work = DispatchWorkItem { [weak self] in self?.presentNext() }
         noticeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + NotchEvent.accessory.duration + 0.1, execute: work)
