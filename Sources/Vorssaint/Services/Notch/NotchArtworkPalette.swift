@@ -27,17 +27,24 @@ struct NotchArtworkPalette: Equatable {
     /// The companion's body while it wears the song: a light top and a shade.
     let companionLight: NSColor
     let companionShade: NSColor
+    /// How lively the cover looks, 0 to 1: its overall saturation and
+    /// brightness. Dark, muted covers move calmer; bright, vivid ones livelier.
+    /// It gives every player a mood, not only those that report a genre.
+    let energy: Double
 
     /// Toned once, here, so views that read the palette on every frame of a
     /// resize or every audio update only read stored colours.
-    init(pure: [NSColor]) {
+    /// `text` is the colour words are toned from; the lead colour by default.
+    init(pure: [NSColor], text: NSColor? = nil, energy: Double = 0.5) {
         self.pure = pure
+        self.energy = min(1, max(0, energy))
+        let words = text ?? pure[0]
         glow = pure.map { $0.notchToned(maxLuminance: 0.18, minLuminance: 0.07) }
         marks = pure.map { $0.notchToned(maxLuminance: 0.8, minLuminance: 0.64) }
         plate = pure[0].notchToned(maxLuminance: 0.22, minLuminance: 0.09)
-        textPrimary = pure[0].notchToned(maxLuminance: 0.94, minLuminance: 0.88)
-        textSecondary = pure[0].notchToned(maxLuminance: 0.5, minLuminance: 0.42)
-        textTertiary = pure[0].notchToned(maxLuminance: 0.26, minLuminance: 0.2)
+        textPrimary = words.notchToned(maxLuminance: 0.94, minLuminance: 0.88)
+        textSecondary = words.notchToned(maxLuminance: 0.5, minLuminance: 0.42)
+        textTertiary = words.notchToned(maxLuminance: 0.26, minLuminance: 0.2)
         companionLight = pure[0].notchToned(maxLuminance: 0.86, minLuminance: 0.76)
         companionShade = pure[min(1, pure.count - 1)].notchToned(maxLuminance: 0.6, minLuminance: 0.48)
     }
@@ -65,11 +72,13 @@ struct NotchArtworkPalette: Equatable {
     /// publishes no cover at all (Firefox, many podcast and web players), one
     /// grown from the companion's colour, so the island still wears the song.
     /// A cover with no colour of its own, black and white, stays neutral.
-    static func song(_ artwork: NSImage?) -> NotchArtworkPalette? {
+    /// `remembers` is false for a snapshot that may be a departing song's,
+    /// as the closed strip's, so only the live cover is held.
+    static func song(_ artwork: NSImage?, remembers: Bool = true) -> NotchArtworkPalette? {
         if let artwork {
             let palette = of(artwork)
-            lastCover = palette.map { ($0, Date()) }
-            return palette
+            if remembers { lastCover = palette.map { ($0, Date()) } }
+            return worn(palette)
         }
         // A cover that arrives late (a looked-up one, say) keeps the last
         // song's colours a moment, rather than passing through the companion's.
@@ -85,10 +94,34 @@ struct NotchArtworkPalette: Equatable {
                     graceWake = wake
                     DispatchQueue.main.asyncAfter(deadline: .now() + left, execute: wake)
                 }
-                return held.palette
+                return worn(held.palette)
             }
         }
-        return coverless()
+        return worn(coverless())
+    }
+
+    /// A palette in the look the person chose (see NotchSongLook).
+    static func worn(_ palette: NotchArtworkPalette?) -> NotchArtworkPalette? {
+        guard let palette, NotchSongLook.current == .duotone else { return palette }
+        let key = palette.pure[0].notchRGBA
+        if let made = duotones[key] { return made }
+        if duotones.count > 32 { duotones.removeAll() }
+        let made = palette.duotone()
+        duotones[key] = made
+        return made
+    }
+
+    private static var duotones: [[Double]: NotchArtworkPalette] = [:]
+
+    /// The cover's lead colour as the one accent, with a soft neutral of the
+    /// same hue for everything else: the backdrop mostly calm charcoal with
+    /// one glow of the song, bars and controls in the accent, words near-white.
+    func duotone() -> NotchArtworkPalette {
+        let lead = pure[0].usingColorSpace(.sRGB) ?? pure[0]
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        lead.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        let neutral = NSColor(hue: hue, saturation: 0.06, brightness: 0.88, alpha: 1)
+        return NotchArtworkPalette(pure: [lead, neutral], text: neutral, energy: energy)
     }
 
     /// How long a missing cover keeps the last one's colours.
@@ -144,6 +177,7 @@ struct NotchArtworkPalette: Equatable {
         // by how colourful they are, so a small vivid area outweighs a large dull one
         // only as much as it should.
         var weight = [Double](repeating: 0, count: hueBins)
+        var saturationSum = 0.0, brightnessSum = 0.0, counted = 0.0
         var sums = [(r: Double, g: Double, b: Double)](repeating: (0, 0, 0), count: hueBins)
         for index in 0..<(side * side) {
             let offset = index * 4
@@ -153,6 +187,9 @@ struct NotchArtworkPalette: Equatable {
             let g = Double(pixels[offset + 1]) / 255 / alpha
             let b = Double(pixels[offset + 2]) / 255 / alpha
             let hsb = hsbOf(r: r, g: g, b: b)
+            saturationSum += hsb.s
+            brightnessSum += hsb.b
+            counted += 1
             guard hsb.s >= 0.22, hsb.b >= 0.18 else { continue }
             let w = hsb.s * hsb.s * (0.35 + hsb.b)
             let bin = min(hueBins - 1, Int(hsb.h * Double(hueBins)))
@@ -189,7 +226,8 @@ struct NotchArtworkPalette: Equatable {
         } else if colors.count == 2 {
             colors.append(colors[0].notchRotated(by: -0.06))
         }
-        return NotchArtworkPalette(pure: colors)
+        let energy = counted > 0 ? 0.55 * saturationSum / counted + 0.45 * brightnessSum / counted : 0.5
+        return NotchArtworkPalette(pure: colors, energy: energy)
     }
 
     private static func hueDistance(_ a: Double, _ b: Double) -> Double {
@@ -281,6 +319,17 @@ extension NSColor {
 
 import SwiftUI
 
+/// How much colour the island wears with a song: `vivid`, the cover's whole
+/// palette (the default), or `duotone`, its lead colour and a neutral.
+/// `defaults write <bundle id> notchSongLook -string duotone`.
+enum NotchSongLook: String {
+    case vivid, duotone
+
+    static var current: NotchSongLook {
+        NotchSongLook(rawValue: UserDefaults.standard.string(forKey: "notchSongLook") ?? "") ?? .vivid
+    }
+}
+
 /// The colours the island's volume meter wears: the loaded song's palette, so
 /// turning it up feels part of the music; with no song, the companion's own
 /// colours, so the island keeps one identity instead of falling back to grey.
@@ -289,7 +338,7 @@ enum NotchLevelPaint {
         let music = NotchMusicService.shared
         // A real cover's colours only: without one, the meter follows the
         // companion rule below, white when the companion is off.
-        if music.playback != nil, let palette = NotchArtworkPalette.of(music.artwork) {
+        if music.playback != nil, let palette = NotchArtworkPalette.worn(NotchArtworkPalette.of(music.artwork)) {
             return palette.marks.map { Color(nsColor: $0) }
         }
         // The companion's colours only while the companion is on; otherwise
