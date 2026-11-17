@@ -5,49 +5,15 @@ import SwiftUI
 
 /// The moment headphones or a speaker join: sound-wave rings pulse out from
 /// the device's icon as from a speaker cone, the icon springs in, and one
-/// sweep of light crosses the strip. It wears the island's colours: the loaded
-/// song's palette, else the companion's. Reduce Motion keeps a plain fade.
-enum NotchConnectFlourish {
-    /// Whether a notice is an audio device connecting, as opposed to a mouse,
-    /// a keyboard, or a battery warning.
-    static func applies(to notice: NotchNotice) -> Bool {
-        guard notice.event == .accessory, notice.level == nil else { return false }
-        let symbol = notice.symbol.lowercased()
-        return ["airpods", "headphones", "beats", "earbuds", "hifispeaker", "homepod", "speaker", "airplay"]
-            .contains { symbol.contains($0) }
-    }
-
+/// sweep of light crosses the island. It wears the island's colours: the
+/// loaded song's palette, else the companion's. Reduce Motion keeps a fade.
+extension NotchConnectFlourish {
     /// The island's colours for the flourish, never fewer than two.
     static func colors() -> [Color] {
         let paint = NotchLevelPaint.volume() ?? [.white, Color(white: 0.75)]
         return paint.count > 1 ? paint : paint + paint
     }
 
-    /// The opened island's card below the camera's row.
-    static let cardHeight: CGFloat = 112
-
-    // A device announced by one path (Bluetooth, or the sound's route) is not
-    // announced again by the other a moment later. The two can name a device a
-    // little differently ("Buds" and "Buds Stereo"), so names are compared
-    // by their letters and digits, one containing the other. Main thread only.
-    private static var announced: [String: Date] = [:]
-
-    private static func key(_ name: String) -> String {
-        String(String.UnicodeScalarView(name.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }))
-    }
-
-    static func noteAnnounced(_ name: String) {
-        announced = announced.filter { $0.value.timeIntervalSinceNow > -30 }
-        announced[key(name)] = Date()
-    }
-
-    static func wasAnnounced(_ name: String, within seconds: TimeInterval = 8) -> Bool {
-        let name = key(name)
-        guard name.count >= 3 else { return false }
-        return announced.contains { known, when in
-            -when.timeIntervalSinceNow < seconds && known.count >= 3 && (known.contains(name) || name.contains(known))
-        }
-    }
 }
 
 /// The opened island when headphones or a speaker join: the device's icon

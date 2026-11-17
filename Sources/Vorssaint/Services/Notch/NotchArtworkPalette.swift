@@ -61,6 +61,34 @@ struct NotchArtworkPalette: Equatable {
     }
 
     /// The palette of `image`, read once per image and remembered.
+    /// The palette a playing song wears: its cover's, or, for a player that
+    /// publishes no cover at all (Firefox, many podcast and web players), one
+    /// grown from the companion's colour, so the island still wears the song.
+    /// A cover with no colour of its own, black and white, stays neutral.
+    static func song(_ artwork: NSImage?) -> NotchArtworkPalette? {
+        guard let artwork else { return coverless() }
+        return of(artwork)
+    }
+
+    private static var coverlessPalette: (base: NotchMascotPalette, palette: NotchArtworkPalette)?
+
+    /// The companion's colour and its two neighbours on the colour wheel,
+    /// vivid enough to tone like a cover's. Main thread only.
+    static func coverless() -> NotchArtworkPalette {
+        let base = NotchMascotSupport.look().palette
+        if let held = coverlessPalette, held.base == base { return held.palette }
+        let seed = (NSColor(cgColor: base.shade.cgColor) ?? .systemBlue).usingColorSpace(.sRGB) ?? .systemBlue
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        seed.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        let pure = [hue, hue + 0.12, hue - 0.12].map {
+            NSColor(hue: ($0 + 1).truncatingRemainder(dividingBy: 1), saturation: min(1, max(saturation, 0.7)),
+                    brightness: 0.95, alpha: 1)
+        }
+        let palette = NotchArtworkPalette(pure: pure)
+        coverlessPalette = (base, palette)
+        return palette
+    }
+
     static func of(_ image: NSImage?) -> NotchArtworkPalette? {
         guard let image else { return nil }
         if let box = cache.object(forKey: image) { return box.palette }
@@ -157,6 +185,7 @@ struct NotchArtworkPalette: Equatable {
 }
 
 extension NSColor {
+
     fileprivate var notchRGBA: [Double] {
         let c = usingColorSpace(.sRGB) ?? self
         return [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent].map { (Double($0) * 255).rounded() }
@@ -231,7 +260,7 @@ import SwiftUI
 enum NotchLevelPaint {
     static func volume() -> [Color]? {
         let music = NotchMusicService.shared
-        if music.playback != nil, let palette = NotchArtworkPalette.of(music.artwork) {
+        if music.playback != nil, let palette = NotchArtworkPalette.song(music.artwork) {
             return palette.marks.map { Color(nsColor: $0) }
         }
         // The companion's colours only while the companion is on; otherwise

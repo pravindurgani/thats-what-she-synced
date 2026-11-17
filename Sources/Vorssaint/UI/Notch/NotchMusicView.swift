@@ -25,7 +25,7 @@ struct NotchMusicView: View {
     private var accent: Color { service.artworkTint?.color ?? .white }
     /// The cover's palette, which colours the page while a song is loaded.
     /// Neutral covers have none, and the player keeps its plain look for them.
-    private var palette: NotchArtworkPalette? { preview ? nil : NotchArtworkPalette.of(service.artwork) }
+    private var palette: NotchArtworkPalette? { preview ? nil : NotchArtworkPalette.song(service.artwork) }
     private var showsLyrics: Bool { lyricsEnabled && AppFeature.notchLyrics.isAvailable }
     private var showsQueue: Bool { queueEnabled && AppFeature.notchQueue.isAvailable }
     private var showsVolume: Bool { showVolume && AppFeature.mixer.isAvailable }
@@ -541,7 +541,7 @@ private struct NotchMusicTransport: View {
     /// The main action takes the cover's lead colour as a plate, deep enough
     /// that the white glyph keeps its contrast; neutral covers keep no plate.
     private var plate: Color? {
-        guard !preview, let palette = NotchArtworkPalette.of(service.artwork) else { return nil }
+        guard !preview, let palette = NotchArtworkPalette.song(service.artwork) else { return nil }
         return Color(nsColor: palette.plate)
     }
 
