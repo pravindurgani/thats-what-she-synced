@@ -208,7 +208,8 @@ private struct NotchCameraInk: View {
 /// Where the island wears the song: the open music page and the sections
 /// gallery, with the bubbles beside them, and the strip that names a new song.
 enum NotchSongMode {
-    /// On unless turned off: `defaults write <bundle id> notchSongModeEnabled -bool false`.
+    /// On unless turned off: `defaults write <bundle id> notchSongModeEnabled -bool false`,
+    /// then relaunch (a change from another process is read on the next launch).
     /// It turns off the island's colour, glow, bubbles, text tints and the
     /// companion's; the player's own cover-tinted controls stay.
     static var enabled: Bool { NotchSongPreferences.enabled }

@@ -323,7 +323,8 @@ import SwiftUI
 
 /// How much colour the island wears with a song: `vivid`, the cover's whole
 /// palette (the default), or `duotone`, its lead colour and a neutral.
-/// `defaults write <bundle id> notchSongLook -string duotone`.
+/// `defaults write <bundle id> notchSongLook -string duotone`, then relaunch
+/// (a change from another process is read on the next launch).
 enum NotchSongLook: String {
     case vivid, duotone
 
