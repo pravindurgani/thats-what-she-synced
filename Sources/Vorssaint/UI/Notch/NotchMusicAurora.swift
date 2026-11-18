@@ -132,12 +132,16 @@ enum NotchAuroraVeil {
     /// island's text in the song's own tints, primary far above AA. Coloured
     /// status text and thin graphics can fall below AA and 3:1 there.
     /// `page` is the same pages under Increase Contrast, where all of it keeps AA.
-    case open, calm, vivid, page
+    /// `strip` is the closed island's strip: a cover, a few bright words over
+    /// colour no lighter than 0.18 luminance, and the dancers, so the colour
+    /// shows nearly in full (about 0.88 to 0.92) at the wings' outer ends;
+    /// the camera between them stays the hardware's own black.
+    case open, calm, vivid, page, strip
 
     /// The colour's strength under the veil.
     var strength: Float {
         switch self {
-        case .open: return 1
+        case .open, .strip: return 1
         case .calm: return 0.55
         case .vivid: return 0.7
         // Measured on the busiest pages: their grey and orange text keeps
@@ -151,6 +155,7 @@ enum NotchAuroraVeil {
     var stops: [CGFloat] {
         switch self {
         case .open: return [0.26, 0.12, 0.22]
+        case .strip: return [0.12, 0.08, 0.1]
         case .calm: return [0.49, 0.23, 0.42]
         case .vivid: return [0.42, 0.18, 0.36]
         case .page: return [0.49, 0.26, 0.42]
@@ -169,7 +174,7 @@ enum NotchAuroraVeil {
     /// How far a new song's bloom lifts the veil.
     var bloomDepth: Double {
         switch self {
-        case .open: return 0.5
+        case .open, .strip: return 0.5
         case .calm: return 0.7
         case .vivid: return 0.65
         case .page: return 0.8
@@ -238,7 +243,7 @@ enum NotchSongMode {
     /// the person asks macOS for more contrast.
     static func veil(page: Bool, notch: NotchService, increasedContrast: Bool) -> NotchAuroraVeil {
         // The strip's words are few and bright; under Increase Contrast it calms too.
-        guard page else { return increasedContrast ? .page : .open }
+        guard page else { return increasedContrast ? .page : .strip }
         if !onMusicPage(notch) { return increasedContrast ? .page : .vivid }
         return increasedContrast || notch.musicDetailVisible ? .calm : .open
     }

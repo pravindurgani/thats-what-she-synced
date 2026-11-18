@@ -6,7 +6,9 @@ import Foundation
 
 /// The dancers' model: the "Music side" setting, shuffle's deal, the loop
 /// each dance counts, the Farewell Three's offsets and shared jump, the
-/// frames one beat plays, the beat reading, and the floor every pose keeps to.
+/// frames one beat plays, the beat reading, the floor every pose keeps to,
+/// the bold figures' sizes and tones, the wings and their step down, and the
+/// colours a black-and-white cover borrows.
 enum NotchDancerTests {
     static func run(_ suite: TestSuite) {
         settingContracts(suite)
@@ -18,6 +20,8 @@ enum NotchDancerTests {
         floorContracts(suite)
         rigContracts(suite)
         wingContracts(suite)
+        toneContracts(suite)
+        colourlessContracts(suite)
         stringContracts(suite)
     }
 
@@ -170,9 +174,37 @@ enum NotchDancerTests {
                      "the Farewell Three stand side by side, left to right")
         suite.expect(dancers[0].height > dancers[1].height && dancers[0].height > dancers[2].height,
                      "the left one is the tallest")
-        suite.expect(dancers[1].body.shoulder > dancers[0].body.shoulder && dancers[1].body.shoulder > dancers[2].body.shoulder
-                        && dancers[1].body.shoulder < dancers[0].body.shoulder * 1.2,
-                     "the middle one is a little wider, and only a little")
+        suite.expect(abs(dancers[0].height - 26) <= 0.6 && abs(dancers[1].height - 24) <= 0.6
+                        && abs(dancers[2].height - 25) <= 0.6,
+                     "the three stand about 26, 24 and 25 points tall: \(dancers.map(\.height))")
+        suite.expect(Set(dancers.map { [$0.body.headRadius, $0.body.torsoWidth, $0.body.shoulder, $0.body.hip,
+                                        $0.body.legWidth, $0.body.armWidth, $0.body.handRadius] }).count == 1,
+                     "the three share one build, told apart by height and outfit, never by body size")
+        suite.expect(Set(dancers.map { String(describing: $0.layers.first { $0.shape == .torso }?.paint) }).count == 3,
+                     "each of the three wears its own top")
+        suite.expect(abs((dancers[1].position - dancers[0].position) - 16) < 0.01
+                        && abs((dancers[2].position - dancers[1].position) - 16) < 0.01,
+                     "the three stand 16 points apart at full size")
+        // Arms never cross a neighbour's centre line, in any pose a step reaches.
+        let floor = NotchDanceLayout(routine: three, height: 32)
+        let centres = dancers.map { floor.width / 2 + $0.position * floor.scale }
+        var crossing: [String] = []
+        for (index, dancer) in dancers.enumerated() {
+            var poses = [three.rest(index), three.groove(index), three.still(index)]
+            for beat in 0..<NotchDanceRoutine.loop {
+                poses += three.step(index, beat: beat, energy: 1, interval: 0.5, settle: 0.5).frames.map(\.pose)
+            }
+            for pose in poses {
+                let paths = dancer.paths(pose, floor: floor)
+                for (layer, path) in zip(dancer.layers, paths) where layer.shape == .arms || layer.shape == .hands {
+                    let half = (dancer.lineWidth(layer, floor: floor) ?? 0) / 2
+                    let reach = path.boundingBoxOfPath.insetBy(dx: -half, dy: -half)
+                    if index > 0, reach.minX < centres[index - 1] { crossing.append("\(index) left") }
+                    if index < dancers.count - 1, reach.maxX > centres[index + 1] { crossing.append("\(index) right") }
+                }
+            }
+        }
+        suite.expect(crossing.isEmpty, "no arm crosses a neighbour's centre line: \(Set(crossing))")
         for beat in [7, 15, -1] {
             let jumps = dancers.indices.map { three.move($0, beat: beat) }
             suite.expect(jumps.allSatisfy { $0.hits.count == 1 && $0.hits[0].at == 0 && $0.hits[0].pose.lift > 2
@@ -301,49 +333,96 @@ enum NotchDancerTests {
     }
 
     /// Every pose a dance can reach, its settles included, stays on its floor
-    /// on short, usual and tall strips, so nothing is clipped at the strip's
-    /// top, its ends or the camera's edge.
+    /// on short, usual and tall strips, at full size and stepped down, so
+    /// nothing is clipped at the strip's top, its ends or the camera's edge.
     private static func floorContracts(_ suite: TestSuite) {
         for height: CGFloat in [24, 32, 37] {
             for routine in NotchDanceRoutine.allCases {
-                for (index, dancer) in routine.dancers.enumerated() {
-                    var poses = [routine.rest(index), routine.groove(index), routine.still(index)]
-                    for beat in 0..<NotchDanceRoutine.loop {
-                        poses += routine.move(index, beat: beat).hits.map { routine.groove(index).mixed($0.pose, 1) }
-                        poses += routine.step(index, beat: beat, energy: 1, interval: 0.5, settle: 0.5).frames.map(\.pose)
-                    }
-                    var reach = CGRect.null
-                    var shapes: [Int]?
-                    var consistent = true
-                    for pose in poses {
-                        let paths = dancer.paths(pose, floorHeight: height)
-                        for (layer, path) in zip(dancer.layers, paths) {
-                            let half = (dancer.lineWidth(layer, floorHeight: height) ?? 0) / 2
-                            reach = reach.union(path.boundingBoxOfPath.insetBy(dx: -half, dy: -half))
+                let stepped = NotchDanceLayout(routine: routine, height: height,
+                                               scale: min(NotchDanceFloor.scale(height: height), NotchDanceFloor.steppedScale))
+                for floor in [NotchDanceLayout(routine: routine, height: height), stepped] {
+                    for (index, dancer) in routine.dancers.enumerated() {
+                        var poses = [routine.rest(index), routine.groove(index), routine.still(index)]
+                        for beat in 0..<NotchDanceRoutine.loop {
+                            poses += routine.move(index, beat: beat).hits.map { routine.groove(index).mixed($0.pose, 1) }
+                            poses += routine.step(index, beat: beat, energy: 1, interval: 0.5, settle: 0.5).frames.map(\.pose)
                         }
-                        let elements = paths.map(elementCount)
-                        if let shapes, shapes != elements { consistent = false }
-                        shapes = elements
+                        var reach = CGRect.null
+                        var shapes: [Int]?
+                        var consistent = true
+                        for pose in poses {
+                            let paths = dancer.paths(pose, floor: floor)
+                            for (layer, path) in zip(dancer.layers, paths) {
+                                let half = (dancer.lineWidth(layer, floor: floor) ?? 0) / 2
+                                reach = reach.union(path.boundingBoxOfPath.insetBy(dx: -half, dy: -half))
+                            }
+                            let elements = paths.map(elementCount)
+                            if let shapes, shapes != elements { consistent = false }
+                            shapes = elements
+                        }
+                        suite.expect(reach.minX >= 0 && reach.maxX <= floor.width
+                                        && reach.minY >= 0 && reach.maxY <= height - 0.25,
+                                     "\(routine.rawValue) \(index) stays on a \(height)-point floor at \(floor.scale): \(reach)")
+                        suite.expect(consistent, "\(routine.rawValue) \(index) draws every pose from the same outline, so it animates")
                     }
-                    suite.expect(reach.minX >= 0 && reach.maxX <= NotchDanceFloor.width
-                                    && reach.minY >= 0 && reach.maxY <= height - 0.25,
-                                 "\(routine.rawValue) \(index) stays on a \(height)-point floor: \(reach)")
-                    suite.expect(consistent, "\(routine.rawValue) \(index) draws every pose from the same outline, so it animates")
                 }
             }
         }
+        suite.expect(NotchDanceFloor.figureHeight(strip: 32) == 26 && NotchDanceFloor.figureHeight(strip: 20) == 18
+                        && NotchDanceFloor.figureHeight(strip: 40) == 30 && NotchDanceFloor.figureHeight(strip: .nan) == 26,
+                     "figures stand as tall as the strip less 6 points, 18 to 30")
         suite.expect(NotchDanceFloor.scale(height: 32) == 1 && NotchDanceFloor.scale(height: 24) < 1
-                        && NotchDanceFloor.scale(height: .nan) == 1,
-                     "figures are full size in a usual strip and shrink only in a short one")
-        let standing = NotchDanceRoutine.boomboxBoss.dancers[0]
-        let full = standing.scale(floorHeight: 32) * standing.body.standingHeight
-        suite.expect(full >= 17.5 && full <= 20.5, "a dancer stands about 18 to 20 points tall in a 32-point strip")
+                        && NotchDanceFloor.scale(height: 37) > 1 && NotchDanceFloor.scale(height: .nan) == 1,
+                     "figures are full size in a usual strip, smaller in a short one and larger in a tall one")
+        suite.expect(abs(NotchDanceFloor.steppedScale * NotchDanceFloor.fullFigure - 22) < 0.001
+                        && NotchDanceFloor.steppedWing == 44,
+                     "the step down is a 44-point wing with 22-point figures")
+        let scarn = NotchDanceRoutine.scarn.dancers[0]
+        suite.expect(abs(scarn.height * NotchDanceFloor.scale(height: 32) - 26) <= 0.5,
+                     "a dancer stands about 26 points tall in a 32-point strip, not 19 or 20")
+        suite.expect(NotchDanceRoutine.farewellThree.floorWidth == 48 && NotchDanceRoutine.farewellThree.wing == 60
+                        && NotchDanceRoutine.scarn.floorWidth == 34 && NotchDanceRoutine.boomboxBoss.wing == 48,
+                     "the three take a 60-point wing and a solo a 48-point one")
+        // Bold, not hairline: limbs and torso at the designed widths, in points at full size.
+        let full = NotchDanceLayout(routine: .scarn, height: 32)
+        func points(_ shape: NotchDancerLayer.Shape) -> CGFloat {
+            scarn.layers.first { $0.shape == shape }.flatMap { scarn.lineWidth($0, floor: full) } ?? 0
+        }
+        suite.expect(abs(points(.legs) - 2.8) < 0.05 && abs(points(.arms) - 2.4) < 0.05 && abs(points(.torso) - 7) < 0.05,
+                     "legs 2.8 points, arms 2.4 and the torso a 7-point filled capsule")
+        suite.expect(abs(scarn.body.handRadius * NotchDanceFloor.unit - 1.5) < 0.05
+                        && abs(scarn.body.headRadius * 2 * NotchDanceFloor.unit - 7.1) < 0.6,
+                     "hands 1.5 points in radius, heads about 7 to 8 across")
+        let parts: [NotchDancerLayer.Shape] = [.legs, .shoes, .soles, .torso, .arms, .hands, .head]
+        let silhouette: [NotchDancerLayer.Shape] = [.legs, .torso, .arms, .head, .hands, .shoes]
         for routine in NotchDanceRoutine.allCases {
             suite.expect(routine.dancers.allSatisfy { $0.layers.contains { $0.shape == .head && $0.paint == .head } }
                             && routine.dancers.allSatisfy { !$0.layers.contains { $0.paint == .head && $0.shape != .head
                                                                                    && $0.shape != .hands } },
                          "\(routine.rawValue): heads and hands share one fill, and nothing else wears it")
+            suite.expect(routine.dancers.allSatisfy { dancer in
+                             parts.allSatisfy { shape in dancer.layers.contains { $0.shape == shape } }
+                         },
+                         "\(routine.rawValue): every figure has legs, shoes with soles, a torso, arms, hands and a head")
+            suite.expect(routine.dancers.allSatisfy { dancer in
+                             dancer.layers.filter { silhouette.contains($0.shape) }.allSatisfy(\.keyline)
+                         },
+                         "\(routine.rawValue): the black keyline runs around every part of the silhouette")
+            suite.expect(routine.dancers.allSatisfy { dancer in
+                             dancer.layers.filter { $0.shape == .torso || $0.shape == .legs || $0.shape == .arms }
+                                 .allSatisfy { $0.stroke == .limb && $0.paint != .head }
+                         },
+                         "\(routine.rawValue): bodies are filled, round-capped shapes, not outlines")
         }
+        suite.expect(NotchDanceRoutine.scarn.dancers[0].layers.contains { $0.shape == .shirt }
+                        && NotchDanceRoutine.scarn.dancers[0].layers.contains { $0.shape == .tie && $0.paint == .tie }
+                        && NotchDanceRoutine.scarn.dancers[0].layers.first { $0.shape == .torso }?.paint == .tone(.suit),
+                     "the Scarn wears a suit, a white shirt's V and a thin tie in the song's second colour")
+        let boss = NotchDanceRoutine.boomboxBoss.dancers[0]
+        suite.expect(!boss.layers.contains { $0.shape == .shirt } && boss.layers.contains { $0.shape == .tie }
+                        && boss.layers.first { $0.shape == .torso }?.paint == .tone(.light)
+                        && boss.layers.first { $0.shape == .legs }?.paint == .tone(.trousers) && boss.carriesBox,
+                     "the Boombox Boss: a light shirt and no jacket, a skinny tie, slate trousers and the box")
     }
 
     private static func elementCount(_ path: CGPath) -> Int {
@@ -372,54 +451,171 @@ enum NotchDancerTests {
         suite.expect(abs(close.hands[0].x - (close.shoulders[0].x + 0.5)) < 0.01 && close.elbows[0].x < close.shoulders[0].x,
                      "a hand near its shoulder is reached, the elbow out to the side")
         let spun = NotchDanceRoutine.scarn.dancers[0]
-        let front = spun.paths(NotchDancerPose(), floorHeight: 32)
-        let back = spun.paths(NotchDancerPose.with { $0.facing = -1 }, floorHeight: 32)
+        let floor = NotchDanceLayout(routine: .scarn, height: 32)
+        let front = spun.paths(NotchDancerPose(), floor: floor)
+        let back = spun.paths(NotchDancerPose.with { $0.facing = -1 }, floor: floor)
         suite.expect(zip(front, back).allSatisfy { abs($0.boundingBoxOfPath.midX - $1.boundingBoxOfPath.midX) < 0.01 },
                      "a symmetric pose turned around stands in the same place")
-        let edgeOn = spun.paths(NotchDancerPose.with { $0.facing = 0.1 }, floorHeight: 32)
-        suite.expect(edgeOn[edgeOn.count - 1].boundingBoxOfPath.width < front[front.count - 1].boundingBoxOfPath.width * 0.2,
+        let edgeOn = spun.paths(NotchDancerPose.with { $0.facing = 0.1 }, floor: floor)
+        let legs = spun.layers.firstIndex { $0.shape == .legs } ?? 0
+        let head = spun.layers.firstIndex { $0.shape == .head } ?? 0
+        suite.expect(edgeOn[legs].boundingBoxOfPath.width < front[legs].boundingBoxOfPath.width * 0.2,
                      "midway through a spin the figure is seen edge on")
+        suite.expect(abs(edgeOn[head].boundingBoxOfPath.width - front[head].boundingBoxOfPath.width) < 0.01,
+                     "a head stays round through a spin")
         let mirrored = NotchDanceRoutine.scarn.move(0, beat: 1).hits[0].pose.mirrored.mirrored
         suite.expect(mirrored == NotchDanceRoutine.scarn.move(0, beat: 1).hits[0].pose, "mirroring twice is the same move")
-        let box = NotchDancerRig(body: body, pose: NotchDanceRoutine.boomboxBoss.groove(0))
-        suite.expect(box.boxCenter.y - NotchBoombox.height / 2 > box.head.y + body.headRadius + 0.5,
-                     "the boombox is held clear of the head")
+        let bossBody = NotchDanceRoutine.boomboxBoss.dancers[0].body
+        for pose in [NotchDanceRoutine.boomboxBoss.groove(0), NotchDanceRoutine.boomboxBoss.move(0, beat: 1).hits[0].pose] {
+            let box = NotchDancerRig(body: bossBody, pose: pose)
+            suite.expect(box.boxCenter.y - NotchBoombox.height / 2 > box.head.y + bossBody.headRadius + 0.5,
+                         "the boombox is held clear of the head")
+        }
+        // On the accent the straight arms push the box into the strip's top edge.
+        let push = NotchDanceRoutine.boomboxBoss.dancers[0]
+            .paths(NotchDanceRoutine.boomboxBoss.move(0, beat: 1).hits[0].pose, floor: NotchDanceLayout(routine: .boomboxBoss,
+                                                                                                         height: 32))
+        let top = push.map(\.boundingBoxOfPath.maxY).max() ?? 0
+        suite.expect(top > 30 && top <= 31.75, "the push takes the box up to the strip's top edge: \(top)")
     }
 
     private static func wingContracts(_ suite: TestSuite) {
         let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
         for safeArea: CGFloat in [32, 33, 37.5, 38] {
             let display = NotchGeometry(screen: screen, safeAreaTop: safeArea, cameraWidth: 185,
-                                        menuBarHeight: 24, compactSideRoom: 100)
+                                        menuBarHeight: 24, compactSideRoom: 120)
             let bars = display.compactMusicGeometry
-            let dancing = display.compactMusicGeometry(dancing: true)
-            suite.expect(display.compactMusicGeometry(dancing: false) == bars, "the bars keep upstream's strip")
-            suite.expect(dancing.compactActivityWingWidth > bars.compactActivityWingWidth
-                            && dancing.compactActivityWingWidth <= 48
-                            && NotchMusicStripLayout.fitsDancers(dancing) && !NotchMusicStripLayout.fitsDancers(bars),
-                         "dancers widen both wings just enough for their floor: \(dancing.compactActivityWingWidth)")
-            suite.expect(abs(NotchMusicStripLayout.dancersInset(dancing) + NotchDanceFloor.width
-                             - dancing.compactActivityWingWidth) <= 1,
-                         "the floor reaches from the camera to the strip's even end gap")
-            suite.expect(dancing.compactActivitySize.height == bars.compactActivitySize.height
-                            && dancing.compactActivityCameraGap == bars.compactActivityCameraGap
-                            && dancing.compactMusicArtworkSide == bars.compactMusicArtworkSide
-                            && dancing.compactMusicArtworkInset == bars.compactMusicArtworkInset,
+            let shuffle = display.compactMusicGeometry(dancing: .shuffle)
+            let solo = display.compactMusicGeometry(dancing: .scarn)
+            let scale = NotchDanceFloor.scale(height: shuffle.compactActivityContentHeight)
+            suite.expect(display.compactMusicGeometry(dancing: .bars) == bars, "the bars keep upstream's strip")
+            suite.expect(shuffle.compactActivityWingWidth >= (60 * scale).rounded(.down)
+                            && shuffle.compactActivityWingWidth <= (60 * scale).rounded(.up) + 2
+                            && solo.compactActivityWingWidth >= (48 * scale).rounded(.down)
+                            && solo.compactActivityWingWidth < shuffle.compactActivityWingWidth
+                            && shuffle == display.compactMusicGeometry(dancing: .farewellThree),
+                         "the three take about 60-point wings and a solo about 48, grown with the strip: "
+                            + "\(shuffle.compactActivityWingWidth), \(solo.compactActivityWingWidth)")
+            suite.expect(abs(shuffle.compactActivitySize.width - shuffle.compactActivityCameraGap
+                             - shuffle.compactActivityWingWidth * 2) < 0.5,
+                         "both wings grow alike, so the island stays balanced")
+            for routine in NotchDanceRoutine.allCases {
+                let geometry = display.compactMusicGeometry(dancing: .shuffle)
+                guard let floor = NotchMusicStripLayout.danceFloor(geometry, routine: routine) else {
+                    suite.expect(false, "\(routine.rawValue) fits a shuffle's wings")
+                    continue
+                }
+                let inset = NotchMusicStripLayout.dancersInset(geometry, floor: floor)
+                suite.expect(abs(floor.scale - scale) < 0.001,
+                             "\(routine.rawValue) dances at full size in a shuffle's wings")
+                suite.expect(inset >= geometry.compactMusicDancersInset(scale: floor.scale) - 0.01
+                                && inset + floor.width <= geometry.compactActivityWingWidth + 0.01,
+                             "\(routine.rawValue)'s floor reaches no closer to the end than its gap, nor past the camera")
+            }
+            suite.expect(shuffle.compactActivitySize.height == bars.compactActivitySize.height
+                            && shuffle.compactActivityCameraGap == bars.compactActivityCameraGap
+                            && shuffle.compactMusicArtworkSide == bars.compactMusicArtworkSide
+                            && shuffle.compactMusicArtworkInset == bars.compactMusicArtworkInset,
                          "the strip keeps its height and the cover its size and place at the left end")
             suite.expect(display.lockScreenMusicGeometry.compactActivityWingWidth == bars.compactActivityWingWidth,
                          "the Lock Screen keeps the bars' strip")
-            let roomForBars = bars.compactActivityWingWidth + 1
+
+            // Less room: the wings step down to 44 points and smaller figures.
+            var tight = display
+            tight.compactSideRoom = 50
+            let stepped = tight.compactMusicGeometry(dancing: .shuffle)
+            suite.expect(stepped.compactActivityWingWidth >= NotchDanceFloor.steppedWing
+                            && stepped.compactActivityWingWidth <= NotchDanceFloor.steppedWing + 2
+                            && (safeArea > 33 || stepped.compactActivityWingWidth == NotchDanceFloor.steppedWing),
+                         "menus short of the full wings step them down to 44 points, a hair more in a tall strip: "
+                            + "\(stepped.compactActivityWingWidth)")
+            let trio = NotchMusicStripLayout.danceFloor(stepped, routine: .farewellThree)
+            let single = NotchMusicStripLayout.danceFloor(stepped, routine: .boomboxBoss)
+            suite.expect(single.map { abs($0.scale - min(scale, NotchDanceFloor.steppedScale)) < 0.001 } == true
+                            && trio.map { $0.scale >= NotchDanceFloor.smallestScale && $0.scale < scale } == true,
+                         "stepped down, a solo dances at 22 points and the three as large as the wing holds")
+            suite.expect(NotchMusicStripLayout.fitsDancers(stepped), "the stepped-down wing still dances")
+
+            // Less room still: the bars' wings and the bars.
             var crowded = display
-            crowded.compactSideRoom = roomForBars
-            suite.expect(crowded.compactMusicGeometry(dancing: true) == crowded.compactMusicGeometry
-                            && !NotchMusicStripLayout.fitsDancers(crowded.compactMusicGeometry(dancing: true)),
+            crowded.compactSideRoom = NotchDanceFloor.steppedWing - 1
+            suite.expect(crowded.compactMusicGeometry(dancing: .shuffle) == crowded.compactMusicGeometry
+                            && !NotchMusicStripLayout.fitsDancers(crowded.compactMusicGeometry(dancing: .shuffle))
+                            && !NotchMusicStripLayout.fitsDancers(bars),
                          "menus leaving room only for the bars keep the bars' wings and the bars")
         }
         let simulated = NotchGeometry(screen: screen, safeAreaTop: 0, cameraWidth: 180, menuBarHeight: 24,
                                       compactSideRoom: 100)
-        suite.expect(simulated.compactMusicGeometry(dancing: true) == simulated.compactMusicGeometry
-                        && NotchMusicStripLayout.fitsDancers(simulated.compactMusicGeometry),
+        suite.expect(simulated.compactMusicGeometry(dancing: .shuffle) == simulated.compactMusicGeometry
+                        && NotchMusicStripLayout.fitsDancers(simulated.compactMusicGeometry)
+                        && NotchDanceRoutine.allCases.allSatisfy {
+                            NotchMusicStripLayout.danceFloor(simulated.compactMusicGeometry, routine: $0) != nil },
                      "a simulated camera's roomy wings already hold the dancers")
+    }
+
+    /// Outfits are tones of the song's lead colour, every one clear on the
+    /// black island; ties take its second colour, deep enough for a white shirt.
+    private static func toneContracts(_ suite: TestSuite) {
+        let black = NotchRGB(red: 0, green: 0, blue: 0)
+        let leads = [0xFF0000, 0x0000FF, 0xFFFF00, 0x00FF00, 0x808080, 0xFFFFFF, 0x000000, 0x0E9F96, 0x7A1F3D, 0xF4D03F]
+            .map { NotchRGB(hex: UInt32($0)) }
+        for lead in leads {
+            let tones = Dictionary(uniqueKeysWithValues: NotchDanceTone.allCases.map { ($0, $0.of(lead)) })
+            for tone in NotchDanceTone.allCases {
+                let level = tones[tone]?.luminance ?? 0
+                suite.expect(level >= tone.luminance.lowerBound - 0.005 && level <= tone.luminance.upperBound + 0.06,
+                             "\(tone) of \(lead) lands at its luminance: \(level)")
+            }
+            suite.expect([NotchDanceTone.light, .mid, .greySuit].allSatisfy { NotchRGB.contrast(tones[$0]!, black) >= 7 }
+                            && [NotchDanceTone.deep, .suit].allSatisfy { NotchRGB.contrast(tones[$0]!, black) >= 4.5 }
+                            && (tones[.trousers]?.luminance ?? 0) >= 0.3 - 0.005,
+                         "light and mid read at 7:1 on black, deep at 4.5:1, trousers never below 0.3")
+            suite.expect((tones[.light]?.luminance ?? 0) > (tones[.mid]?.luminance ?? 0)
+                            && (tones[.mid]?.luminance ?? 0) > (tones[.deep]?.luminance ?? 0),
+                         "light, mid and deep step down in that order")
+            let tie = NotchDanceTone.tie(lead)
+            suite.expect(NotchRGB.contrast(tie, NotchDanceTone.paper) >= 2.4 && NotchRGB.contrast(tie, black) >= 4,
+                         "a tie stands out on a white shirt and still clears black: \(tie)")
+        }
+        suite.expect(NotchDanceTone.paper == NotchRGB(hex: 0xF7F5F0), "heads and hands are paper, never a skin tone")
+        let pink = NotchDanceTone.light.of(NotchRGB(hex: 0xFF0055)).hsb.saturation
+        suite.expect(pink <= NotchDanceTone.light.saturationCap + 0.01, "a light shirt is a pastel, not a neon")
+    }
+
+    /// A cover with no colour of its own wears the companion's: the cast
+    /// member's own colours, else an Office palette dealt by the song.
+    private static func colourlessContracts(_ suite: TestSuite) {
+        for member in NotchMascotStyle.allCases where member.isCast {
+            let seeds = NotchColourlessSong.seeds(cast: member, song: "any song")
+            let own = NotchIslandGlow.idleSeeds(look: NotchMascotLook(style: member, shape: .ball, palette: .pearl),
+                                                dealt: member)
+            suite.expect(seeds == own && seeds.count == 3 && seeds.allSatisfy { $0.hsb.saturation >= 0.5 },
+                         "a black-and-white song wears \(member.rawValue)'s own colours, vivid, not grey")
+        }
+        for member in [NotchMascotStyle.minimal, .robot, .shuffle] {
+            suite.expect(NotchColourlessSong.office.contains(NotchColourlessSong.seeds(cast: member, song: "k")),
+                         "\(member.rawValue) is not of the cast, so the song is dealt an Office palette")
+        }
+        suite.expect(NotchColourlessSong.seeds(cast: nil, song: nil) == NotchColourlessSong.teapot,
+                     "with no companion and no song key, the teapot's teal")
+        suite.expect(NotchColourlessSong.office == [NotchColourlessSong.teapot, NotchColourlessSong.beet,
+                                                    NotchColourlessSong.gold]
+                        && NotchColourlessSong.teapot.first == NotchRGB(hex: 0x0E9F96)
+                        && NotchColourlessSong.beet.first == NotchRGB(hex: 0x9E1F4E)
+                        && NotchColourlessSong.gold.first == NotchRGB(hex: 0xC9A227),
+                     "the Office palettes: teapot, beet and gold")
+        let keys = (0..<40).map { "song \($0)" }
+        let dealt = keys.map { NotchColourlessSong.officeIndex($0) }
+        suite.expect(keys.map { NotchColourlessSong.officeIndex($0) } == dealt && Set(dealt) == [0, 1, 2],
+                     "a song is dealt the same Office palette every time, and every palette comes up")
+        // FNV-1a, the same in every launch, not Swift's per-process hash.
+        suite.expect(NotchColourlessSong.officeIndex("a") == Int(0xaf63dc4c8601ec8c as UInt64 % 3),
+                     "the deal hashes the song's key the same way in every launch")
+        for member in NotchMascotStyle.allCases where member.isCast {
+            let seeds = NotchColourlessSong.seeds(cast: member, song: nil)
+            suite.expect(seeds.allSatisfy { $0.toned(maxLuminance: 0.18, minLuminance: 0.07).luminance >= 0.06 },
+                         "\(member.rawValue)'s colours glow rather than going black")
+        }
     }
 
     private static func stringContracts(_ suite: TestSuite) {

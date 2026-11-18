@@ -110,6 +110,45 @@ enum NotchIslandGlow: Equatable {
     }
 }
 
+/// The colours a song wears when its cover has none of its own: black and
+/// white, greys, or too little colour to read (NotchArtworkPalette.of finds
+/// no palette, which takes a peak saturation of about 0.2 or more). The rule
+/// everywhere is "the song's colours, else the companion's", so a colourless
+/// cover takes the companion's: the cast member the island draws lends its
+/// own glow colours. With the companion off, or not of the cast, the song is
+/// dealt one of three Office palettes, the same one every time it plays.
+enum NotchColourlessSong {
+    /// The teapot's teal, the beet's pink and the statuette's gold.
+    static let teapot = [NotchRGB(hex: 0x0E9F96), NotchRGB(hex: 0x22D3C5), NotchRGB(hex: 0x9AF5EA)]
+    static let beet = [NotchRGB(hex: 0x9E1F4E), NotchRGB(hex: 0xE24A8A), NotchRGB(hex: 0xFFC4DC)]
+    static let gold = [NotchRGB(hex: 0xC9A227), NotchRGB(hex: 0xF4D03F), NotchRGB(hex: 0xFFF0A0)]
+    static let office = [teapot, beet, gold]
+
+    /// The song's colours: `cast`, the member of the cast the island draws
+    /// (nil with the companion off or not of the cast), lends its own; else
+    /// the Office palette `song`, its key, is dealt.
+    static func seeds(cast member: NotchMascotStyle?, song: String?) -> [NotchRGB] {
+        if let member, member.isCast,
+           let own = NotchIslandGlow.idleSeeds(look: NotchMascotLook(style: member, shape: .ball, palette: .pearl),
+                                               dealt: member) {
+            return own
+        }
+        return office[officeIndex(song)]
+    }
+
+    /// The Office palette for a song: a stable hash of its key, the same in
+    /// every launch, so a song keeps its colours. No key takes the first.
+    static func officeIndex(_ song: String?) -> Int {
+        guard let song, !song.isEmpty else { return 0 }
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in song.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01B3
+        }
+        return Int(hash % UInt64(office.count))
+    }
+}
+
 extension NotchRGB {
     /// A companion's colour as plain numbers, its alpha left behind.
     init(_ color: NotchMascotColor) {

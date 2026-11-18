@@ -717,7 +717,7 @@ final class NotchService: ObservableObject {
             geometry.compactSideRoom = min(geometry.compactSideRoom ?? 0, room)
         }
         switch activity {
-        case .music: return geometry.compactMusicGeometry(dancing: NotchMusicSide.current.dances)
+        case .music: return geometry.compactMusicGeometry(dancing: NotchMusicSide.current)
         case .timer:
             return geometry.compactTimerGeometry(showsDownloads: companion == .downloads,
                                                  wing: timerStripWing(for: companion, in: geometry))
