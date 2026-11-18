@@ -26,9 +26,41 @@ struct NotchConnectCard: View {
     @State private var arrived = false
 
     var body: some View {
+        if notice.office != nil { office } else { plain }
+    }
+
+    /// With the Office moments on: the boombox, and the name as a lower third.
+    private var office: some View {
+        let colors = NotchOfficeInk.colors()
+        let key = "\(notice.title)|\(notice.detail)|\(notice.symbol)"
+        return ZStack {
+            HStack(spacing: 14) {
+                NotchOfficeBoombox(symbol: notice.symbol, colors: colors, trigger: key)
+                NotchOfficeConnectText(notice: notice, trigger: key)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.white)
+            // The sweep fades out at every edge, so it crosses the open
+            // island as light rather than as a band with edges.
+            NotchConnectSweep(colors: colors, trigger: key)
+                .clipped()
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white, location: 0.3),
+                                             .init(color: .white, location: 0.7), .init(color: .clear, location: 1)],
+                                     startPoint: .top, endPoint: .bottom))
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white, location: 0.15),
+                                             .init(color: .white, location: 0.85), .init(color: .clear, location: 1)],
+                                     startPoint: .leading, endPoint: .trailing))
+        }
+        // Unclipped: the glow and rings fade into the island's margins.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(notice.accessibilityText)
+    }
+
+    private var plain: some View {
         let colors = NotchConnectFlourish.colors()
         let key = "\(notice.title)|\(notice.detail)|\(notice.symbol)"
-        ZStack {
+        return ZStack {
             HStack(spacing: 16) {
                 // The sound comes out of the device: its glow and rings
                 // spread from the icon, under the words beside it.

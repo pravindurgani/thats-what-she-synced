@@ -180,7 +180,7 @@ enum NotchAuroraVeil {
 /// A soft pool of black around the camera: solid behind the housing, then
 /// fading out sideways and downward, so the island's colour wraps around the
 /// notch instead of stopping at a flat black band.
-private struct NotchCameraInk: View {
+struct NotchCameraInk: View {
     let camera: CGSize
     /// How far the black fades out beyond the camera, sideways and down.
     private static let reach: CGFloat = 84
@@ -222,8 +222,14 @@ enum NotchSongMode {
     /// which resizes with every keystroke, keeps its black.
     static func wearsSong(_ notch: NotchService, _ music: NotchMusicService) -> Bool {
         guard enabled, notch.expanded, !notch.modules.isEmpty, !notch.showingCommandBar, music.playback != nil else { return false }
-        if !notch.showingSections, notch.selectedMetric == nil, plainPages.contains(notch.selected) { return false }
+        if showsPlainPage(notch) { return false }
         return music.playback?.isPlaying == true || onMusicPage(notch)
+    }
+
+    /// A page showing an image the person is judging, which keeps its plain
+    /// ground whatever the island would otherwise wear.
+    static func showsPlainPage(_ notch: NotchService) -> Bool {
+        !notch.showingSections && notch.selectedMetric == nil && plainPages.contains(notch.selected)
     }
 
     /// How strongly the colour is veiled: fullest behind the player's large
@@ -279,10 +285,14 @@ struct NotchMusicAurora: View {
     var quiet = false
     /// Hidden, it holds still and stops listening; it stays only so it can return without a cut.
     var shown = true
+    /// Settled, as Reduce Motion leaves it: no drift and no listening. The
+    /// companion's colours behind the open pages, which have no song to follow.
+    var still = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        NotchMusicAuroraBridge(colors: palette.glow, energy: palette.energy, playing: isPlaying, moves: !reduceMotion,
+        NotchMusicAuroraBridge(colors: palette.glow, energy: palette.energy, playing: isPlaying,
+                               moves: !reduceMotion && !still,
                                mood: mood, veil: veil, quiet: quiet, shown: shown)
             .allowsHitTesting(false)
             .accessibilityHidden(true)

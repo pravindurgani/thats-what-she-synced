@@ -108,6 +108,7 @@ enum NotchNotificationReaderTests {
         nativeClosing(suite)
         busyClosing(suite)
         nativeHiding(suite)
+        appControlsKeepBanner(suite)
         hiddenWindowReturns(suite)
         centerOpening(suite)
         openingInbox(suite)
@@ -687,6 +688,108 @@ enum NotchNotificationReaderTests {
         access.movable = true; access.ignoresMove = true
         suite.expect(reader.hideNative([id]) == [id] && window.frame == home && !reader.hidesWindows,
                      "a move the window ignores is not mistaken for a hidden banner")
+    }
+
+    /// A banner with the app's own buttons, as a call's Accept and Decline,
+    /// is never moved away or closed, whatever language it speaks: only the
+    /// original can press them. The center's own controls do not count.
+    private static func appControlsKeepBanner(_ suite: TestSuite) {
+        func custom(_ name: String) -> String { "Name:\(name)\nTarget:0x0\nSelector:(null)" }
+        let center = Set(NotchNotificationSupport.centerControlKeys)
+        suite.expect(NotchNotificationSupport.appControls(
+                        actions: ["AXPress", "AXShowMenu", custom("Close"), custom("Show Details…"), custom("Options")],
+                        buttons: ["Close", "options"], center: center).isEmpty,
+                     "the center's own close, details and options are not the app's buttons")
+        suite.expect(NotchNotificationSupport.appControls(
+                        actions: [custom("Cerrar"), custom("Aceptar"), custom("Rechazar")], buttons: ["Aceptar", " "],
+                        center: center.union(["Cerrar"])) == ["Aceptar", "Rechazar"],
+                     "the center's controls are read in its language; the app's are kept once each, in order")
+        suite.expect(NotchNotificationSupport.appControls(actions: [custom("Reply")], buttons: [], center: center)
+                        == ["Reply"],
+                     "a reply the island cannot send is the app's own button")
+
+        if let (access, reader, window, banner, id) = hiddenFixture() {
+            access.allowClose = true
+            let home = window.frame
+            banner.actions = ["AXPress", custom("Close"), custom("Accept"), custom("Decline")]
+            let item = reader.read()?.items.first
+            suite.expect(item?.id == id && item?.controls == ["Accept", "Decline"],
+                         "the mirrored notification names the original's own buttons")
+            suite.expect(reader.hideNative([id]).isEmpty && window.frame == home && access.moves == 0
+                            && !reader.hidesWindows,
+                         "a ringing call's banner stays in sight with its Accept and Decline")
+            suite.expect(!reader.closeNative(id) && access.performed.isEmpty,
+                         "and it is never closed in place of hiding")
+            banner.actions = ["AXPress", custom("Close")]
+            suite.expect(reader.read()?.items.first?.controls == ["Accept", "Decline"]
+                            && reader.hideNative([id]).isEmpty && window.frame == home,
+                         "buttons seen once are remembered, so one shown only under the pointer still counts")
+        } else {
+            suite.expect(false, "the hiding fixture has a live banner")
+        }
+
+        if let (access, reader, window, banner, id) = hiddenFixture() {
+            access.allowClose = true
+            let home = window.frame
+            let answer = Node("AXButton"), decline = Node("AXButton")
+            answer.strings["AXTitle"] = "Contestar"
+            decline.strings["AXTitle"] = "Rechazar"
+            banner.children.append(contentsOf: [answer, decline])
+            suite.expect(reader.read()?.items.first?.controls == ["Contestar", "Rechazar"]
+                            && reader.hideNative([id]).isEmpty && window.frame == home,
+                         "a call's labelled Answer and Decline keep its banner in sight, in other languages too")
+            answer.strings["AXTitle"] = nil
+            answer.strings["AXDescription"] = "Close"
+            suite.expect(reader.read()?.items.first?.controls == ["Rechazar", "Contestar"],
+                         "a label once seen is not forgotten while its banner lasts")
+        } else {
+            suite.expect(false, "the hiding fixture has a live banner")
+        }
+
+        if let (access, reader, window, banner, id) = hiddenFixture() {
+            access.allowClose = true
+            banner.actions = ["AXPress", custom("Close"), custom("Reply")]
+            suite.expect(reader.read()?.items.first?.controls == ["Reply"]
+                            && reader.hideNative([id]).isEmpty && !window.frame.intersects(screens),
+                         "a message's lone Reply does not hold its banner back, so hiding works as before")
+            banner.actions = ["AXPress", custom("Close"), custom("Reply"), custom("Mark as Read")]
+            suite.expect(reader.read()?.items.first?.controls.isEmpty == false
+                            && reader.hideNative([id]).isEmpty && !window.frame.intersects(screens),
+                         "nor do a mail's or a chat's Reply and Mark as Read")
+        } else {
+            suite.expect(false, "the hiding fixture has a live banner")
+        }
+        do {
+            func content(_ app: String) -> NotchNotificationContent {
+                NotchNotificationContent(app: app, title: "Jane", subtitle: "", body: "Hello")
+            }
+            suite.expect(!NotchNotificationSupport.keepsOwnBanner(controls: ["Reply", "Mark as Read"], content: content("Mail"))
+                            && NotchNotificationSupport.keepsOwnBanner(controls: ["Aceptar", "Rechazar"], content: content("Chat"))
+                            && NotchNotificationSupport.keepsOwnBanner(controls: ["Ja", "Nee"], content: content("FaceTime"))
+                            && !NotchNotificationSupport.keepsOwnBanner(controls: ["Ja", "Nee"], content: content("iPhone Mirroring")),
+                         "a banner is held for a call's own buttons, not for any two")
+        }
+
+        if let (access, reader, window, banner, id) = hiddenFixture() {
+            access.allowClose = true
+            let close = Node("AXButton")
+            close.strings["AXDescription"] = "Close"
+            banner.children.append(close)
+            banner.actions = ["AXPress", custom("Close"), custom("Show Details")]
+            suite.expect(reader.read()?.items.first?.controls == [] && reader.hideNative([id]).isEmpty
+                            && !window.frame.intersects(screens),
+                         "a banner with only the center's controls still leaves the screen while the island shows it")
+            let call = card(sender: "Jane", body: "Incoming call")
+            call.strings["AXSubrole"] = "AXNotificationCenterBanner"
+            call.actions = ["AXPress", custom("Answer"), custom("Decline")]
+            window.children.append(call)
+            let items = reader.read()?.items ?? []
+            suite.expect(items.count == 2 && reader.hideNative(Set(items.map(\.id))).isEmpty
+                            && window.frame.intersects(screens) && !reader.hidesWindows,
+                         "a window that also holds a call comes back, so the call's buttons stay reachable")
+        } else {
+            suite.expect(false, "the hiding fixture has a live banner")
+        }
     }
 
     /// Every way out of hiding puts back only a window this reader moved, and

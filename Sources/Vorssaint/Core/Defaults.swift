@@ -896,10 +896,13 @@ enum DefaultsKey {
     static let notchPomodoroTotalSessions = "notchPomodoroTotalSessions"
     static let notchCameraEnabled = "notchCameraEnabled"
     static let notchAccessoriesEnabled = "notchAccessoriesEnabled"
+    /// The Office moments on the island's notices (NotchOfficeMoments).
+    static let notchOfficeModeEnabled = "notchOfficeModeEnabled"
     static let notchLyricsEnabled = "notchLyricsEnabled"
     static let notchLyricsOnline = "notchLyricsOnline"
     static let notchBrowserCovers = "notchBrowserCovers"
     static let notchLiveEqualizer = "notchLiveEqualizer"
+    static let notchMusicSide = "notchMusicSide" // NotchMusicSide.rawValue: bars or dancers beside the camera
     static let notchQueueEnabled = "notchQueueEnabled"
     static let notchDownloadsEnabled = "notchDownloadsEnabled"
     static let notchDownloadsFolderBookmark = "notchDownloadsFolderBookmark"
@@ -930,6 +933,10 @@ enum DefaultsKey {
     static let notchAgentsLimitDisplay = "notchAgentsLimitDisplay"
     static let notchAgentsLimitFocus = "notchAgentsLimitFocus"
     static let notchAgentsLiveActivity = "notchAgentsLiveActivity"
+    /// The companion's colours glowing in the island while no song does
+    /// (NotchIdleGlowPreferences). On unless set false; Terminal only, like
+    /// the song mode's switch, and read again on the next launch.
+    static let notchIdleGlowEnabled = "notchIdleGlowEnabled"
     static let notchAgentsReadout = "notchAgentsReadout"
     static let notchAgentsFinishAlert = "notchAgentsFinishAlert"
     static let notchAgentsFinishMinimum = "notchAgentsFinishMinimum"
@@ -989,6 +996,9 @@ enum DefaultsKey {
     static let notchMascotVisits = "notchMascotVisits" // passes through the island now and then
     static let notchMascotReactions = "notchMascotReactions" // comes out to react to what the island sees
     static let notchMascotStyle = "notchMascotStyle" // NotchMascotStyle.rawValue
+    // The member Shuffle dealt, when and for which song (NotchMascotShuffle.stored),
+    // so a relaunch keeps it until the next deal. State, not a preference: unregistered.
+    static let notchMascotShuffleHand = "notchMascotShuffleHand"
     static let notchMascotShape = "notchMascotShape" // NotchMascotShape.rawValue
     static let notchMascotPalette = "notchMascotPalette" // NotchMascotPalette.rawValue
     static let notchMascotSide = "notchMascotSide" // NotchMascotSide.rawValue, beside the camera
@@ -1519,6 +1529,7 @@ enum Defaults {
         DefaultsKey.notchPomodoroTotalSessions: 4,
         DefaultsKey.notchCameraEnabled: true,
         DefaultsKey.notchAccessoriesEnabled: true,
+        DefaultsKey.notchOfficeModeEnabled: true,
         DefaultsKey.notchCalendarEnabled: true,
         DefaultsKey.notchCalendarCountdown: false,
         DefaultsKey.notchCalendarCountdownLead: NotchCalendarSupport.defaultCountdownLeadMinutes,
@@ -1549,6 +1560,8 @@ enum Defaults {
         DefaultsKey.notchLyricsOnline: false,
         DefaultsKey.notchBrowserCovers: false,
         DefaultsKey.notchLiveEqualizer: false,
+        // This fork dances by default: a new act each song.
+        DefaultsKey.notchMusicSide: NotchMusicSide.shuffle.rawValue,
         DefaultsKey.notchQueueEnabled: true,
         DefaultsKey.notchDownloadsEnabled: true,
         DefaultsKey.notchWatchEnabled: true,
@@ -1598,7 +1611,8 @@ enum Defaults {
         DefaultsKey.notchMascotEnabled: false,
         DefaultsKey.notchMascotVisits: true,
         DefaultsKey.notchMascotReactions: true,
-        DefaultsKey.notchMascotStyle: NotchMascotStyle.minimal.rawValue,
+        // This fork deals its Office cast by default, a new member each song.
+        DefaultsKey.notchMascotStyle: NotchMascotStyle.shuffle.rawValue,
         DefaultsKey.notchMascotShape: NotchMascotShape.ball.rawValue,
         DefaultsKey.notchMascotPalette: NotchMascotPalette.pearl.rawValue,
         DefaultsKey.notchMascotSide: NotchMascotSide.left.rawValue,

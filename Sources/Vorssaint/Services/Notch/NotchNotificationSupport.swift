@@ -25,6 +25,10 @@ struct NotchSystemNotification: Equatable, Identifiable, Sendable {
     let content: NotchNotificationContent
     let received: Date
     var canOpen: Bool
+    /// The app's own buttons on the original banner, by their labels, as a
+    /// call's Accept and Decline or a message's Reply; the center's own
+    /// controls are left out (see `NotchNotificationSupport.appControls`).
+    var controls: [String] = []
 }
 
 struct NotchNotificationInbox {
@@ -176,6 +180,57 @@ enum NotchNotificationSupport {
         guard !title.isEmpty else { return nil }
         let matches = actions.filter { $0.components(separatedBy: "\n").first == "Name:" + title }
         return matches.count == 1 ? matches.first : nil
+    }
+
+    /// The controls Notification Center itself puts on every banner, by
+    /// their keys in its own strings: closing, clearing, expanding and its
+    /// menus. Read in the center's language beside these English names.
+    static let centerControlKeys = ["Close", "Close All", "Clear", "Clear All", "Dismiss", "Dismiss All",
+                                    "Options", "Show", "Show Details", "Hide Details", "Show less", "Expand",
+                                    "More Actions…", "Actions", "View", "Mute for 1 Hour", "Mute for Today",
+                                    "Turn Off", "Unmute", "Notification Settings…", "Report a Concern",
+                                    "Deliver Quietly", "Deliver Prominently", "Keep"]
+
+    /// Buttons that may carry the app's own action, as a call's Accept.
+    static let controlRoles: Set<String> = ["AXButton", "AXMenuButton", "AXPopUpButton"]
+
+    /// The app's own controls on a banner: its custom actions ("Name:Accept"
+    /// and so on) and its labelled buttons, less everything the center puts
+    /// on every banner. A label the center does not name counts as the
+    /// app's, so an unknown one keeps its banner in sight rather than hiding it.
+    static func appControls(actions: [String], buttons: [String], center: Set<String>) -> [String] {
+        func key(_ label: String) -> String {
+            label.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".…")))
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        }
+        let known = Set(center.map(key))
+        let named = actions.compactMap { action -> String? in
+            guard let line = action.components(separatedBy: "\n").first, line.hasPrefix("Name:") else { return nil }
+            return String(line.dropFirst("Name:".count))
+        }
+        var seen = Set<String>()
+        return (named + buttons).compactMap { label in
+            let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = key(label)
+            guard !key.isEmpty, label.utf8.count <= 256, !known.contains(key),
+                  seen.insert(key).inserted else { return nil }
+            return label
+        }
+    }
+
+    /// Whether a banner must stay in sight because the island cannot do what
+    /// its buttons do: a button that picks up or turns down a call (Accept,
+    /// Answer, Decline, Join, in the languages the moments read), a banner
+    /// that reads as a call, or two buttons of FaceTime's or Phone's own in
+    /// any language. A message's Reply or Mark as Read does not hold its
+    /// banner back, so hiding the originals works for messages and mail as
+    /// it always has.
+    static func keepsOwnBanner(controls: [String], content: NotchNotificationContent) -> Bool {
+        if controls.map(NotchOfficeMoments.folded).contains(where: NotchOfficeMoments.answers) { return true }
+        if NotchOfficeMoments.channel(for: content, controls: controls) == .call { return true }
+        // Whole words, so iPhone Mirroring is not the Phone app.
+        let app = Set(content.app.lowercased().split { !$0.isLetter }.map(String.init))
+        return controls.count >= 2 && NotchOfficeMoments.callApps.contains(where: app.contains)
     }
 
     static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {

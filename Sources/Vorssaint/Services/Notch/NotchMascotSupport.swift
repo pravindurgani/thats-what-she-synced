@@ -5,7 +5,8 @@ import CoreGraphics
 import Foundation
 
 // The companion is a small friend who lives in the Dynamic Island: a colored
-// shape with two ink eyes and no mouth, or a little robot. It rests beside
+// shape with two ink eyes and no mouth, a little robot, or one of the cast
+// (see NotchMascotCast). It rests beside
 // the camera when the closed island has nothing else to show, passes by now
 // and then, and is the Command Bar's face when the bar comes out of the
 // island. The code calls it the mascot, because "companion" already names
@@ -13,6 +14,11 @@ import Foundation
 
 enum NotchMascotStyle: String, CaseIterable, Identifiable {
     case minimal, robot
+    /// The cast, each drawn with its own parts and motion.
+    case scarn, goldenface, jello, mug, beet
+    /// One of the cast, dealt again for each new song and now and then in
+    /// the quiet. Never drawn as itself: it resolves to the member dealt.
+    case shuffle
 
     var id: String { rawValue }
 }
@@ -339,6 +345,7 @@ struct NotchMascotFaceLayout: Equatable {
 
 extension NotchMascotLook {
     var face: NotchMascotFaceLayout {
+        if style.isCast { return NotchMascotGeometry.castFace(style) }
         if style == .robot {
             return NotchMascotFaceLayout(leftEye: CGPoint(x: 0.36, y: 0.63), rightEye: CGPoint(x: 0.64, y: 0.63),
                                          eyeSize: CGSize(width: 0.085, height: 0.16),
@@ -423,7 +430,9 @@ enum NotchMascotGeometry {
     /// wherever it is meant to be centred.
     static func figureOffset(_ look: NotchMascotLook) -> CGFloat {
         let bounds: CGRect
-        if look.style == .robot {
+        if look.style.isCast {
+            bounds = castBounds(look.style, size: 1)
+        } else if look.style == .robot {
             let parts = robot(size: 1)
             bounds = [parts.ears, parts.antenna, parts.bulb]
                 .reduce(parts.head.boundingBoxOfPath) { $0.union($1.boundingBoxOfPath) }
@@ -1283,8 +1292,8 @@ enum NotchMascotSupport {
     }
 
     /// The island's own companion: the chosen look, following the song.
-    static func islandLook() -> NotchMascotLook {
-        var look = look()
+    static func islandLook(in defaults: UserDefaults = .standard) -> NotchMascotLook {
+        var look = look(in: defaults)
         look.followsSong = true
         return look
     }

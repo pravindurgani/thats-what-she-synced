@@ -94,6 +94,48 @@ struct NotchCapsuleNoticeView: View {
         .accessibilityLabel(notice.accessibilityText)
     }
 
+    // MARK: The Office moment
+
+    /// The Office caption, after the real information and only where the
+    /// capsule can grow to hold it, measured as the service measures the
+    /// capsule (NotchOfficeMoments.capsuleContent).
+    private var officeCaption: String? {
+        guard notice.office?.caption != nil else { return nil }
+        if let content = notice.notification {
+            let row = CapsuleLayout.notificationContent(title: content.compactTitle, message: content.compactDetail,
+                                                        geometry: geometry)
+            return NotchOfficeMoments.capsuleCaption(notice.office, content: row,
+                                                     maximum: CapsuleLayout.Maximum.notification, geometry: geometry)
+        }
+        let base = CapsuleLayout.noticeContent(title: notice.title, detail: notice.detail, level: notice.level != nil)
+            + NotchOfficeMoments.capsuleMugWidth(notice.office, geometry: geometry)
+        return NotchOfficeMoments.capsuleCaption(notice.office, content: base, maximum: CapsuleLayout.Maximum.notice,
+                                                 geometry: geometry)
+    }
+
+    /// Changes once per moment, so a new reading of the same one does not play it again.
+    private var officeKey: String? {
+        notice.office.map { "\($0.kind)|\(notice.title)|\(notice.notificationID?.uuidString ?? "")" }
+    }
+
+    /// The lower third at the row's end, at the size the capsule's height allows.
+    private func lowerThird(_ caption: String) -> some View {
+        let card = NotchOfficeMoments.capsuleCaptionFont(geometry) === NotchOfficeMoments.cardCaptionFont
+        let low = notice.office?.kind == .battery(.low)
+        return NotchLowerThird(caption: caption, size: card ? .card : .strip,
+                               accent: low ? NotchOfficeInk.beet : NotchOfficeInk.mustard, trigger: officeKey)
+            .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+    }
+
+    /// The mug filled to the charge, scaled to the capsule's body.
+    private func mug(_ state: NotchOfficeBattery, level: Double) -> some View {
+        let scale = NotchOfficeMoments.capsuleMugScale(geometry)
+        return NotchOfficeMug(state: state, level: level, coffee: NotchOfficeInk.coffee(), trigger: officeKey ?? "")
+            .scaleEffect(scale, anchor: .topLeading)
+            .frame(width: (NotchOfficeMoments.mugSide * scale).rounded(.up),
+                   height: NotchOfficeMoments.mugHeight * scale, alignment: .topLeading)
+    }
+
     private func banner(_ content: NotchNotificationContent) -> some View {
         HStack(spacing: CapsuleLayout.spacing) {
             NotchNotificationAppIcon(app: content.app, size: CapsuleLayout.notificationIconSide(geometry))
@@ -102,6 +144,7 @@ struct NotchCapsuleNoticeView: View {
                 Text(content.compactDetail).capsuleDetail()
                     .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
             }
+            if let officeCaption { lowerThird(officeCaption) }
         }
     }
 
@@ -129,11 +172,17 @@ struct NotchCapsuleNoticeView: View {
             // A timer's notice keeps the orange its strip wears.
             Text(notice.title).capsuleTitle().layoutPriority(1)
                 .foregroundStyle(notice.event == .timer ? Color.orange : .white)
+            // A battery's Office moment fills the mug beside its reading.
+            if let cue = notice.office, case .battery(let state) = cue.kind {
+                mug(state, level: cue.level ?? 0)
+                    .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+            }
             if !notice.detail.isEmpty {
                 Text(notice.detail).capsuleDetail()
                     .truncationMode(notice.event == .accessory ? .middle : .tail)
-                    .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+                    .padding(.leading, notice.office?.showsMug == true ? 0 : CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
             }
+            if let officeCaption { lowerThird(officeCaption) }
         }
     }
 
@@ -435,60 +484,93 @@ private struct NotchCapsuleCompanionMark: View {
     }
 }
 
-/// A working agent: its mark and the reading the person chose.
+
+/// Working agents: one agent's ring and the reading the person chose, or two
+/// agents at the capsule's two ends, each ring with its own reading toward
+/// the middle, mirrored as on the island's wings.
 struct NotchCapsuleAgentStrip: View {
     @ObservedObject var service: NotchService
     let size: CGSize
     /// Another display's capsule, when the island shows on every display.
     var displayGeometry: NotchGeometry? = nil
     @ObservedObject private var usage = AgentUsageService.shared
+    @ObservedObject private var finishes = NotchAgentFinishes.shared
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(DefaultsKey.notchAgentsReadout) private var readout = NotchAgentReadout.elapsed.rawValue
     @AppStorage(DefaultsKey.notchAgentsLimitDisplay) private var display = NotchAgentLimitDisplay.remaining.rawValue
     @AppStorage(DefaultsKey.notchAgentsLimitFocus) private var focus = NotchAgentLimitFocus.mostUsed.rawValue
 
-    private func working(_ live: [AgentLiveSession]) -> [AgentProvider] {
-        AgentProvider.allCases.filter { provider in live.contains { $0.provider == provider } }
-    }
-
     var body: some View {
+        let model = finishes.model(live: usage.snapshot.live)
         // The last agent stopping empties the list before the strip has left.
-        NotchStripHold(usage.snapshot.live, shows: !usage.snapshot.live.isEmpty) { row(live: $0) }
+        NotchStripHold(model, shows: !model.wings.isEmpty) { row(model: $0) }
     }
 
-    @ViewBuilder private func row(live: [AgentLiveSession]) -> some View {
-        let working = working(live)
-        NotchCapsuleRow(size: size, geometry: displayGeometry ?? service.geometry) {
-            HStack(spacing: CapsuleLayout.spacing) {
-                NotchCapsuleAgentMarks(providers: working)
-                NotchAgentReadoutTimeline(readout: NotchAgentReadout(rawValue: readout) ?? .elapsed) { date in
-                    let text = reading(at: date, live: live)
-                    Text(text)
-                        .font(Font(CapsuleLayout.readingFont as CTFont))
-                        .foregroundStyle(working.first?.tint ?? .white)
-                        .lineLimit(1).fixedSize()
-                        // A reading that gains a digit, like an hour passing,
-                        // widens the capsule; the service measures the same.
-                        .onChange(of: NotchAgentSupport.readingShape(text)) { _, _ in
-                            DispatchQueue.main.async { service.refreshPresentation() }
-                        }
+    @ViewBuilder private func row(model: NotchAgentStripModel) -> some View {
+        let geometry = displayGeometry ?? service.geometry
+        let ring = CapsuleLayout.agentRing(geometry)
+        NotchCapsuleRow(size: size, geometry: geometry) {
+            HStack(spacing: CapsuleLayout.groupSpacing) {
+                if model.twoSided {
+                    HStack(spacing: CapsuleLayout.spacing) {
+                        NotchAgentWingMark(wing: model.wings[0], ring: ring)
+                        readingText(model.wings[0], model: model)
+                    }
+                    HStack(spacing: CapsuleLayout.spacing) {
+                        readingText(model.wings[1], model: model)
+                        NotchAgentWingMark(wing: model.wings[1], ring: ring)
+                    }
+                } else if let wing = model.wings.first {
+                    HStack(spacing: CapsuleLayout.spacing) {
+                        NotchAgentWingMark(wing: wing, ring: ring)
+                        readingText(wing, model: model)
+                    }
                 }
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(working.map(\.displayName).joined(separator: ", "))
-        .accessibilityValue(reading(at: Date(), live: live))
+        .accessibilityLabel(model.wings.map(\.provider.displayName).joined(separator: ", "))
+        .accessibilityValue(model.wings.map { wing in
+            wing.finished ? FeatureStrings.notchAgents(l10n.language).finished(wing.provider.displayName)
+                : "\(wing.provider.displayName) \(reading(wing, model: model, at: Date()))"
+        }.joined(separator: ", "))
         .accessibilityHint(FeatureStrings.notch(l10n.language).open)
     }
 
-    private func reading(at now: Date, live: [AgentLiveSession]) -> String {
-        var snapshot = usage.snapshot
-        snapshot.live = live
-        return NotchAgentSupport.stripReading(snapshot, readout: NotchAgentReadout(rawValue: readout) ?? .elapsed,
-                                              display: NotchAgentLimitDisplay(rawValue: display) ?? .remaining,
-                                              focus: NotchAgentLimitFocus(rawValue: focus) ?? .mostUsed, now: now)
+    /// A finished wing's reading holds where its turn ended, so it needs no clock.
+    @ViewBuilder private func readingText(_ wing: NotchAgentWing, model: NotchAgentStripModel) -> some View {
+        if wing.finished {
+            readingLabel(reading(wing, model: model, at: Date()), provider: wing.provider)
+        } else {
+            NotchAgentReadoutTimeline(readout: chosenReadout) { date in
+                readingLabel(reading(wing, model: model, at: date), provider: wing.provider)
+            }
+        }
+    }
+
+    private func readingLabel(_ text: String, provider: AgentProvider) -> some View {
+        Text(text)
+            .font(Font(CapsuleLayout.readingFont as CTFont))
+            // Light enough to keep AA over the agents' glow.
+            .foregroundStyle(Color(nsColor: provider.readingColor.nsColor))
+            .lineLimit(1).fixedSize()
+            // A reading that gains a digit, like an hour passing,
+            // widens the capsule; the service measures the same.
+            .onChange(of: NotchAgentSupport.readingShape(text)) { _, _ in
+                DispatchQueue.main.async { service.refreshPresentation() }
+            }
+    }
+
+    private var chosenReadout: NotchAgentReadout { NotchAgentReadout(rawValue: readout) ?? .elapsed }
+
+    private func reading(_ wing: NotchAgentWing, model: NotchAgentStripModel, at now: Date) -> String {
+        NotchAgentWings.reading(usage.snapshot, sessions: finishes.sessions(for: wing, live: model.live),
+                                finished: wing.finished, readout: chosenReadout,
+                                display: NotchAgentLimitDisplay(rawValue: display) ?? .remaining,
+                                focus: NotchAgentLimitFocus(rawValue: focus) ?? .mostUsed, now: now)
     }
 }
+
 
 /// A download: its arrow and name, its progress and the percentage.
 struct NotchCapsuleDownloadStrip: View {

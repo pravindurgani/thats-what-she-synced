@@ -784,6 +784,18 @@ enum NotchMusicStripLayout {
 
     static func showsArtist(_ geometry: NotchGeometry) -> Bool { geometry.compactActivityContentHeight >= 28 }
 
+    /// The dancers' floor fits the right wing beside the camera, clear of
+    /// the strip's rounded end; otherwise the strip shows the bars.
+    static func fitsDancers(_ geometry: NotchGeometry) -> Bool {
+        geometry.compactActivityWingWidth - innerInset(geometry) - geometry.compactMusicDancersInset
+            >= NotchDanceFloor.width - 0.5
+    }
+
+    static func dancersInset(_ geometry: NotchGeometry) -> CGFloat {
+        max(0, min(geometry.compactMusicDancersInset,
+                   geometry.compactActivityWingWidth - NotchDanceFloor.width - innerInset(geometry)))
+    }
+
     private static var measuredWords: (title: String, artist: String?, width: CGFloat)?
 
     /// The wider of the title and the artist below it, measured once per song.
@@ -1164,10 +1176,19 @@ enum NotchCapsuleLayout {
         return surface(content: cup + spacing + right, maximum: Maximum.activity, geometry: geometry)
     }
 
-    /// Working agents' marks and the reading the person chose.
-    static func agentSurface(reading: String, working: Int, geometry: NotchGeometry) -> CGSize {
-        let content = agentMarksWidth(working: working) + spacing
-            + width(NotchAgentSupport.readingShape(reading), font: readingFont)
+    /// A working agent's ring, as the capsule draws it beside its reading.
+    static func agentRing(_ geometry: NotchGeometry) -> CGFloat { max(12, min(20, geometry.stripBodyHeight - 6)) }
+
+    /// One agent's ring and the reading the person chose; or two agents at
+    /// the capsule's two ends, each ring with its own reading toward the
+    /// middle, mirrored as on the island's wings. Readings are measured by
+    /// their shape, so the capsule only moves when a character comes or goes.
+    static func agentSurface(readings: [String], geometry: NotchGeometry) -> CGSize {
+        let ring = agentRing(geometry)
+        let widths = readings.prefix(2).map { width(NotchAgentSupport.readingShape($0), font: readingFont) }
+        let content = widths.count > 1
+            ? (ring + spacing) * 2 + widths[0] + groupSpacing + widths[1]
+            : ring + spacing + (widths.first ?? 0)
         return surface(content: content, maximum: Maximum.activity, geometry: geometry)
     }
 
@@ -1603,6 +1624,8 @@ enum NotchQuickAccessLayout {
 
 enum NotchEvent: String, CaseIterable {
     case volume, brightness, battery, clipboard, capture, systemNotification, keyboardLight, timer, accessory, download, agents, track, microphone, watch, inputSource
+    /// A calendar event beginning, which only the Office moments announce.
+    case calendar
 
     var preferenceKey: String {
         switch self {
@@ -1621,13 +1644,14 @@ enum NotchEvent: String, CaseIterable {
         case .battery: return DefaultsKey.notchBattery
         case .clipboard: return DefaultsKey.notchClipboard
         case .capture: return DefaultsKey.notchCapture
+        case .calendar: return DefaultsKey.notchCalendarEnabled
         }
     }
 
     var priority: Int {
         switch self {
         case .volume, .brightness, .keyboardLight, .microphone, .inputSource: return 3
-        case .capture, .timer, .watch: return 2
+        case .capture, .timer, .watch, .calendar: return 2
         case .battery, .systemNotification, .accessory, .agents: return 1
         case .clipboard, .download, .track: return 0
         }
@@ -1638,7 +1662,7 @@ enum NotchEvent: String, CaseIterable {
         case .volume, .brightness, .keyboardLight, .microphone, .inputSource: return 1.6
         case .systemNotification, .track: return 3
         case .timer, .download, .watch: return 6
-        case .agents: return 5
+        case .agents, .calendar: return 5
         case .battery, .accessory: return 4
         case .clipboard: return 2.5
         case .capture: return 12
@@ -2059,6 +2083,7 @@ enum NotchSupport {
         case .track: return modules(in: defaults).contains(.music)
         // A layout notice needs no feature of its own, only its own toggle.
         case .inputSource: return true
+        case .calendar: return NotchCalendarSupport.isEnabled(in: defaults) && NotchOfficeMoments.isEnabled(in: defaults)
         }
     }
 
@@ -2494,6 +2519,33 @@ struct NotchGeometry: Equatable {
         max(compactMusicArtworkInset + compactMusicArtworkSide,
             compactMusicBarsInset + NotchLayout.compactMusicBarsWidth).rounded(.up)
     }
+    /// Dancers in place of the bars keep the same even gap from the strip's
+    /// rounded end as everything else in it.
+    var compactMusicDancersInset: CGFloat {
+        compactActivityEdgeInset(boxHeight: NotchDanceFloor.figureBox * NotchDanceFloor.scale(height: compactActivityContentHeight),
+                                 radius: NotchDanceFloor.figureCorner)
+    }
+    private var compactMusicDanceWing: CGFloat {
+        max(compactMusicArtworkInset + compactMusicArtworkSide,
+            compactMusicDancersInset + NotchDanceFloor.width).rounded(.up)
+    }
+    /// The music strip with dancers on the camera's right. Beside a physical
+    /// camera both wings grow to the dancers' floor, so the island stays
+    /// balanced and the cover keeps its place at the left end. Where the
+    /// menus leave less room than that, the strip keeps the bars' wings and
+    /// shows the bars; a simulated camera's wings already hold the dancers
+    /// when the menus allow them their full width.
+    func compactMusicGeometry(dancing: Bool) -> NotchGeometry {
+        guard dancing, isNotched else { return compactMusicGeometry }
+        var compact = self
+        compact.allowsActivityFooter = false
+        let room = compactSideRoom ?? 0
+        let wing = compact.compactMusicDanceWing
+        guard room.isFinite, room >= wing else { return compactMusicGeometry }
+        compact.compactSideRoom = wing
+        compact.minimumWing = wing
+        return compact
+    }
     var musicCameraGap: CGFloat { cameraWidth }
     var compactMusicLabelInset: CGFloat {
         let height = compactActivityContentHeight
@@ -2552,13 +2604,14 @@ struct NotchGeometry: Equatable {
     }
     /// A working agent keeps its mark and one reading beside the camera,
     /// never below it, like the timer. Both wings take the width the reading
-    /// needs, so a short one leaves no band of empty black at the ends.
-    func compactAgentGeometry(wing: CGFloat) -> NotchGeometry {
+    /// needs, so a short one leaves no band of empty black at the ends. Two
+    /// agents, a wing each with its ring and reading, may take wider wings.
+    func compactAgentGeometry(wing: CGFloat, twoSided: Bool = false) -> NotchGeometry {
         var compact = self
         let room = compactSideRoom ?? 0
-        let fitted = min(NotchAgentSupport.stripWingRange.upperBound,
-                         max(NotchAgentSupport.stripWingRange.lowerBound, wing.isFinite ? wing.rounded(.up) : 0))
-        compact.compactSideRoom = room.isFinite && room >= NotchAgentSupport.stripWingRange.lowerBound ? min(fitted, room) : 0
+        let range = twoSided ? NotchAgentWings.twoSidedRange : NotchAgentSupport.stripWingRange
+        let fitted = min(range.upperBound, max(range.lowerBound, wing.isFinite ? wing.rounded(.up) : 0))
+        compact.compactSideRoom = room.isFinite && room >= range.lowerBound ? min(fitted, room) : 0
         compact.minimumCompactWidth = cameraWidth + fitted * 2
         compact.allowsActivityFooter = false
         return compact

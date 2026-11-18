@@ -51,7 +51,8 @@ private struct NotchSongTextKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// The song's text colours while the island wears it, else nil.
+    /// The song's text colours while the island wears it, or the companion's
+    /// while the open island wears its colours instead (NotchIdlePaint), else nil.
     var notchSongText: NotchSongText? {
         get { self[NotchSongTextKey.self] }
         set { self[NotchSongTextKey.self] = newValue }

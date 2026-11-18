@@ -20,12 +20,18 @@ enum AgentUsageEventDeliveryTests {
         func send(_ event: AgentUsageEvent) { values.append(event) }
     }
 
+    final class Ended {
+        var values: [AgentTurnEnd] = []
+        func send(_ end: AgentTurnEnd) { values.append(end) }
+    }
+
     class Fixture {
         var running = true
         var session = 1
         var readerSession = 1
         var providers: [AgentProvider] = [.claude, .codex, .copilot]
         let events = Events()
+        let turnsEnded = Ended()
     }
 
     static func run(_ suite: TestSuite) {
@@ -88,5 +94,29 @@ enum AgentUsageEventDeliveryTests {
         host.report(events[3])
         drain()
         suite.expect(host.events.values.isEmpty, "duration and disabled-alert preferences still filter current events")
+
+        // The strip's ring closes on every turn that ends, notice or not,
+        // knowing which of its agent's turns it was.
+        host.turnsEnded.values.removeAll()
+        NotchAgentSupport.minimum = nil
+        host.report(finished, session: "turn-log")
+        host.report(events[1])
+        drain()
+        suite.expect(host.turnsEnded.values == [AgentTurnEnd(provider: .claude, session: "turn-log")]
+                        && host.events.values.isEmpty,
+                     "a turn ends for the strip, with its session, even while finish notices are off, and only a finish counts")
+        host.turnsEnded.values.removeAll()
+        host.report(finished)
+        drain()
+        suite.expect(host.turnsEnded.values.isEmpty, "a finish that names no turn closes no ring")
+        host.providers = [.codex]
+        host.report(finished, session: "turn-log")
+        drain()
+        suite.expect(host.turnsEnded.values.isEmpty, "a disabled agent never closes a ring")
+        host.providers = [.claude, .codex, .copilot]
+        host.report(finished, session: "turn-log")
+        host.session += 1
+        drain()
+        suite.expect(host.turnsEnded.values.isEmpty, "a previous reading's turn never closes a ring")
     }
 }

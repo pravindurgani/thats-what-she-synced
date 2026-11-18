@@ -37,7 +37,12 @@ final class NotchMascotRig: NSObject {
     private(set) var mood = NotchMascotMood.idle
     /// Whether it blinks now and then and, after a long rest, grows sleepy.
     private(set) var idles = false
-    var reduceMotion = false
+    var reduceMotion = false {
+        didSet {
+            cast.reduceMotion = reduceMotion
+            syncCastIdle()
+        }
+    }
 
     private let hopper = CALayer()
     private let squasher = CALayer()
@@ -55,6 +60,9 @@ final class NotchMascotRig: NSObject {
     private let face = CALayer()
     private let leftEye = CAShapeLayer()
     private let rightEye = CAShapeLayer()
+    /// A member of the cast's own parts, and the stages its whole figure
+    /// rides on between the squasher and the tilter.
+    private let cast = NotchMascotCastParts()
     private var blinks = 0
     /// It grew sleepy on its own after a long rest, rather than being shown
     /// so, and anything that happens wakes it.
@@ -67,13 +75,21 @@ final class NotchMascotRig: NSObject {
     /// Blinks wait until a visit has gone by.
     private var blinksResume: CFTimeInterval = 0
     private var configured = false
+    private var powerObserver: NSObjectProtocol?
 
     override init() {
         super.init()
+        // Low Power Mode coming on rests a member's idle loop at once, and
+        // going off starts it again, rather than waiting for the next
+        // change of face or sight to look again.
+        powerObserver = NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil,
+                                                               queue: .main) { [weak self] _ in self?.syncCastIdle() }
         root.addSublayer(hopper)
         hopper.addSublayer(squasher)
-        squasher.addSublayer(tilter)
-        for layer in [ears, antenna, bulb, fill, visor, shine] { tilter.addSublayer(layer) }
+        squasher.addSublayer(cast.beatStage)
+        cast.beatStage.addSublayer(cast.idleStage)
+        cast.idleStage.addSublayer(tilter)
+        for layer in [cast.drawing, ears, antenna, bulb, fill, visor, shine] { tilter.addSublayer(layer) }
         tilter.addSublayer(attention)
         attention.addSublayer(face)
         face.addSublayer(leftEye)
@@ -87,6 +103,10 @@ final class NotchMascotRig: NSObject {
         visor.fillColor = NotchMascotColor.visor.cgColor
     }
 
+    deinit {
+        if let powerObserver { NotificationCenter.default.removeObserver(powerObserver) }
+    }
+
     private static let noActions: [String: CAAction] = [
         "position": NSNull(), "bounds": NSNull(), "transform": NSNull(), "path": NSNull(),
         "opacity": NSNull(), "hidden": NSNull(), "contents": NSNull(), "colors": NSNull(),
@@ -98,7 +118,9 @@ final class NotchMascotRig: NSObject {
 
     /// Draws the companion at `size` points with `look`. Nothing moves, and a
     /// new look at the same size cross-fades in, as a choice in Settings does.
+    /// A shuffle is drawn as the member it dealt.
     func configure(look: NotchMascotLook, size: CGFloat, contentsScale scale: CGFloat) {
+        let look = look.dealing(NotchMascotShuffleService.shared.member)
         guard !configured || look != self.look || size != self.size || scale != root.contentsScale else { return }
         // A song's colours arriving or changing flow in on the song's colour
         // timing, a fade even under Reduce Motion; a new style or palette
@@ -127,6 +149,8 @@ final class NotchMascotRig: NSObject {
         }
         root.contentsScale = scale
         let robot = look.style == .robot
+        let member = look.style.isCast
+        cast.configure(look: look, size: size, contentsScale: scale)
         let palette = look.paint
         fill.colors = [palette.light.cgColor, palette.shade.cgColor]
         fill.startPoint = CGPoint(x: 0.5, y: 0)
@@ -146,6 +170,8 @@ final class NotchMascotRig: NSObject {
             bulb.shadowOffset = .zero
             for eye in [leftEye, rightEye] {
                 eye.fillColor = palette.light.cgColor
+                eye.strokeColor = nil
+                eye.lineWidth = 0
                 eye.shadowColor = palette.light.cgColor
                 eye.shadowOpacity = 0.9
                 eye.shadowRadius = max(0.6, size * 0.04)
@@ -153,14 +179,19 @@ final class NotchMascotRig: NSObject {
             }
         } else {
             fillMask.path = NotchMascotGeometry.body(look.shape, size: size)
+            // The cast keep the ink eyes; on a dark beet they gain a light rim.
+            let stroke = cast.eyeStroke
             for eye in [leftEye, rightEye] {
                 eye.fillColor = NotchMascotColor.ink.cgColor
                 eye.shadowOpacity = 0
+                eye.strokeColor = stroke?.color.cgColor
+                eye.lineWidth = stroke?.width ?? 0
             }
         }
         for layer in [ears, antenna, bulb, visor] { layer.isHidden = !robot }
+        fill.isHidden = member
         shine.path = NotchMascotGeometry.shine(look.face, size: size)
-        shine.isHidden = robot
+        shine.isHidden = robot || member
         let face = look.face
         let side = size * 0.4
         leftEye.frame = CGRect(x: face.leftEye.x * size - side / 2, y: face.leftEye.y * size - side / 2, width: side, height: side)
@@ -180,6 +211,7 @@ final class NotchMascotRig: NSObject {
         if mood != .sleepy { blinks = 0 }
         apply(mood.expression, animated: animated && !reduceMotion)
         lightBulb(mood != .sleepy, animated: animated && !reduceMotion)
+        syncCastIdle()
         guard animated, !reduceMotion, size > 0 else { syncBlinking(); return }
         switch mood {
         case .surprised: pop()
@@ -275,6 +307,7 @@ final class NotchMascotRig: NSObject {
     func reset(to mood: NotchMascotMood) {
         stopBlinking()
         for layer in [root, hopper, squasher, tilter, attention, face, leftEye, rightEye] { layer.removeAllAnimations() }
+        cast.stopMoving()
         attention.transform = CATransform3DIdentity
         self.mood = mood
         blinks = 0
@@ -746,6 +779,23 @@ final class NotchMascotRig: NSObject {
             stopBlinking()
             if dozed, !idles { setMood(.idle, animated: false) }
         } else { syncBlinking() }
+        syncCastIdle()
+    }
+
+    /// A member of the cast plays its idle loop while it blinks: in sight,
+    /// awake and allowed to move. Low Power Mode keeps it still but for
+    /// its blinks, and is read again whenever it changes.
+    private func syncCastIdle() {
+        cast.setIdling(idles && !reduceMotion && mood != .sleepy && size > 0
+                       && !ProcessInfo.processInfo.isLowPowerModeEnabled)
+    }
+
+    /// A beat onset of `strength`, 0 to 1, while the island wears a song:
+    /// a member of the cast plays its move toward `side`, positive to the
+    /// right. Nothing under Reduce Motion, where only the colours change.
+    func beat(strength: CGFloat, side: CGFloat) {
+        guard !reduceMotion, size > 0, !isVisiting else { return }
+        cast.beat(strength: strength, side: side)
     }
 
     /// Wakes it from a long rest. A face shown sleepy on purpose stays.
@@ -790,7 +840,8 @@ final class NotchMascotRig: NSObject {
         let blink = CAKeyframeAnimation(keyPath: "transform.scale.y")
         blink.values = twice ? [1, 0.1, 1, 1, 0.1, 1] : [1, 0.1, 1]
         blink.keyTimes = twice ? [0, 0.2, 0.4, 0.58, 0.78, 1] : [0, 0.45, 1]
-        blink.duration = twice ? 0.44 : 0.17
+        // Agent Scarn's blink is slow and deadpan.
+        blink.duration = (twice ? 0.44 : 0.17) * (look.style == .scarn ? 1.9 : 1)
         blink.beginTime = now + delay
         // Reduce Motion: the eyes close and open without a motion between.
         if reduceMotion { blink.calculationMode = .discrete }
@@ -986,6 +1037,7 @@ final class NotchMascotHostView: NSView {
     private var requestedLook: NotchMascotLook?
     private var songSubscription: AnyCancellable?
     private var beatSubscription: AnyCancellable?
+    private var shuffleSubscription: AnyCancellable?
     private var lastPush: Double = 0
     private var sway: CGFloat = 1
 
@@ -1026,15 +1078,45 @@ final class NotchMascotHostView: NSView {
 
     private func bop(_ bounce: Double) {
         let push = CGFloat(min(1, max(0, bounce)))
-        if bounce > lastPush + 0.12 { sway = -sway }
+        let onset = bounce > lastPush + 0.12
+        if onset { sway = -sway }
         lastPush = bounce
+        // A member of the cast brings its own move to each onset, so the
+        // bop under it only swells a little and leaves the leaning to it.
+        let cast = mascot.look.style.isCast
+        if onset, cast { mascot.beat(strength: push, side: sway) }
         CATransaction.begin()
         CATransaction.setAnimationDuration(push > 0.05 ? 0.08 : NotchSongMotion.beatReturn)
         CATransaction.setAnimationTimingFunction(push > 0.05 ? CAMediaTimingFunction(name: .easeOut) : NotchSongMotion.settleCurve)
-        var bopped = CATransform3DMakeScale(1 + 0.12 * push, 1 + 0.12 * push, 1)
-        bopped = CATransform3DRotate(bopped, sway * 0.1 * push, 0, 0, 1)
+        let swell = (cast ? 0.05 : 0.12) * push
+        var bopped = CATransform3DMakeScale(1 + swell, 1 + swell, 1)
+        bopped = CATransform3DRotate(bopped, cast ? 0 : sway * 0.1 * push, 0, 0, 1)
         mascot.root.sublayerTransform = bopped
         CATransaction.commit()
+    }
+
+    /// Set to Shuffle, the companion changes to each member the shuffle
+    /// deals, cross-fading as a choice in Settings does, and its place is
+    /// kept for the new figure's middle.
+    private func syncShuffle() {
+        guard requestedLook?.style == .shuffle else {
+            shuffleSubscription = nil
+            return
+        }
+        if shuffleSubscription == nil {
+            // Published as it changes, so the member comes with the news
+            // rather than from the service, which still holds the last one.
+            shuffleSubscription = NotchMascotShuffleService.shared.$member.dropFirst().removeDuplicates()
+                .sink { [weak self] member in
+                    guard let self, let look = self.requestedLook else { return }
+                    let shift = self.figureShift
+                    self.mascot.configure(look: look.wearing(NotchSongPaint.shared.companion).dealing(member),
+                                          size: self.mascot.size, contentsScale: self.backingScale)
+                    if self.figureShift != shift { self.applyPlacement() }
+                }
+        }
+        // Listening only after it can hear the deal a song already playing brings.
+        if isOnScreen { NotchMascotShuffleService.shared.start() }
     }
 
     override func updateTrackingAreas() {
@@ -1132,6 +1214,8 @@ final class NotchMascotHostView: NSView {
 
     private func syncIdling() {
         mascot.setIdles(idlesWhenVisible, visible: isOnScreen)
+        // Back in sight after a quiet hour, a shuffled companion is dealt anew.
+        if requestedLook?.style == .shuffle, isOnScreen { NotchMascotShuffleService.shared.start() }
     }
 
     func configure(look: NotchMascotLook, size: CGFloat, mood: NotchMascotMood, idles: Bool,
@@ -1141,6 +1225,7 @@ final class NotchMascotHostView: NSView {
         requestedLook = look
         mascot.configure(look: look.wearing(NotchSongPaint.shared.companion), size: size, contentsScale: backingScale)
         syncSong()
+        syncShuffle()
         if figureShift != shift { applyPlacement() }
         if mood != requestedMood {
             requestedMood = mood

@@ -6,14 +6,7 @@ import SwiftUI
 
 extension AgentProvider {
     /// Each agent keeps one color across the page, the strip and notices.
-    var tint: Color {
-        switch self {
-        case .claude: return Color(red: 0.85, green: 0.47, blue: 0.34)
-        case .codex: return Color(red: 0.49, green: 0.60, blue: 1.0)
-        case .opencode: return Color(red: 0.06, green: 0.73, blue: 0.51)
-        case .copilot: return Color(red: 0.30, green: 0.78, blue: 0.68)
-        }
-    }
+    var tint: Color { Color(red: rgb.red, green: rgb.green, blue: rgb.blue) }
 }
 
 /// Green reads as fine and red as trouble only when it earns it: the agent's

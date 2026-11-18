@@ -30,6 +30,10 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
         let root: Access.Element
         let window: Access.Element
         let transient: Bool
+        /// The banner offers the app's own buttons, as a call's Accept and
+        /// Decline. The island cannot press them, so its original is never
+        /// moved away or closed; see `hideNative`.
+        let interactive: Bool
         let nativeIdentity: String?
         let item: NotchSystemNotification
     }
@@ -41,6 +45,8 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
     private let sourceApplicationName: ([String]) -> String?
     private let allowsNativeClose: () -> Bool
     private let nativeCloseTitle: String
+    /// What the center itself calls its controls, in its language and in English.
+    private let centerControls: Set<String>
     private let displays: () -> [CGRect]
     private var targets: [Target] = []
     /// Windows moved off screen, with the place the center had given them.
@@ -68,6 +74,7 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
          receivedDate: @escaping () -> Date = Date.init,
          sourceApplicationName: @escaping ([String]) -> String? = { _ in nil },
          allowsNativeClose: @escaping () -> Bool = { false }, nativeCloseTitle: String = "",
+         centerControls: Set<String> = Set(NotchNotificationSupport.centerControlKeys),
          displays: @escaping () -> [CGRect] = { [] }) {
         self.access = access
         self.allowed = allowed
@@ -76,6 +83,7 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
         self.sourceApplicationName = sourceApplicationName
         self.allowsNativeClose = allowsNativeClose
         self.nativeCloseTitle = nativeCloseTitle
+        self.centerControls = centerControls.union(nativeCloseTitle.isEmpty ? [] : [nativeCloseTitle])
         self.displays = displays
     }
 
@@ -128,7 +136,8 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
         var untaken: [Access.Element] = []
         for candidate in roots {
             let root = candidate.root
-            guard let content = content(root) else {
+            let inspected = inspect(root, readsButtons: true)
+            guard let content = inspected.content else {
                 if !candidate.transient, !untaken.contains(where: { access.same($0, candidate.window) }) {
                     untaken.append(candidate.window)
                 }
@@ -143,10 +152,17 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
             let id = old?.item.id ?? UUID()
             guard currentIDs.insert(id).inserted else { continue }
             let rootActions = actions(root)
+            // Buttons a banner shows only under the pointer may come and go
+            // between reads; once seen, they are remembered.
+            let controls = NotchNotificationSupport.appControls(
+                actions: rootActions, buttons: inspected.buttons, center: centerControls)
+            let remembered = (old?.item.controls ?? []).filter { !controls.contains($0) }
             let item = NotchSystemNotification(id: id, content: content, received: old?.item.received ?? receivedDate(),
-                canOpen: rootActions.contains("AXPress"))
+                canOpen: rootActions.contains("AXPress"), controls: controls + remembered)
             nextTargets.removeAll { $0.item.id == id }
             nextTargets.append(Target(root: root, window: candidate.window, transient: candidate.transient,
+                                      interactive: NotchNotificationSupport.keepsOwnBanner(
+                                        controls: item.controls, content: content),
                                       nativeIdentity: identity, item: item))
             items.append(item)
         }
@@ -178,7 +194,7 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
         // Validation gets a budget of its own so a busy center does not leave
         // the banner open; a check it cannot finish still closes nothing.
         beginRead()
-        guard let target = validatedTarget(id), target.transient,
+        guard let target = validatedTarget(id), target.transient, !target.interactive,
               let action = NotchNotificationSupport.closeAction(in: actions(target.root), title: nativeCloseTitle),
               usable, allowsNativeClose() else { return false }
         return access.perform(action, on: target.root)
@@ -191,6 +207,17 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
     /// Unconfirmed arrivals stay hidden through their focus decision, even
     /// when a slow read or a second window outlasts the initial arrival grace.
     /// Returns the shown banners that could not be hidden.
+    ///
+    /// A window whose banner offers a call's own buttons (Accept, Answer,
+    /// Decline, Join, in the languages the moments read, or any two of
+    /// FaceTime's or Phone's), reads as a call, or holds a persistent alert
+    /// always stays in sight, whatever the island shows: the island cannot
+    /// press those buttons for the person. A message's or a mail's Reply
+    /// and Mark as Read do not hold a banner back (see
+    /// `NotchNotificationSupport.keepsOwnBanner`). The buttons are read from
+    /// the banner's structure, and this holds with the Office moments off:
+    /// a deliberate safety deviation from upstream, which hid any transient
+    /// banner the island showed.
     func hideNative(_ shown: Set<UUID>, holding: Set<UUID> = []) -> Set<UUID> {
         // A failed rollback is still ours to restore, even when no complete
         // read ever produced a notification target for that window.
@@ -210,7 +237,8 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
         var kept: [Access.Element] = []
         for group in groups {
             guard !untakenWindows.contains(where: { access.same($0, group.window) }),
-                  group.targets.allSatisfy({ $0.transient && (shown.contains($0.item.id) || holding.contains($0.item.id)) }) else {
+                  group.targets.allSatisfy({ $0.transient && !$0.interactive
+                      && (shown.contains($0.item.id) || holding.contains($0.item.id)) }) else {
                 show(group.window); continue
             }
             // Every message in the window must still be the one the island took.
@@ -392,9 +420,29 @@ final class NotchNotificationReaderCore<Access: NotchNotificationAccess> {
     }
 
     private func content(_ root: Access.Element) -> NotchNotificationContent? {
+        inspect(root, readsButtons: false).content
+    }
+
+    /// The banner's message and, when asked, the labels of its buttons, read
+    /// in the same walk.
+    private func inspect(_ root: Access.Element,
+                         readsButtons: Bool) -> (content: NotchNotificationContent?, buttons: [String]) {
+        var buttons: [String] = []
+        let content = message(root) { node, role in
+            guard readsButtons, NotchNotificationSupport.controlRoles.contains(role) else { return }
+            let label = ["AXTitle", "AXDescription"].lazy.compactMap { self.string(node, $0) }
+                .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            if let label { buttons.append(label) }
+        }
+        return (content, buttons)
+    }
+
+    private func message(_ root: Access.Element,
+                         alsoVisit: (Access.Element, String) -> Void) -> NotchNotificationContent? {
         var texts: [NotchNotificationSupport.Text] = []
         var imageLabels: [String] = []
         walk(root, depth: 0) { node, role in
+            alsoVisit(node, role)
             if role == "AXImage", let label = string(node, "AXDescription"),
                !label.isEmpty, label.utf8.count <= 256 {
                 imageLabels.append(label)
