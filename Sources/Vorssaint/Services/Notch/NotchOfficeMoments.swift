@@ -35,6 +35,9 @@ enum NotchOfficeBrightnessBand: Equatable, CaseIterable {
 struct NotchOfficeCue: Equatable {
     enum Kind: Equatable {
         case battery(NotchOfficeBattery)
+        /// An agent's notice: its turn ending, a limit or the budget
+        /// (NotchOfficeAgents.swift).
+        case agent(NotchOfficeAgentBeat)
         case connect(NotchOfficeSpeaker)
         case message
         case call
@@ -600,6 +603,7 @@ extension NotchOfficeMoments {
     static func capsuleRow(_ cue: NotchOfficeCue?, title: String, detail: String, level: Bool,
                            geometry: NotchGeometry) -> CGFloat {
         let layout = NotchCapsuleLayout.self
+        if !level, cue?.agentBeat != nil { return capsuleAgentRow(title: title, detail: detail, geometry: geometry) }
         guard level, let cue, cue.isLevel else { return layout.noticeContent(title: title, detail: detail, level: level) }
         return capsuleMarkWidth(cue, geometry: geometry) + layout.spacing + capsuleMeterWidth(cue) + layout.spacing
             + capsuleReadingWidth(detail)

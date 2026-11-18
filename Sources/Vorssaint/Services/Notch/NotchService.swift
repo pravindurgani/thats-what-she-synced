@@ -58,6 +58,13 @@ struct NotchNotice: Equatable {
             return NotchNoticeWings(leading: max(minimumWings.leading, fitted.leading),
                                     trailing: max(minimumWings.trailing, fitted.trailing))
         }
+        // An agent's Office moment: its badge, its words large and the
+        // widest caption it can show; one replacing another keeps its sides.
+        if let office, office.agentBeat != nil, level == nil {
+            return NotchOfficeMoments.agentWings(office, title: title, detail: detail,
+                                                 inset: Self.levelInset, cameraGap: cameraGap,
+                                                 minimumWing: Self.minimumWing, minimum: minimumWings)
+        }
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         func measured(_ text: String) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
         // An Office caption reads under the title, so that side is as wide
@@ -114,7 +121,10 @@ struct NotchNotice: Equatable {
     /// narrow as its content still clears; only a display too narrow for a
     /// side's content takes some of it.
     func inset(wing: CGFloat) -> CGFloat {
-        level != nil && event != .accessory ? Self.levelInset : min(NotchNotificationBannerLayout.inset, wing / 2)
+        // An agent's Office moment sits where a level's mark does, so its
+        // badge and words line up with the boombox's.
+        (level != nil && event != .accessory) || office?.agentBeat != nil
+            ? Self.levelInset : min(NotchNotificationBannerLayout.inset, wing / 2)
     }
 
     /// Where the companion stands in this notice, as an offset of its centre
@@ -1102,7 +1112,8 @@ final class NotchService: ObservableObject {
 
     private func capsuleNoticeSize(_ notice: NotchNotice) -> CGSize {
         var size = capsuleNoticeSurface(notice)
-        guard notice.notification != nil else { return size }
+        // An agent's Office moment replacing another holds its width too.
+        guard notice.notification != nil || notice.office?.agentBeat != nil else { return size }
         if notice.minimumWings != .zero { size.width = max(size.width, bannerCapsuleWidth) }
         bannerCapsuleWidth = size.width
         return size
@@ -4509,27 +4520,45 @@ final class NotchService: ObservableObject {
                 ?? text.readoutLimit
             }
         }
+        // With the Office moments on, each notice is its moment ("Employee
+        // of the Month"); off, the notices are exactly as they always were.
+        let office = NotchOfficeMoments.isEnabled()
+            ? NotchOfficeMoments.agentCue(for: event, language: L10n.shared.language) : nil
+        func raise(_ notice: NotchNotice) -> Bool {
+            var notice = notice
+            // A second agent's moment replacing the first keeps the island's
+            // sides, so two finishing together do not resize it.
+            if office != nil, let shown = self.notice, shown.office?.agentBeat != nil, noticeCanPresent, !noticeExpanded {
+                notice.minimumWings = shown.wings(in: geometry)
+            }
+            return show(notice)
+        }
         switch event {
         case .finished(let provider, let duration, let cost, _, _):
-            show(NotchNotice(event: .agents, title: text.finished(provider.displayName),
-                             detail: [AgentFormat.duration(duration, locale: locale), cost > 0 ? AgentFormat.cost(cost) : ""]
-                                .filter { !$0.isEmpty }.joined(separator: " · "),
-                             symbol: provider.symbol, agent: provider))
+            let shown = raise(NotchNotice(event: .agents, title: text.finished(provider.displayName),
+                                          detail: [AgentFormat.duration(duration, locale: locale),
+                                                   cost > 0 ? AgentFormat.cost(cost) : ""]
+                                            .filter { !$0.isEmpty }.joined(separator: " · "),
+                                          symbol: provider.symbol, agent: provider, office: office))
+            // The notice closed the agent's ring in gold, so its wing does
+            // not close it again in green once the notice goes.
+            if shown, NotchOfficeMoments.celebratesFinish(office) { NotchAgentFinishes.shared.celebrate(provider) }
             // After the notice, the companion cheers the finished task.
             reactMascot(.celebrate)
         case .limitWarning(let provider, let limit):
-            show(NotchNotice(event: .agents, title: "\(provider.displayName) · \(window(limit))",
-                             detail: NotchAgentSupport.limitShare(limit, display: NotchAgentSupport.limitDisplay(),
-                                                                  text: text),
-                             symbol: "exclamationmark.triangle.fill", agent: provider))
+            _ = raise(NotchNotice(event: .agents, title: "\(provider.displayName) · \(window(limit))",
+                                  detail: NotchAgentSupport.limitShare(limit, display: NotchAgentSupport.limitDisplay(),
+                                                                       text: text),
+                                  symbol: "exclamationmark.triangle.fill", agent: provider, office: office))
         case .limitReset(let provider, let limit):
             // Work can go on: the companion is glad of it.
-            show(NotchNotice(event: .agents, title: "\(provider.displayName) · \(window(limit))",
-                             detail: text.limitRenewed, symbol: "arrow.clockwise", agent: provider, mascot: .celebrate))
+            _ = raise(NotchNotice(event: .agents, title: "\(provider.displayName) · \(window(limit))",
+                                  detail: text.limitRenewed, symbol: "arrow.clockwise", agent: provider, mascot: .celebrate,
+                                  office: office))
             reactMascot(.celebrate)
         case .budgetReached(let spent, _):
-            show(NotchNotice(event: .agents, title: text.budgetTitle, detail: AgentFormat.cost(spent),
-                             symbol: "dollarsign.circle.fill"))
+            _ = raise(NotchNotice(event: .agents, title: text.budgetTitle, detail: AgentFormat.cost(spent),
+                                  symbol: "dollarsign.circle.fill", office: office))
         }
     }
 

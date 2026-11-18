@@ -90,6 +90,8 @@ struct NotchCapsuleNoticeView: View {
                                         caption: officeCaption, trigger: officeKey)
             } else if let level = notice.level {
                 levelRow(level)
+            } else if let beat = notice.office?.agentBeat, let key = notice.officeAgentKey {
+                agentRow(beat, key: key)
             } else {
                 messageRow
             }
@@ -124,11 +126,12 @@ struct NotchCapsuleNoticeView: View {
     }
 
     /// The lower third at the row's end, at the size the capsule's height allows.
-    private func lowerThird(_ caption: String) -> some View {
+    private func lowerThird(_ caption: String, delay: Double = 0.22) -> some View {
         let card = NotchOfficeMoments.capsuleCaptionFont(geometry) === NotchOfficeMoments.cardCaptionFont
-        let low = notice.office?.kind == .battery(.low)
+        let low = notice.office?.kind == .battery(.low) || notice.office?.agentBeat == .budgetReached
         return NotchLowerThird(caption: caption, size: card ? .card : .strip,
-                               accent: low ? NotchOfficeInk.beet : NotchOfficeInk.mustard, trigger: officeKey)
+                               accent: low ? NotchOfficeInk.beet : NotchOfficeInk.mustard,
+                               trigger: notice.officeAgentKey ?? officeKey, delay: delay)
             .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
     }
 
@@ -150,6 +153,38 @@ struct NotchCapsuleNoticeView: View {
                     .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
             }
             if let officeCaption { lowerThird(officeCaption) }
+        }
+    }
+
+    /// An agent's Office moment in one row: the badge at the capsule's ring
+    /// size, the title, the detail and the caption where the capsule holds it.
+    private func agentRow(_ beat: NotchOfficeAgentBeat, key: String) -> some View {
+        let scale = NotchOfficeMoments.capsuleAgentScale(geometry)
+        return HStack(spacing: CapsuleLayout.spacing) {
+            Group {
+                if NotchMascotSupport.isEnabled(), notice.mascot != nil {
+                    mark
+                } else {
+                    NotchOfficeAgentBadge(beat: beat, provider: notice.agent, trigger: key,
+                                          confettiReach: NotchOfficeMoments.capsuleConfettiReach(geometry))
+                        .scaleEffect(scale, anchor: .topLeading)
+                        .frame(width: NotchOfficeMoments.agentBadgeWidth * scale,
+                               height: NotchOfficeMoments.agentRingSide * scale, alignment: .topLeading)
+                }
+            }
+            .frame(width: NotchOfficeMoments.capsuleAgentBadgeWidth(geometry), alignment: .leading)
+            .notchPunchIn(key)
+            // A moment replacing another starts afresh, with nothing of the last.
+            .id(key)
+            .transition(.identity)
+            Text(notice.title).capsuleTitle().layoutPriority(1)
+                .notchArrival(key)
+            if !notice.detail.isEmpty {
+                Text(notice.detail).capsuleDetail()
+                    .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+                    .notchArrival(key, delay: 0.2)
+            }
+            if let officeCaption { lowerThird(officeCaption, delay: 0.32) }
         }
     }
 

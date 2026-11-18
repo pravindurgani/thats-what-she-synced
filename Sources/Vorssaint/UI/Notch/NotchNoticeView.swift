@@ -108,6 +108,28 @@ struct NotchNoticeView: View {
                                     caption: NotchOfficeMoments.captionUnderReading(cue) ? officeCaption : nil,
                                     trigger: officeKey)
                 .transaction { $0.disablesAnimations = false }
+        } else if let cue = notice.office, let beat = cue.agentBeat, let key = notice.officeAgentKey {
+            // Employee of the Month: the agent's mark in its ring closing in
+            // the moment's colour, the words large beside it and the caption
+            // under them. The companion keeps its cameo where the notice has one.
+            // A moment replacing another, as a second agent finishing, starts
+            // afresh in place: nothing of the last one shows in its first frame.
+            HStack(spacing: NotchOfficeMoments.agentMarkGap) {
+                if companionReaction != nil {
+                    mark
+                } else {
+                    NotchOfficeAgentBadge(beat: beat, provider: notice.agent, trigger: key)
+                        .notchPunchIn(key)
+                        .id(key)
+                        .transition(.identity)
+                }
+                NotchOfficeAgentWords(title: notice.title, caption: officeCaption, beat: beat, trigger: key)
+                    .notchPunchIn(key)
+                    .id(key)
+                    .transition(.identity)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .transaction { $0.disablesAnimations = false }
         } else {
             HStack(spacing: 8) {
                 mark
@@ -248,6 +270,9 @@ struct NotchNoticeView: View {
             NotchOfficeLevelMeter(cue: cue, level: level,
                                   caption: NotchOfficeMoments.captionUnderReading(cue) ? nil : officeCaption,
                                   trigger: officeKey)
+        } else if notice.office?.agentBeat != nil, let key = notice.officeAgentKey {
+            // The turn's time and cost, the share left or the sum spent.
+            NotchOfficeAgentReading(detail: notice.detail, trigger: key)
         } else if let level = notice.level {
             NotchMeter(value: level, height: 5, tint: tint, colors: levelColors)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: level)

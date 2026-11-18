@@ -284,7 +284,8 @@ enum NotchAgentWings {
 /// whose agent keeps working (another of its turns), or whose last turn
 /// left without a report, as an interrupted turn does, shows nothing. While
 /// a notice covers the strip the check waits, and it starts again as the
-/// strip comes back, so its moment is seen.
+/// strip comes back, so its moment is seen. A finish the Office moments
+/// celebrated in its notice already had its moment: no check follows it.
 struct NotchAgentFinishLog: Equatable {
     /// How long the check holds once its agent stops working.
     static let check: TimeInterval = 1.6
@@ -305,6 +306,10 @@ struct NotchAgentFinishLog: Equatable {
     private(set) var seen: [AgentProvider: Set<String>] = [:]
     /// Since when a notice has covered the strip, nil while none does.
     private(set) var covered: Date?
+    /// Agents whose reported end the finish notice celebrated (the Office
+    /// moments' "Employee of the Month"): their ring closed in gold there,
+    /// so the wing does not close it again in green once the notice goes.
+    private(set) var celebrated: Set<AgentProvider> = []
 
     /// The agents showing their check now.
     var finished: Set<AgentProvider> { Set(checks.keys) }
@@ -314,15 +319,24 @@ struct NotchAgentFinishLog: Equatable {
     /// the log has caught up, so nothing between the two can drop the wing.
     func finished(live: [AgentLiveSession]) -> Set<AgentProvider> {
         let working = Set(live.map(\.provider))
-        return finished.union(reported.keys.filter { !working.contains($0) && closes($0) })
+        return finished.union(reported.keys.filter { !working.contains($0) && !celebrated.contains($0) && closes($0) })
     }
 
     mutating func ended(_ end: AgentTurnEnd, at now: Date) {
         checks[end.provider] = nil
+        celebrated.remove(end.provider)
         var report = reported[end.provider] ?? Report(sessions: [], time: now)
         report.sessions.insert(end.session)
         report.time = now
         reported[end.provider] = report
+    }
+
+    /// The finish notice celebrated `provider`'s turn: its check, shown or
+    /// still to come from the end reported, is dropped. A finish with no
+    /// end reported has no check to drop.
+    mutating func celebrate(_ provider: AgentProvider) {
+        checks[provider] = nil
+        if reported[provider] != nil { celebrated.insert(provider) }
     }
 
     /// A notice covers the strip: the checks wait for it to go.
@@ -346,9 +360,11 @@ struct NotchAgentFinishLog: Equatable {
         for (provider, report) in reported {
             if !working.contains(provider) {
                 reported[provider] = nil
-                if closes(provider, report) { checks[provider] = now }
+                if closes(provider, report), !celebrated.contains(provider) { checks[provider] = now }
+                celebrated.remove(provider)
             } else if now.timeIntervalSince(report.time) >= Self.wait {
                 reported[provider] = nil
+                celebrated.remove(provider)
             }
         }
         // Noted after the reports are weighed, against the turns at work before.
