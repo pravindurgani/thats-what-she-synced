@@ -21,28 +21,16 @@ enum NotchOfficeFamilyTests {
     }
 
     /// The motion asks Core Animation for the frames it needs, as the comet
-    /// rings always did: 30 a second for slow drifts and turns, 60 for a
-    /// beat's moves, never a ProMotion display's 120, each a frame
-    /// WindowServer composites. A beat's ease moves from where the layer
-    /// shows to where it is headed, at the beat's rate.
+    /// rings always did: 30 a second for slow drifts, turns and a beat's
+    /// fall, 60 for a beat's hit, never a ProMotion display's 120, each a
+    /// frame WindowServer composites.
     private static func frameRateContracts(_ suite: TestSuite) {
         suite.expect(NotchSongMotion.slowFrames.maximum == 30 && NotchSongMotion.slowFrames.preferred == 30
                      && NotchSongMotion.beatFrames.maximum == 60 && NotchSongMotion.beatFrames.preferred == 60,
-                     "slow motion asks for 30 frames a second and a beat's moves for 60")
+                     "slow motion asks for 30 frames a second and a beat's hit for 60")
         suite.expect(NotchSongMotion.gentleFrames.maximum == 15 && NotchSongMotion.gentleFrames.preferred == 15,
                      "the softest breaths ask for 15 frames a second, every other one of a slow motion's")
-        // Inside a transaction, as the island eases within a turn of the main
-        // queue: a layer on no screen drops its animations once one commits.
-        CATransaction.begin()
-        defer { CATransaction.commit() }
-        let layer = CALayer()
-        layer.opacity = 1
-        NotchSongMotion.ease(layer, "opacity", to: Float(0.4), duration: 0.08,
-                             curve: CAMediaTimingFunction(name: .easeOut))
-        let move = layer.animation(forKey: "opacity") as? CABasicAnimation
-        suite.expect(layer.opacity == 0.4 && move?.duration == 0.08 && (move?.fromValue as? Float) == 1
-                     && (move?.toValue as? Float) == 0.4 && move?.preferredFrameRateRange.maximum == 60,
-                     "a beat's ease lands on its value, from where the layer was, at 60 frames a second")
+        beatContracts(suite)
         let directory = "Sources/Vorssaint/UI/Notch/"
         for file in ["NotchMusicAurora.swift", "NotchOfficeComponents.swift", "NotchAgentCometView.swift"] {
             guard let source = try? String(contentsOfFile: directory + file, encoding: .utf8) else {
@@ -53,6 +41,102 @@ enum NotchOfficeFamilyTests {
             let rates = source.components(separatedBy: ".preferredFrameRateRange = ").count - 1
             suite.expect(loops > 0 && rates >= loops, "\(file): every endless loop asks for its frame rate")
         }
+    }
+
+    /// The beat sets one move going per hit, never one per reading: the hit
+    /// and its whole fall, worked out at once as the curve the per-reading
+    /// eases drew, its hit at 60 frames a second and its fall at 30.
+    private static func beatContracts(_ suite: TestSuite) {
+        let pushes = NotchBeatFall.pushes(from: 0.5)
+        suite.expect(pushes.first == 0.5 && pushes.last == 0
+                        && zip(pushes, pushes.dropFirst().dropLast()).allSatisfy { abs($1 - $0 * 0.72) < 1e-12 }
+                        && pushes.dropLast().allSatisfy { $0 >= NotchBeatFall.rest }
+                        && pushes.dropLast().last.map { $0 * 0.72 < NotchBeatFall.rest } == true,
+                     "a hit's push keeps 0.72 of itself each reading until it rests")
+        suite.expect(NotchBeatFall.pushes(from: 0.005) == [0] && NotchBeatFall.pushes(from: .nan) == [0]
+                        && NotchBeatFall.pushes(from: 3).first == 1,
+                     "a push too faint to see rests at once, and none goes past full")
+
+        let linear = CAMediaTimingFunction(name: .linear)
+        let easeOut = CAMediaTimingFunction(name: .easeOut)
+        let inOut = CAMediaTimingFunction(name: .easeInEaseOut)
+        suite.expectClose(linear.progress(at: 0.3), 0.3, "a linear curve is its own progress", tol: 1e-6)
+        suite.expectClose(inOut.progress(at: 0.5), 0.5, "an even ease is half way at half time", tol: 1e-6)
+        suite.expect(easeOut.progress(at: 0.2) > 0.2 && easeOut.progress(at: 0) == 0 && easeOut.progress(at: 1) == 1,
+                     "an ease out leads its time and ends where it should")
+        for share in [0.25, 0.556, 0.625] {
+            let cut = easeOut.cut(at: share)
+            let whole = easeOut.progress(at: share)
+            let agrees = stride(from: 0.05, through: 1, by: 0.05).allSatisfy { x in
+                abs(cut.progress(at: x) * whole - easeOut.progress(at: x * share)) < 1e-4
+            }
+            suite.expect(agrees, "an ease cut short at \(share) of its time draws the first part of the same curve")
+        }
+
+        // What twenty eases a second drew: each reading an ease from where
+        // the last had the value, cut short by the next.
+        let beat = NotchMusicBeat(push: 0.6, previous: 0.1)
+        let moves = NotchBeatFall.pushes(from: beat.push).enumerated().map { index, push in
+            NotchBeatCurve.Move(target: 0.07 * push, duration: index == 0 ? 0.06 : 0.09, curve: easeOut)
+        }
+        func chain(_ start: Double, at time: Double) -> Double {
+            var value = start
+            for (index, move) in moves.enumerated() {
+                let begin = Double(index) * 0.05
+                if index == moves.count - 1 || time < begin + 0.05 {
+                    return value + (move.target - value) * move.curve.progress(at: min(1, max(0, (time - begin) / move.duration)))
+                }
+                value += (move.target - value) * move.curve.progress(at: 0.05 / move.duration)
+            }
+            return value
+        }
+        let curve = NotchBeatCurve(from: 0.01, moves: moves)
+        let traced = stride(from: 0.0, through: curve.duration + 0.1, by: 0.004).allSatisfy {
+            abs(curve.value(at: $0) - chain(0.01, at: $0)) < 1e-5
+        }
+        suite.expect(traced && curve.end == 0 && curve.value(at: 0) == 0.01,
+                     "one curve per hit traces the per-reading eases exactly, from where the last stood, to rest")
+        let settle = NotchMusicBeat.settle(from: 0.4)
+        suite.expect(beat.isNewHit && !NotchMusicBeat(push: 0.6, previous: 0.5).isNewHit && settle.settles
+                        && !settle.isNewHit && settle.attack == 0 && beat.attack == NotchBeatFall.reading,
+                     "a hit well above the fall is new, a settle is none, and only a hit has an attack")
+        let listener = beat.moves { $0 }
+        suite.expect(listener.first?.duration == 0.08 && listener.last?.duration == NotchSongMotion.beatReturn
+                        && listener.last?.target == 0 && beat.moves { $0 }.count == moves.count
+                        && settle.moves { $0 }.map(\.target) == [0],
+                     "a listener eases quickly with the hit and settles as it comes down")
+
+        // Played as two slices of one animation, inside a transaction as the
+        // island plays it: a layer on no screen drops its animations once one commits.
+        CATransaction.begin()
+        defer { CATransaction.commit() }
+        let layer = CALayer()
+        let animation = curve.animation("transform.scale", additive: true)
+        NotchSongMotion.play(animation, attack: 0.05, on: layer, key: "beat", at: 100)
+        let hit = layer.animation(forKey: "beat"), fall = layer.animation(forKey: "beatFall")
+        suite.expect(animation.isAdditive && (animation.values as? [Double])?.count == curve.values.count
+                        && hit?.repeatDuration == 0.05 && hit?.preferredFrameRateRange.preferred == 60
+                        && fall?.timeOffset == 0.05 && fall?.repeatDuration == animation.duration - 0.05
+                        && abs((fall?.beginTime ?? 0) - (hit?.beginTime ?? 0) - 0.05) < 1e-9
+                        && fall?.preferredFrameRateRange.preferred == 30,
+                     "a hit plays its first reading at 60 frames a second and its fall, picked up there, at 30")
+        NotchSongMotion.play(animation, attack: 0, on: layer, key: "beat", at: 100)
+        suite.expect(layer.animation(forKey: "beat") == nil && layer.animation(forKey: "beatFall")?.repeatDuration
+                        == animation.duration,
+                     "a settle plays whole at 30 frames a second")
+        NotchSongMotion.stop("beat", on: layer)
+        suite.expect(layer.animationKeys() == nil || layer.animationKeys()?.isEmpty == true, "a move stops whole")
+        var track = NotchBeatTrack()
+        _ = track.start(moves, at: 10)
+        suite.expectClose(track.value(at: 10.2), NotchBeatCurve(from: 0, moves: moves).value(at: 0.2),
+                          "a track starts from rest and stands where its curve does", tol: 1e-12)
+        let midway = track.value(at: 10.12)
+        _ = track.start(moves, at: 10.12)
+        suite.expectClose(track.value(at: 10.12), midway, "the next move starts where the last one stands",
+                          tol: 1e-12)
+        suite.expect(track.moves(at: 10.2) && !track.moves(at: 12) && track.value(at: 12) == 0
+                        && NotchBeatTrack().value(at: 1, resting: 0.3) == 0.3,
+                     "a track runs its curve's length, then rests")
     }
 
     /// One resolver: the song while it plays, else the companion while it is
@@ -297,6 +381,13 @@ enum NotchSongHoldTests {
         suite.expect(source.contains("moves: !reduceMotion && !still && !lowPower.isOn")
                         && source.contains("moves: !reduceMotion && !lowPower.isOn"),
                      "Low Power Mode stills the aurora and the bubbles as Reduce Motion does")
+        // Twenty readings a second come in; only a hit sets anything going.
+        let hear = body(of: "private func hear(_ levels: [Double]?)")
+        let strike = body(of: "private func strike(previous: Double, at now: CFTimeInterval)")
+        suite.expect(!hear.isEmpty && !hear.contains("presentation()") && !hear.contains(".add(")
+                        && !hear.contains("NotchSongMotion.play") && !hear.contains("beat.send")
+                        && hear.contains("strike(previous:") && !strike.isEmpty && !strike.contains("presentation()"),
+                     "a reading without a hit adds no animation and sends no beat; a hit reads nothing off the screen")
     }
 
     private static func wingContracts(_ suite: TestSuite) {

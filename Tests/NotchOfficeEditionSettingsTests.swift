@@ -219,13 +219,25 @@ enum NotchOfficeEditionSettingsTests {
         }
         for language in AppLanguage.allCases {
             let text = FeatureStrings.notchOfficeEdition(language)
-            suite.expect((labels(text) + hints(text) + [text.openHint]).allSatisfy { !$0.isEmpty }
+            suite.expect((labels(text) + hints(text) + [text.openHint, text.appliesWithEdition]).allSatisfy { !$0.isEmpty }
                          && labels(text) == labels(english) && hints(text) == hints(english),
                          "\(language.rawValue) has every word of the card, in English for now")
         }
         suite.expect(Set(labels(english)).count == labels(english).count, "every label in the card is its own")
-        suite.expect(hints(english).allSatisfy { $0.count <= 70 && !$0.contains("\n") },
+        suite.expect((hints(english) + [english.appliesWithEdition]).allSatisfy { $0.count <= 70 && !$0.contains("\n") },
                      "each hint is one short line")
+        suite.expect(english.appliesWithEdition.contains(english.title),
+                     "the companion and music side links say they wait for the Office edition, by its name")
+        // The card is SwiftUI, so it is read rather than drawn: off, the
+        // links grey as the switches do and carry that line.
+        let card = (try? String(contentsOfFile: "Sources/Vorssaint/UI/Settings/NotchOfficeEditionCard.swift",
+                                encoding: .utf8)) ?? ""
+        let links = card.components(separatedBy: "Divider()").last ?? ""
+        suite.expect(links.contains(".disabled(!edition)") && links.contains(".saturation(edition ? 1 : 0)")
+                        && links.contains(".opacity(edition ? 1 : 0.45)")
+                        && links.contains("edition ? nil : text.appliesWithEdition")
+                        && links.components(separatedBy: "caption: waiting").count == 3,
+                     "with the edition off, the companion and music side links grey and say they apply when it is on")
         suite.expect(english.look(.vivid) == english.vivid && english.look(.duotone) == english.oneColour
                      && NotchSongLook.allCases == [.vivid, .duotone],
                      "the look reads Vivid or One colour, in that order")

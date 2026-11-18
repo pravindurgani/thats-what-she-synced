@@ -204,6 +204,12 @@ enum NotchAgentWings {
     static let orbit: CFTimeInterval = 2.8
     static let breath: CFTimeInterval = 1.6
     static let haloRange: ClosedRange<Float> = 0.25...0.6
+    /// Where the halo rests between breaths: between its two ends.
+    static let haloRest: Float = 0.42
+    /// The halo breathes now and then, as the companion's idle comes in
+    /// bursts: a breath, in and out, then a rest of this long, at random,
+    /// while the comet keeps turning. About a third of the time it moves.
+    static let breathRest: ClosedRange<TimeInterval> = 5...8
     /// The ring closing when a turn ends, and the check's colour.
     static let closing: CFTimeInterval = 0.35
     static let done = NotchRGB(hex: 0x4EBA65)

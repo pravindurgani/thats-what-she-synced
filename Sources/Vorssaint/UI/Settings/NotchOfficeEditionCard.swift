@@ -8,7 +8,8 @@ import SwiftUI
 /// master comes first; under it, each extra's own switch and the song's look,
 /// greyed while the master is off but still showing what comes back with it;
 /// then where the companion and the music side are chosen, which keep their
-/// own places rather than being repeated here.
+/// own places rather than being repeated here, greyed alike while it is off
+/// and saying they wait for it.
 ///
 /// Every change applies at once (NotchOfficeEditionSettings), with no relaunch.
 struct NotchOfficeEditionCard: View {
@@ -59,15 +60,23 @@ struct NotchOfficeEditionCard: View {
             .saturation(edition ? 1 : 0)
             .opacity(edition ? 1 : 0.45)
             Divider()
-            if let openCompanion {
-                let companion = FeatureStrings.notchMascot(l10n.language)
-                let style = NotchMascotStyle(rawValue: companionStyle) ?? .minimal
-                link(AppFeature.notchMascot.symbolName, companion.title,
-                     value: companionOn ? companion.style(style) : text.off, action: openCompanion)
+            // The cast and the dancers come with the edition too: off, these
+            // grey and wait for it like the switches above, and say so.
+            let waiting = edition ? nil : text.appliesWithEdition
+            VStack(alignment: .leading, spacing: 13) {
+                if let openCompanion {
+                    let companion = FeatureStrings.notchMascot(l10n.language)
+                    let style = NotchMascotStyle(rawValue: companionStyle) ?? .minimal
+                    link(AppFeature.notchMascot.symbolName, companion.title, caption: waiting,
+                         value: companionOn ? companion.style(style) : text.off, action: openCompanion)
+                }
+                let dancers = FeatureStrings.notchDancers(l10n.language)
+                link("figure.dance", dancers.musicSide, caption: waiting,
+                     value: dancers.name(NotchMusicSide(stored: musicSide)), action: openMusicSide)
             }
-            let dancers = FeatureStrings.notchDancers(l10n.language)
-            link("figure.dance", dancers.musicSide, value: dancers.name(NotchMusicSide(stored: musicSide)),
-                 action: openMusicSide)
+            .disabled(!edition)
+            .saturation(edition ? 1 : 0)
+            .opacity(edition ? 1 : 0.45)
         }
     }
 
@@ -91,8 +100,9 @@ struct NotchOfficeEditionCard: View {
     }
 
     /// A choice kept on its own page: what is chosen now, and the way there.
-    private func link(_ symbol: String, _ title: String, value: String, action: @escaping () -> Void) -> some View {
-        SettingsRow(symbol: symbol, title: title) {
+    private func link(_ symbol: String, _ title: String, caption: String? = nil, value: String,
+                      action: @escaping () -> Void) -> some View {
+        SettingsRow(symbol: symbol, title: title, caption: caption) {
             Button(action: action) {
                 HStack(spacing: 4) {
                     Text(value)

@@ -6,13 +6,16 @@ import QuartzCore
 
 /// The comet ring. A conic gradient in the agent's three colours, cut to a
 /// thin ring, turns once every 2.8 seconds with a bright head leading it;
-/// behind it a halo breathes in and out. Both are Core Animation run by the
-/// render server, so the app does no work per frame, and both are removed
-/// whenever the ring is hidden, its window covered or its agent done. An
-/// agent can work for hours, so they ask for no more frames than they need:
-/// the orbit 30 a second, the breath 15, every other one of the orbit's.
-/// The comet, its mask and its head are drawn once into a bitmap the orbit
-/// turns, rather than cut out of the gradient again on every frame.
+/// behind it a halo breathes in and out now and then, resting between
+/// breaths as the companion rests between its idle bursts. Both are Core
+/// Animation run by the render server, so the app does no work per frame,
+/// and both are removed whenever the ring is hidden, its window covered or
+/// its agent done. An agent can work for hours, so they ask for no more
+/// frames than they need: the orbit 30 a second, the breath 15, every other
+/// one of the orbit's, and between breaths the halo, the widest part of the
+/// ring, asks for none. The comet, its mask and its head are drawn once into
+/// a bitmap the orbit turns, rather than cut out of the gradient again on
+/// every frame.
 final class NotchAgentCometView: NSView {
     private let halo = CAGradientLayer()
     /// A dark lens inside the ring, so the mark keeps its contrast over the glow.
@@ -39,7 +42,10 @@ final class NotchAgentCometView: NSView {
     /// the closing ring as installed, so tests can check their timing.
     var isMoving: Bool { orbit.animation(forKey: "orbit") != nil }
     var orbitAnimation: CABasicAnimation? { orbit.animation(forKey: "orbit") as? CABasicAnimation }
-    var breathAnimation: CABasicAnimation? { halo.animation(forKey: "breath") as? CABasicAnimation }
+    /// The halo's next breath, waiting out its rest or under way.
+    var breathAnimation: CAKeyframeAnimation? { halo.animation(forKey: "breath") as? CAKeyframeAnimation }
+    /// Hands the next breath on as one ends.
+    private var breathRelay: NotchAgentCometRelay?
     var sealShows: Bool { seal.opacity == 1 && seal.strokeEnd == 1 }
     /// Whether the turning comet is drawn once and moved as a bitmap.
     var drawsCometOnce: Bool { spinner.shouldRasterize }
@@ -47,9 +53,9 @@ final class NotchAgentCometView: NSView {
     /// The orbit's frames: smooth at 30 a second, a head of two points
     /// stepping about 4 degrees a frame at one turn in 2.8 seconds.
     static let orbitFrames = NotchSongMotion.slowFrames
-    /// The halo's breath, a soft opacity change over 1.6 seconds: 15 frames a
-    /// second, every other one of the orbit's, so the two together still ask
-    /// the compositor for 30, never for the 40 that 20 and 30 would.
+    /// The halo's breath, a soft opacity change over 1.6 seconds each way: 15
+    /// frames a second, every other one of the orbit's, so the two together
+    /// still ask the compositor for 30, never for the 40 that 20 and 30 would.
     static let breathFrames = NotchSongMotion.gentleFrames
 
     override init(frame frameRect: NSRect) {
@@ -105,7 +111,7 @@ final class NotchAgentCometView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     /// Where the halo rests when it does not breathe: between its two ends.
-    private static let restingHalo: Float = 0.42
+    private static let restingHalo = NotchAgentWings.haloRest
 
     func configure(stops newStops: [NotchRGB], diameter newDiameter: CGFloat, finished newFinished: Bool,
                    moves newMoves: Bool) {
@@ -134,6 +140,7 @@ final class NotchAgentCometView: NSView {
     /// Dismantled: no motion, no observer.
     func stop() {
         orbit.removeAllAnimations()
+        breathRelay = nil
         halo.removeAnimation(forKey: "breath")
         if let visibilityObserver { NotificationCenter.default.removeObserver(visibilityObserver) }
         visibilityObserver = nil
@@ -212,12 +219,14 @@ final class NotchAgentCometView: NSView {
             && window?.occlusionState.contains(.visible) == true
     }
 
-    /// The orbit and the breath run only while the agent works, motion is
+    /// The orbit and the breaths run only while the agent works, motion is
     /// welcome and the ring is on screen; otherwise they are removed, not
     /// paused, and the ring rests with its head at the top.
+    private var runs: Bool { configured && !finished && moves && visible && diameter > 0 }
+
     private func sync() {
-        let runs = configured && !finished && moves && visible && diameter > 0
         guard runs else {
+            breathRelay = nil
             if orbit.animation(forKey: "orbit") != nil || halo.animation(forKey: "breath") != nil {
                 orbit.removeAnimation(forKey: "orbit")
                 halo.removeAnimation(forKey: "breath")
@@ -235,17 +244,35 @@ final class NotchAgentCometView: NSView {
             spin.preferredFrameRateRange = Self.orbitFrames
             orbit.add(spin, forKey: "orbit")
         }
-        if halo.animation(forKey: "breath") == nil {
-            let breath = CABasicAnimation(keyPath: "opacity")
-            breath.fromValue = NotchAgentWings.haloRange.lowerBound
-            breath.toValue = NotchAgentWings.haloRange.upperBound
-            breath.duration = NotchAgentWings.breath
-            breath.autoreverses = true
-            breath.repeatCount = .infinity
-            breath.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            breath.preferredFrameRateRange = Self.breathFrames
-            halo.add(breath, forKey: "breath")
-        }
+        // The first breath comes soon after the ring shows.
+        if halo.animation(forKey: "breath") == nil { breathe(after: Double.random(in: 0.3...1)) }
+    }
+
+    /// One breath, `gap` seconds from now, from the halo's rest up to its
+    /// brightest, down to its faintest and back to rest, eased throughout:
+    /// the same breath as before, at the same pace, once. As it ends the
+    /// next is queued after a rest (NotchAgentWings.breathRest); until it
+    /// starts the halo is still and asks for no frames.
+    private func breathe(after gap: TimeInterval) {
+        let range = NotchAgentWings.haloRange
+        let breath = CAKeyframeAnimation(keyPath: "opacity")
+        breath.values = [Self.restingHalo, range.upperBound, range.lowerBound, Self.restingHalo]
+        breath.keyTimes = [0, 0.25, 0.75, 1]
+        breath.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
+        breath.duration = NotchAgentWings.breath * 2
+        breath.beginTime = halo.convertTime(CACurrentMediaTime(), from: nil) + gap
+        breath.preferredFrameRateRange = Self.breathFrames
+        let relay = NotchAgentCometRelay(target: self)
+        breathRelay = relay
+        breath.delegate = relay
+        halo.add(breath, forKey: "breath")
+    }
+
+    fileprivate func breathDidStop(finished: Bool, relay: NotchAgentCometRelay) {
+        guard finished, relay === breathRelay else { return }
+        breathRelay = nil
+        guard runs else { return }
+        breathe(after: Double.random(in: NotchAgentWings.breathRest))
     }
 
     // MARK: Layout and visibility
@@ -326,5 +353,17 @@ final class NotchAgentCometView: NSView {
         // At twice the display's scale, so the turning bitmap stays as fine as the ring drawn live.
         spinner.rasterizationScale = scale * 2
         CATransaction.commit()
+    }
+}
+
+/// Core Animation keeps its delegate alive. This one keeps only a weak
+/// reference, so a ring taken off screen is let go with a breath pending.
+private final class NotchAgentCometRelay: NSObject, CAAnimationDelegate {
+    weak var target: NotchAgentCometView?
+
+    init(target: NotchAgentCometView) { self.target = target }
+
+    func animationDidStop(_ anim: CAAnimation, finished flag: Bool) {
+        target?.breathDidStop(finished: flag, relay: self)
     }
 }

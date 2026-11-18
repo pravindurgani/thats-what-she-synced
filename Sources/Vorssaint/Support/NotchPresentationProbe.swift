@@ -530,6 +530,7 @@ enum NotchPresentationProbe {
         case profileOnly = "--profile-only"
         case quickAccessClicks = "--quick-access-clicks"
         case backdropFrames = "--backdrop-frames"
+        case musicPath = "--music-path-probe"
     }
 
     /// Any mode selects the probe on its own, so none of them falls through
@@ -558,6 +559,7 @@ enum NotchPresentationProbe {
                     print("BACKDROP FRAMES FAILED: --backdrop-frames needs a folder"); exit(1)
                 }
                 NotchBackdropFramesProbe.runAndExit(folder: arguments[index + 1])
+            case .musicPath: NotchMusicPathProbe.runAndExit(arguments: arguments)
             }
         }
         let app = NSApplication.shared

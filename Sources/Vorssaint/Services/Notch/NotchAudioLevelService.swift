@@ -155,6 +155,15 @@ final class NotchAudioLevelService: ObservableObject {
         guard reader != nil, readerPID == pid, levels != next else { return }
         levels = next
     }
+
+#if VORSSAINT_DEVELOPMENT
+    /// Publishes levels as a reader would, for NotchMusicPathProbe, which
+    /// never plays or taps any sound.
+    func probePublish(_ next: [Double]?) {
+        guard levels != next else { return }
+        levels = next
+    }
+#endif
 }
 
 /// Names a reader's Core Audio listener registrations.
