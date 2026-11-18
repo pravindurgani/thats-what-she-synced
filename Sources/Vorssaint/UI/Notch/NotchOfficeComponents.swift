@@ -131,6 +131,12 @@ struct NotchBlindsShape: Shape {
     var slat: CGFloat = 2
     var pitch: CGFloat = 5
 
+    /// The brightness window's slats ease open and shut with the level.
+    var animatableData: CGFloat {
+        get { slat }
+        set { slat = newValue }
+    }
+
     func path(in rect: CGRect) -> Path {
         var path = Path()
         var y = rect.minY + (pitch - slat) / 2

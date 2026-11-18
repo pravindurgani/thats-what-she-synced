@@ -1424,14 +1424,21 @@ def main():
               "    func setSelectedZoomFocus(", "    private func applyDuringInteraction(",
               "    func beginPickingBlurArea(", "    func endPickingBlurArea("])
           + "}\n}\n")
+    # The Office moments' switch is read from the fixture, not the test
+    # process's own defaults: reading those registers a main-queue observer
+    # that would stall later suites waiting on main for a defaults write.
+    volume_feedback = ("".join(declaration(notch, prefix).replace("    private ", "    ", 1) for prefix in [
+                           "    private func bindVolumeEvents(", "    private func volumeChanged(",
+                           "    func noteOwnLevelAdjustment(", "    private func ownsLevelAdjustment(",
+                           "    func showBrightness(", "    func showKeyboardLight("])
+                       + declaration(notch, "    func showVolume(").replace("    func", "    @discardableResult func", 1)
+                       + declaration(notch, "    func showCurrentVolume(")
+                           .replace("    func", "    @discardableResult func", 1))
+    if volume_feedback.count("NotchOfficeMoments.isEnabled()") != 2:
+        raise ValueError("Expected the Office moments' switch in the volume and brightness notices")
     write("NotchVolumeFeedback.swift", "import Foundation\nimport Combine\n"
           + "extension NotchVolumeFeedbackTests {\nfinal class Service: State {\n"
-          + "".join(declaration(notch, prefix).replace("    private ", "    ", 1) for prefix in [
-              "    private func bindVolumeEvents(", "    private func volumeChanged(",
-              "    func noteOwnLevelAdjustment(", "    private func ownsLevelAdjustment(",
-              "    func showBrightness(", "    func showKeyboardLight("])
-          + declaration(notch, "    func showVolume(").replace("    func", "    @discardableResult func", 1)
-          + declaration(notch, "    func showCurrentVolume(").replace("    func", "    @discardableResult func", 1)
+          + volume_feedback.replace("NotchOfficeMoments.isEnabled()", "officeMomentsEnabled")
           + "}\n}\n")
     scratchpad_service = "Sources/Vorssaint/Services/QuickTools/ScratchpadService.swift"
     scratchpad_view = "Sources/Vorssaint/UI/Notch/NotchScratchpadView.swift"

@@ -16,10 +16,22 @@ struct NotchOfficeBoombox: View {
     @State private var arrived = false
 
     static let size = CGSize(width: 112, height: 72)
-    private static let coneOffset: CGFloat = 34
-    private static let coneSide: CGFloat = 28
+    /// The body and its carrying handle, centred on the drawing's middle; the
+    /// volume notice's mini boombox scales the same geometry down.
+    static let body = CGSize(width: 106, height: 46)
+    static let bodyY: CGFloat = 7
+    static let bodyCorner: CGFloat = 9
+    static let handle = CGSize(width: 54, height: 20)
+    static let handleY: CGFloat = -20
+    static let handleCorner: CGFloat = 6
+    /// From the top of the handle to the foot of the body.
+    static var outline: CGSize {
+        CGSize(width: body.width, height: (bodyY + body.height / 2) - (handleY - handle.height / 2))
+    }
+    static let coneOffset: CGFloat = 34
+    static let coneSide: CGFloat = 28
     /// Where the cones, the deck and the rings sit, below the handle.
-    private static let deckY: CGFloat = 10
+    static let deckY: CGFloat = 10
     /// When each cone's first ring leaves; the second pair follows 1.3 s later.
     private static let firstBeat = (left: 0.12, right: 0.34)
 
@@ -71,19 +83,19 @@ struct NotchOfficeBoombox: View {
     private var boombox: some View {
         ZStack {
             // The carrying handle, mostly behind the body.
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: Self.handleCorner, style: .continuous)
                 .stroke(Color(white: 0.34), lineWidth: 3)
-                .frame(width: 54, height: 20)
-                .offset(y: -20)
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .frame(width: Self.handle.width, height: Self.handle.height)
+                .offset(y: Self.handleY)
+            RoundedRectangle(cornerRadius: Self.bodyCorner, style: .continuous)
                 .fill(LinearGradient(colors: [Color(white: 0.21), NotchOfficeInk.boombox],
                                      startPoint: .top, endPoint: .bottom))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: Self.bodyCorner, style: .continuous)
                         .strokeBorder(.white.opacity(0.14), lineWidth: 0.75)
                 }
-                .frame(width: 106, height: 46)
-                .offset(y: 7)
+                .frame(width: Self.body.width, height: Self.body.height)
+                .offset(y: Self.bodyY)
             // The top panel and its buttons.
             HStack(spacing: 3) {
                 ForEach(0..<4, id: \.self) { button in

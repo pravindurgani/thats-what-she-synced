@@ -784,16 +784,36 @@ enum NotchMusicStripLayout {
 
     static func showsArtist(_ geometry: NotchGeometry) -> Bool { geometry.compactActivityContentHeight >= 28 }
 
-    /// The dancers' floor fits the right wing beside the camera, clear of
-    /// the strip's rounded end; otherwise the strip shows the bars.
+    /// Some dance fits the right wing beside the camera, clear of the
+    /// strip's rounded end; otherwise the strip shows the bars and deals no
+    /// dance. A wing short of the stepped-down one holds the bars only.
     static func fitsDancers(_ geometry: NotchGeometry) -> Bool {
-        geometry.compactActivityWingWidth - innerInset(geometry) - geometry.compactMusicDancersInset
-            >= NotchDanceFloor.width - 0.5
+        NotchDanceRoutine.allCases.contains { danceFloor(geometry, routine: $0) != nil }
     }
 
-    static func dancersInset(_ geometry: NotchGeometry) -> CGFloat {
-        max(0, min(geometry.compactMusicDancersInset,
-                   geometry.compactActivityWingWidth - NotchDanceFloor.width - innerInset(geometry)))
+    /// The floor `routine` dances on in this strip: at full size where its
+    /// wing allows, else as large as the wing holds up to the stepped-down
+    /// size, and nil, for the bars, where even the smallest does not fit.
+    static func danceFloor(_ geometry: NotchGeometry, routine: NotchDanceRoutine) -> NotchDanceLayout? {
+        let wing = geometry.compactActivityWingWidth
+        guard wing >= NotchDanceFloor.steppedWing - 0.5 else { return nil }
+        let height = geometry.compactActivityContentHeight
+        let full = NotchDanceFloor.scale(height: height)
+        let fullWing = routine.wing * full
+        let cap = wing >= fullWing - 0.5 ? full : min(full, NotchDanceFloor.steppedScale)
+        let room = wing - innerInset(geometry) - geometry.compactMusicDancersInset(scale: cap)
+        let scale = min(cap, room / routine.floorWidth)
+        guard scale.isFinite, scale >= NotchDanceFloor.smallestScale - 0.001 else { return nil }
+        return NotchDanceLayout(routine: routine, height: height, scale: scale)
+    }
+
+    /// From the strip's end to the floor: the floor centred between the
+    /// camera's edge and the end's even gap, so a solo in a wing fitted to
+    /// the three stands in the middle of its side.
+    static func dancersInset(_ geometry: NotchGeometry, floor: NotchDanceLayout) -> CGFloat {
+        let end = geometry.compactMusicDancersInset(scale: floor.scale)
+        let space = geometry.compactActivityWingWidth - innerInset(geometry) - end
+        return max(0, end + max(0, space - floor.width) / 2)
     }
 
     private static var measuredWords: (title: String, artist: String?, width: CGFloat)?
@@ -2519,29 +2539,50 @@ struct NotchGeometry: Equatable {
         max(compactMusicArtworkInset + compactMusicArtworkSide,
             compactMusicBarsInset + NotchLayout.compactMusicBarsWidth).rounded(.up)
     }
-    /// Dancers in place of the bars keep the same even gap from the strip's
-    /// rounded end as everything else in it.
-    var compactMusicDancersInset: CGFloat {
-        compactActivityEdgeInset(boxHeight: NotchDanceFloor.figureBox * NotchDanceFloor.scale(height: compactActivityContentHeight),
-                                 radius: NotchDanceFloor.figureCorner)
+    /// Dancers in place of the bars keep an even gap from the strip's
+    /// rounded end, measured around their figures at `scale` of full size.
+    func compactMusicDancersInset(scale: CGFloat) -> CGFloat {
+        compactActivityEdgeInset(boxHeight: NotchDanceFloor.figureBox * scale,
+                                 radius: NotchDanceFloor.figureCorner * scale, gap: NotchDanceFloor.edgeGap)
     }
-    private var compactMusicDanceWing: CGFloat {
-        max(compactMusicArtworkInset + compactMusicArtworkSide,
-            compactMusicDancersInset + NotchDanceFloor.width).rounded(.up)
+    /// The wings that hold `side`'s dancers at full size for this strip:
+    /// their own wing, grown with taller figures, and never short of the
+    /// floor and the end's gap or of the cover.
+    func compactMusicDanceWing(_ side: NotchMusicSide) -> CGFloat? {
+        guard let wing = side.wing, let floor = side.floorWidth else { return nil }
+        let scale = NotchDanceFloor.scale(height: compactActivityContentHeight)
+        return max(compactMusicArtworkInset + compactMusicArtworkSide, wing * scale,
+                   compactMusicDancersInset(scale: scale) + floor * scale).rounded(.up)
     }
     /// The music strip with dancers on the camera's right. Beside a physical
-    /// camera both wings grow to the dancers' floor, so the island stays
-    /// balanced and the cover keeps its place at the left end. Where the
-    /// menus leave less room than that, the strip keeps the bars' wings and
-    /// shows the bars; a simulated camera's wings already hold the dancers
-    /// when the menus allow them their full width.
-    func compactMusicGeometry(dancing: Bool) -> NotchGeometry {
-        guard dancing, isNotched else { return compactMusicGeometry }
+    /// camera both wings grow alike to the dancers' wing, so the island
+    /// stays balanced and the cover keeps its place at the left end. Where
+    /// the menus leave less room than that, both step down to a narrower wing
+    /// for smaller figures (NotchDanceFloor.steppedWing), and only with less
+    /// room still does the strip keep the bars' wings and show the bars. A
+    /// simulated camera's wings already hold the dancers when the menus
+    /// allow them their full width.
+    func compactMusicGeometry(dancing side: NotchMusicSide) -> NotchGeometry {
+        guard side.dances, isNotched else { return compactMusicGeometry }
         var compact = self
         compact.allowsActivityFooter = false
         let room = compactSideRoom ?? 0
-        let wing = compact.compactMusicDanceWing
-        guard room.isFinite, room >= wing else { return compactMusicGeometry }
+        guard room.isFinite, let full = compact.compactMusicDanceWing(side), let floor = side.floorWidth else {
+            return compactMusicGeometry
+        }
+        // 44 points, or, in a tall strip with a wider end, just enough for
+        // the widest dance at its smallest.
+        let smallest = NotchDanceFloor.smallestScale
+        let stepped = max(NotchDanceFloor.steppedWing, compact.compactMusicContentWing,
+                          (compact.compactMusicDancersInset(scale: smallest) + floor * smallest).rounded(.up))
+        let wing: CGFloat
+        if room >= full {
+            wing = full
+        } else if room >= stepped {
+            wing = stepped
+        } else {
+            return compactMusicGeometry
+        }
         compact.compactSideRoom = wing
         compact.minimumWing = wing
         return compact

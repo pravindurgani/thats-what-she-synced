@@ -41,6 +41,8 @@ enum NotchVolumeFeedbackTests {
         var lastVolumeRide: TimeInterval = -.infinity
         var expanded = false
         var showsSystemFeedback = true
+        /// The Office moments' switch, which production reads from its defaults.
+        var officeMomentsEnabled = false
         var notice: NotchNotice?
         var presented: [NotchNotice] = []
         @discardableResult
@@ -243,6 +245,31 @@ enum NotchVolumeFeedbackTests {
         let closedShows = lights.showKeyboardLight(0.7) && lights.presented.last?.level == 0.7
         suite.expect(laterShows && closedShows,
                "a level change after the slider's moment, or on a closed island, shows its reading")
+
+        // The Office moments' switch: off, the levels are exactly as before;
+        // on, volume and brightness carry their moment, the keyboard light none.
+        let office = Service()
+        func shown(_ show: () -> Bool) -> NotchNotice? {
+            office.notice = nil
+            return show() ? office.notice : nil
+        }
+        let plain = [shown { office.showVolume(0.56) }, shown { office.showBrightness(0.05) },
+                     shown { office.showKeyboardLight(0.5) }]
+        suite.expect(plain.allSatisfy { $0 != nil && $0?.office == nil },
+               "with the Office moments off, every level notice is drawn as it always was")
+        office.officeMomentsEnabled = true
+        let language = L10n.shared.language
+        let volume = shown { office.showVolume(0.56) }
+        let muted = shown { office.showVolume(0.56, muted: true) }
+        let brightness = shown { office.showBrightness(0.05) }
+        let keyboard = shown { office.showKeyboardLight(0.5) }
+        suite.expect(volume?.office == NotchOfficeMoments.volumeCue(level: 0.56, language: language)
+                     && muted?.office == NotchOfficeMoments.volumeCue(level: 0, language: language)
+                     && brightness?.office == NotchOfficeMoments.brightnessCue(level: 0.05, language: language)
+                     && keyboard != nil && keyboard?.office == nil,
+               "with them on, volume and brightness carry their moment and the keyboard light is unchanged")
+        suite.expect(volume?.accessibilityText == "\(volume?.title ?? ""), 56%",
+               "VoiceOver still reads only the volume")
 
         // An output that adapts its own level, measured from AirPods Pro
         // reacting to the room: a hundredth at a time, a ramp up and back

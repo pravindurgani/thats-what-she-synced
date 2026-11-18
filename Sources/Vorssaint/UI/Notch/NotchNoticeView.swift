@@ -100,6 +100,14 @@ struct NotchNoticeView: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        } else if let cue = notice.office, cue.isLevel, let level = notice.level {
+            // Cafe Disco, or the blinds: the mark, the reading large and the
+            // band's caption under it.
+            NotchOfficeLevelReading(cue: cue, level: level, reading: notice.detail,
+                                    caption: NotchOfficeMoments.captionUnderReading(cue) ? officeCaption : nil,
+                                    trigger: officeKey)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: notice.detail)
+                .transaction { $0.disablesAnimations = false }
         } else {
             HStack(spacing: 8) {
                 mark
@@ -234,6 +242,12 @@ struct NotchNoticeView: View {
                 .foregroundStyle(.white.opacity(0.85))
                 .lineLimit(NotchNotificationBannerLayout.messageLines(stripHeight: geometry.stripHeight))
                 .frame(maxWidth: .infinity, alignment: .trailing)
+        } else if let level = notice.level, let cue = notice.office, cue.isLevel {
+            // The VU meter in place of the thin bar, or the daylight meter
+            // with brightness's caption under it.
+            NotchOfficeLevelMeter(cue: cue, level: level,
+                                  caption: NotchOfficeMoments.captionUnderReading(cue) ? nil : officeCaption,
+                                  trigger: officeKey)
         } else if let level = notice.level {
             NotchMeter(value: level, height: 5, tint: tint, colors: levelColors)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: level)
