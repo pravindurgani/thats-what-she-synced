@@ -84,6 +84,10 @@ struct NotchCapsuleNoticeView: View {
         NotchCapsuleRow(size: size, geometry: geometry) {
             if let content = notice.notification {
                 banner(content)
+            } else if let level = notice.level, let cue = notice.office, cue.isLevel {
+                // Cafe Disco, or the blinds, at the capsule's size.
+                NotchOfficeCapsuleLevel(cue: cue, level: level, reading: notice.detail, geometry: geometry,
+                                        caption: officeCaption, trigger: officeKey)
             } else if let level = notice.level {
                 levelRow(level)
             } else {
@@ -107,7 +111,8 @@ struct NotchCapsuleNoticeView: View {
             return NotchOfficeMoments.capsuleCaption(notice.office, content: row,
                                                      maximum: CapsuleLayout.Maximum.notification, geometry: geometry)
         }
-        let base = CapsuleLayout.noticeContent(title: notice.title, detail: notice.detail, level: notice.level != nil)
+        let base = NotchOfficeMoments.capsuleRow(notice.office, title: notice.title, detail: notice.detail,
+                                                 level: notice.level != nil, geometry: geometry)
             + NotchOfficeMoments.capsuleMugWidth(notice.office, geometry: geometry)
         return NotchOfficeMoments.capsuleCaption(notice.office, content: base, maximum: CapsuleLayout.Maximum.notice,
                                                  geometry: geometry)

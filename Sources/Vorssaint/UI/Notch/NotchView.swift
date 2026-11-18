@@ -336,9 +336,11 @@ struct NotchView: View {
                 } else if let feedback = headerFeedback {
                     // With no row, the reading covers the page's top corner on
                     // the side a row would give it, for the moment it shows.
-                    NotchExpandedLevelView(notice: feedback)
-                        .padding(.horizontal, 10)
-                        .frame(width: 170, height: 28)
+                    let width: CGFloat = 170
+                    let inset: CGFloat = 10
+                    NotchExpandedLevelView(notice: feedback, width: width - inset * 2)
+                        .padding(.horizontal, inset)
+                        .frame(width: width, height: 28)
                         .background(.black, in: Capsule())
                         .frame(maxWidth: .infinity, alignment: wraps ? .trailing : .leading)
                 }
@@ -423,7 +425,8 @@ struct NotchView: View {
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: makesRoom)
         .overlay(alignment: side == .leading ? .leading : .trailing) {
             if let feedback {
-                NotchExpandedLevelView(notice: feedback, showsDetail: readingWidth >= NotchLayout.levelReadingDetailWidth)
+                NotchExpandedLevelView(notice: feedback, showsDetail: readingWidth >= NotchLayout.levelReadingDetailWidth,
+                                       width: readingWidth)
                     .frame(width: readingWidth)
             }
         }

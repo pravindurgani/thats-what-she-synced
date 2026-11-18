@@ -527,17 +527,27 @@ extension NotchOfficeMoments {
 
     /// The caption a capsule notice shows after a row `content` wide, mug
     /// included, or nil where the row with it would pass `maximum` or the
-    /// room the menu bar leaves.
+    /// room the menu bar leaves. A level's caption changes with its band, so
+    /// it is measured at its widest: every step of a held key agrees on
+    /// whether it shows.
     static func capsuleCaption(_ cue: NotchOfficeCue?, content: CGFloat, maximum: CGFloat,
                                geometry: NotchGeometry) -> String? {
-        // A level's capsule keeps its meter and reading as they always were:
-        // a caption changing with the band would resize it under a held key.
-        guard let caption = cue?.caption, cue?.isLevel != true else { return nil }
+        guard let cue, let caption = cue.caption else { return nil }
+        let measured = cue.isLevel ? cue.widestCaption ?? caption : caption
         let layout = NotchCapsuleLayout.self
         let side = layout.side(geometry)
-        let wanted = content + layout.groupSpacing + captionWidth(caption, font: capsuleCaptionFont(geometry))
+        let wanted = content + layout.groupSpacing + captionWidth(measured, font: capsuleCaptionFont(geometry))
         let limit = min(maximum + side * 2, layout.availableWidth(geometry)).rounded(.down)
         return wanted + layout.endPadding * 2 + side * 2 <= limit ? caption : nil
+    }
+
+    /// The caption whose room a capsule keeps after its row. Volume keeps its
+    /// widest: a held key passes through every band, and the capsule holds
+    /// still through them all. Brightness has words only at its two ends,
+    /// which a held key reaches once and stays at, so through the middle of
+    /// the range its capsule keeps the bare row rather than an empty slot.
+    static func capsuleCaptionSlot(_ cue: NotchOfficeCue, caption: String) -> String {
+        cue.kind == .volume ? cue.widestCaption ?? caption : caption
     }
 
     /// A capsule notice's row: `base` as it always measured, then the mug
@@ -545,10 +555,54 @@ extension NotchOfficeMoments {
     static func capsuleContent(_ cue: NotchOfficeCue?, base: CGFloat, maximum: CGFloat,
                                geometry: NotchGeometry) -> CGFloat {
         let content = base + capsuleMugWidth(cue, geometry: geometry)
-        guard let caption = capsuleCaption(cue, content: content, maximum: maximum, geometry: geometry) else {
+        guard let cue, let caption = capsuleCaption(cue, content: content, maximum: maximum, geometry: geometry) else {
             return content
         }
-        return content + NotchCapsuleLayout.groupSpacing + captionWidth(caption, font: capsuleCaptionFont(geometry))
+        return content + NotchCapsuleLayout.groupSpacing
+            + captionWidth(capsuleCaptionSlot(cue, caption: caption), font: capsuleCaptionFont(geometry))
+    }
+
+    // MARK: A level in the capsule
+
+    /// The tallest a level moment's mark and meter stand in a capsule: its
+    /// body less two points above and below.
+    static func capsuleLevelHeight(_ geometry: NotchGeometry) -> CGFloat { max(0, geometry.stripBodyHeight - 4) }
+
+    /// The boombox or the blinds, no taller than the capsule leaves them.
+    static func capsuleMarkScale(_ cue: NotchOfficeCue, geometry: NotchGeometry) -> CGFloat {
+        min(1, capsuleLevelHeight(geometry) / (cue.kind == .volume ? miniBoombox.height : blindsSide))
+    }
+
+    static func capsuleMarkWidth(_ cue: NotchOfficeCue, geometry: NotchGeometry) -> CGFloat {
+        (levelMarkWidth(cue) * capsuleMarkScale(cue, geometry: geometry)).rounded(.up)
+    }
+
+    /// The VU meter's segments, no taller than the capsule leaves them. Its
+    /// bars keep their width, so it reads as the strip's.
+    static func capsuleMeterScale(_ geometry: NotchGeometry) -> CGFloat {
+        min(1, capsuleLevelHeight(geometry) / vuHeights.highest)
+    }
+
+    /// The VU meter for the volume; brightness's daylight meter at the plain meter's length.
+    static func capsuleMeterWidth(_ cue: NotchOfficeCue) -> CGFloat {
+        cue.kind == .volume ? vuWidth : NotchCapsuleLayout.meterWidth
+    }
+
+    /// The reading, as large as the capsule's other readings, with the room
+    /// of its widest value so the meter never moves.
+    static func capsuleReadingWidth(_ reading: String) -> CGFloat {
+        let layout = NotchCapsuleLayout.self
+        return max(layout.width(reading, font: layout.readingFont), layout.width("100%", font: layout.readingFont))
+    }
+
+    /// A capsule notice's row before its mug and caption: as the capsule has
+    /// always measured it, or a level moment's mark, meter and reading.
+    static func capsuleRow(_ cue: NotchOfficeCue?, title: String, detail: String, level: Bool,
+                           geometry: NotchGeometry) -> CGFloat {
+        let layout = NotchCapsuleLayout.self
+        guard level, let cue, cue.isLevel else { return layout.noticeContent(title: title, detail: detail, level: level) }
+        return capsuleMarkWidth(cue, geometry: geometry) + layout.spacing + capsuleMeterWidth(cue) + layout.spacing
+            + capsuleReadingWidth(detail)
     }
 }
 
@@ -664,11 +718,12 @@ extension NotchOfficeMoments {
     }
 
     /// How many segments a level lights: any sound lights the first, and only
-    /// the top ninth lights them all.
+    /// the top ninth lights them all. Read from the percentage the notice
+    /// shows, as the band is, so a level that reads 0% is silent everywhere.
     static func vuLit(_ level: Double) -> Int {
-        guard level.isFinite, level > 0 else { return 0 }
-        let lit = Int((min(1, level) * Double(vuSegments) - 1e-9).rounded(.up))
-        return min(vuSegments, max(1, lit))
+        let percent = percent(level)
+        guard percent > 0 else { return 0 }
+        return min(vuSegments, (percent * vuSegments + 99) / 100)
     }
 
     static func vuIsHot(_ segment: Int) -> Bool { segment >= vuSegments - vuHotSegments }
@@ -734,6 +789,32 @@ extension NotchOfficeMoments {
         let meter = cue.kind == .volume ? vuWidth : 0
         let trailing = ceil(inset + max(meter, under ? 0 : caption) + levelAir)
         return NotchNoticeWings(leading: max(plain.leading, leading), trailing: max(plain.trailing, trailing))
+    }
+
+    // MARK: In the open island
+
+    /// Between the open island's level reading's pieces, as its plain row spaces them.
+    static let expandedSpacing: CGFloat = 8
+    /// The daylight meter's least length beside a caption; it reaches the
+    /// plain row's 96 points where the side has them.
+    static let expandedMeterMinimum: CGFloat = 40
+
+    /// The reading's column in the open island's row: the widest reading,
+    /// and the widest caption under it where one reads. It holds that width
+    /// through every band, so the meter never moves as the words change.
+    static func expandedReadingColumn(_ cue: NotchOfficeCue, caption: Bool) -> CGFloat {
+        max(levelReadingWidth(), caption ? cue.widestCaption.map { captionWidth($0) } ?? 0 : 0)
+    }
+
+    /// Whether the open island's row `width` wide holds the band's caption
+    /// under the reading, beside the mark and the meter. Measured at the
+    /// widest caption, so every band of a held key agrees; a side too
+    /// narrow drops it whole and keeps the reading.
+    static func expandedCaptionFits(_ cue: NotchOfficeCue, width: CGFloat?) -> Bool {
+        guard cue.isLevel, cue.widestCaption != nil, let width else { return false }
+        let meter = cue.kind == .volume ? vuWidth : expandedMeterMinimum
+        return levelMarkWidth(cue) + expandedSpacing + meter + expandedSpacing
+            + expandedReadingColumn(cue, caption: true) <= width
     }
 }
 

@@ -102,11 +102,11 @@ struct NotchNoticeView: View {
             }
         } else if let cue = notice.office, cue.isLevel, let level = notice.level {
             // Cafe Disco, or the blinds: the mark, the reading large and the
-            // band's caption under it.
+            // band's caption under it. Its digits roll unless Reduce Motion or
+            // Low Power Mode calms it.
             NotchOfficeLevelReading(cue: cue, level: level, reading: notice.detail,
                                     caption: NotchOfficeMoments.captionUnderReading(cue) ? officeCaption : nil,
                                     trigger: officeKey)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: notice.detail)
                 .transaction { $0.disablesAnimations = false }
         } else {
             HStack(spacing: 8) {
@@ -298,8 +298,24 @@ struct NotchExpandedLevelView: View {
     /// The percentage after the meter. A side too narrow for it, as across
     /// from the player's cover, keeps the glyph and a meter long enough to read.
     var showsDetail = true
+    /// The side's width, which an Office level moment measures its caption
+    /// against; without one the caption stays out.
+    var width: CGFloat? = nil
 
     var body: some View {
+        if let cue = notice.office, cue.isLevel, let level = notice.level {
+            // Cafe Disco, or the blinds, in the row's own sizes.
+            NotchOfficeExpandedLevel(cue: cue, level: level, reading: notice.detail, showsReading: showsDetail,
+                                     captionFits: NotchOfficeMoments.expandedCaptionFits(cue, width: width),
+                                     trigger: "\(cue.kind)|\(notice.title)|\(notice.notificationID?.uuidString ?? "")")
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(notice.accessibilityText)
+        } else {
+            plain
+        }
+    }
+
+    private var plain: some View {
         HStack(spacing: 8) {
             let colors = notice.event == .volume ? NotchLevelPaint.volume() : nil
             Image(systemName: notice.symbol)
