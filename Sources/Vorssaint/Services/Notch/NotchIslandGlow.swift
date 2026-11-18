@@ -164,16 +164,18 @@ enum NotchIdleGlowPreferences {
 
     static var enabled: Bool {
         if let cached { return cached }
-        if observer == nil {
-            observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
-                                                              object: nil, queue: .main) { _ in cached = nil }
-        }
+        if observer == nil { observer = NotchPreferenceCache.observeDefaults { cached = nil } }
         let fresh = enabled(in: .standard)
         cached = fresh
         return fresh
     }
 
+    /// Read again on the next ask (NotchOfficeEdition.set).
+    static func invalidate() { cached = nil }
+
+    /// Its own switch under the Office edition's master (NotchOfficeEdition).
     static func enabled(in defaults: UserDefaults) -> Bool {
-        defaults.object(forKey: DefaultsKey.notchIdleGlowEnabled) as? Bool ?? true
+        NotchOfficeEdition.allows(defaults.object(forKey: DefaultsKey.notchIdleGlowEnabled) as? Bool ?? true,
+                                  in: defaults)
     }
 }

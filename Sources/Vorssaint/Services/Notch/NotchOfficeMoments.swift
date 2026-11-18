@@ -46,6 +46,9 @@ struct NotchOfficeCue: Equatable {
         case volume
         /// The display's brightness, with a window's blinds.
         case brightness
+        /// The Office edition switched on or off from the island's mug: the
+        /// mug brews with a puff of steam, or is set down empty.
+        case edition(Bool)
     }
 
     let kind: Kind
@@ -62,6 +65,9 @@ struct NotchOfficeCue: Equatable {
     /// its side is as wide as it will ever need and holds still while a key
     /// is held. Nil where the app is not in English.
     var widestCaption: String?
+    /// The longest reading the moment can show on its far side, so that side
+    /// is as wide as it will ever need: the Office edition's "On" or "Off".
+    var widestDetail: String?
 
     /// A call and a meeting starting open the island into a card of their own.
     var opensCard: Bool { kind == .call || kind == .meeting }
@@ -73,6 +79,12 @@ struct NotchOfficeCue: Equatable {
     var showsMug: Bool {
         if case .battery = kind { return true }
         return false
+    }
+
+    /// The Office edition's own notice, and which way it went.
+    var edition: Bool? {
+        if case .edition(let on) = kind { return on }
+        return nil
     }
 }
 
@@ -96,17 +108,19 @@ enum NotchOfficeMoments {
     static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
         guard defaults === UserDefaults.standard else { return read(defaults) }
         if let cached { return cached }
-        if observer == nil {
-            observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
-                                                              object: nil, queue: .main) { _ in cached = nil }
-        }
+        if observer == nil { observer = NotchPreferenceCache.observeDefaults { cached = nil } }
         let fresh = read(defaults)
         cached = fresh
         return fresh
     }
 
+    /// Read again on the next ask (NotchOfficeEdition.set).
+    static func invalidate() { cached = nil }
+
+    /// Its own switch under the Office edition's master (NotchOfficeEdition).
     private static func read(_ defaults: UserDefaults) -> Bool {
-        defaults.object(forKey: DefaultsKey.notchOfficeModeEnabled) as? Bool ?? true
+        NotchOfficeEdition.allows(defaults.object(forKey: DefaultsKey.notchOfficeModeEnabled) as? Bool ?? true,
+                                  in: defaults)
     }
 
     /// The jokes are written in English and do not survive translation, so
@@ -447,6 +461,9 @@ enum NotchOfficeMoments {
     static let mugGap: CGFloat = 5
     /// The mug's box is taller than wide: room above the brim for the steam.
     static let mugHeight: CGFloat = 22
+    /// The room above the cup the steam rises into, which leaves the cup
+    /// itself this far below the box's middle, twice over.
+    static let mugSteamRoom: CGFloat = 7
     /// A banner's sender side may reach this far for its role, a little past
     /// the plain banner's widest, since the role is what the moment is about.
     static let bannerWingLimit: CGFloat = 214
@@ -533,7 +550,7 @@ extension NotchOfficeMoments {
     static func capsuleCaption(_ cue: NotchOfficeCue?, content: CGFloat, maximum: CGFloat,
                                geometry: NotchGeometry) -> String? {
         guard let cue, let caption = cue.caption else { return nil }
-        let measured = cue.isLevel ? cue.widestCaption ?? caption : caption
+        let measured = cue.isLevel || cue.edition != nil ? cue.widestCaption ?? caption : caption
         let layout = NotchCapsuleLayout.self
         let side = layout.side(geometry)
         let wanted = content + layout.groupSpacing + captionWidth(measured, font: capsuleCaptionFont(geometry))
@@ -547,7 +564,7 @@ extension NotchOfficeMoments {
     /// which a held key reaches once and stays at, so through the middle of
     /// the range its capsule keeps the bare row rather than an empty slot.
     static func capsuleCaptionSlot(_ cue: NotchOfficeCue, caption: String) -> String {
-        cue.kind == .volume ? cue.widestCaption ?? caption : caption
+        cue.kind == .volume || cue.edition != nil ? cue.widestCaption ?? caption : caption
     }
 
     /// A capsule notice's row: `base` as it always measured, then the mug
@@ -600,6 +617,8 @@ extension NotchOfficeMoments {
     static func capsuleRow(_ cue: NotchOfficeCue?, title: String, detail: String, level: Bool,
                            geometry: NotchGeometry) -> CGFloat {
         let layout = NotchCapsuleLayout.self
+        // The Office edition's mug takes the symbol's place.
+        if let cue, cue.edition != nil { return capsuleEditionRow(cue, title: title, detail: detail, geometry: geometry) }
         guard level, let cue, cue.isLevel else { return layout.noticeContent(title: title, detail: detail, level: level) }
         return capsuleMarkWidth(cue, geometry: geometry) + layout.spacing + capsuleMeterWidth(cue) + layout.spacing
             + capsuleReadingWidth(detail)
@@ -815,6 +834,90 @@ extension NotchOfficeMoments {
         let meter = cue.kind == .volume ? vuWidth : expandedMeterMinimum
         return levelMarkWidth(cue) + expandedSpacing + meter + expandedSpacing
             + expandedReadingColumn(cue, caption: true) <= width
+    }
+}
+
+// MARK: - The Office edition
+
+/// The switch's own moment, raised from the island's mug whichever way it
+/// goes: on, the mug brews with one puff of steam, "Back to work."; off, it
+/// is set down empty, "Casual Friday.", the edition's last word before the
+/// island goes plain. It reads as the volume's does: the mug at the island's
+/// end, the title large beside it with the caption under it, and the state
+/// on the far side. Both sides are sized for the wider caption and the wider
+/// state, so tapping the mug again at once moves nothing.
+extension NotchOfficeMoments {
+    static let editionOnCaption = "Back to work."
+    static let editionOffCaption = "Casual Friday."
+
+    static func caption(forEdition on: Bool) -> String { on ? editionOnCaption : editionOffCaption }
+
+    /// `states` are the words for on and off, in the app's language.
+    static func editionCue(on: Bool, states: (on: String, off: String), language: AppLanguage) -> NotchOfficeCue {
+        let captions = showsCaptions(in: language)
+        return NotchOfficeCue(kind: .edition(on), caption: captions ? caption(forEdition: on) : nil,
+                              widestCaption: captions ? widest([editionOnCaption, editionOffCaption]) : nil,
+                              widestDetail: [states.on, states.off].max {
+                                  editionWidth($0, font: editionStateFont) < editionWidth($1, font: editionStateFont)
+                              })
+    }
+
+    /// The title beside the mug, as large as the volume's reading: the real
+    /// information comes first.
+    static let editionTitleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    /// The state on the far side, as a notice's reading.
+    static let editionStateFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+
+    static func editionWidth(_ text: String, font: NSFont) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    /// The mug, the gap after it and the wider of the title and the widest
+    /// caption under it; a strip too short for a caption leaves it out.
+    static func editionLeading(_ cue: NotchOfficeCue, title: String) -> CGFloat {
+        let caption = (cue.widestCaption ?? cue.caption).map { captionWidth($0) } ?? 0
+        return mugSide + levelMarkGap + max(editionWidth(title, font: editionTitleFont), caption)
+    }
+
+    /// The far side: the wider of the two states, whichever shows.
+    static func editionTrailing(_ cue: NotchOfficeCue, detail: String) -> CGFloat {
+        max(editionWidth(detail, font: editionStateFont), cue.widestDetail.map { editionWidth($0, font: editionStateFont) } ?? 0)
+    }
+
+    // MARK: In the capsule
+
+    /// The mug in the capsule, in place of a notice's symbol and no
+    /// narrower than one, as tall as the capsule's body leaves it.
+    static func capsuleEditionMarkWidth(_ geometry: NotchGeometry) -> CGFloat {
+        max(NotchCapsuleLayout.symbolWidth, (mugSide * capsuleMugScale(geometry)).rounded(.up))
+    }
+
+    /// The capsule's row before its caption: the mug, the title and the
+    /// wider state, in the plain notice's order and fonts.
+    static func capsuleEditionRow(_ cue: NotchOfficeCue, title: String, detail: String,
+                                  geometry: NotchGeometry) -> CGFloat {
+        let layout = NotchCapsuleLayout.self
+        let state = max(layout.width(detail, font: layout.detailFont),
+                        cue.widestDetail.map { layout.width($0, font: layout.detailFont) } ?? 0)
+        return capsuleEditionMarkWidth(geometry) + layout.spacing + layout.width(title, font: layout.titleFont)
+            + layout.groupSpacing + state
+    }
+
+    // MARK: In the open island
+
+    /// What the open island's top row shows of the moment in a side `width`
+    /// wide, beside the mug and the state: the title with its caption under
+    /// it where both fit, the title alone where only it does, else the mug
+    /// and the state.
+    static func expandedEdition(_ cue: NotchOfficeCue, title: String, detail: String,
+                                width: CGFloat?) -> (title: Bool, caption: Bool) {
+        guard let width else { return (false, false) }
+        let ends = mugSide + expandedSpacing + expandedSpacing + editionTrailing(cue, detail: detail)
+        let titled = ends + editionWidth(title, font: editionTitleFont)
+        guard titled <= width else { return (false, false) }
+        let caption = (cue.widestCaption ?? cue.caption).map { captionWidth($0) }
+        guard cue.caption != nil, let caption else { return (true, false) }
+        return (true, ends + max(editionWidth(title, font: editionTitleFont), caption) <= width)
     }
 }
 

@@ -18,7 +18,11 @@ struct NotchOfficeMug: View {
     var coffee: Color = NotchOfficeInk.latte
     /// Changes once per moment, so a new one plays again.
     let trigger: String
+    /// The Office edition's mug (see `edition(_:coffee:trigger:)`) in
+    /// place of a battery's: nil for a battery.
+    var edition: Bool? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
 
     @State private var fill: Double = 0
     @State private var pourIn: CGFloat = 0
@@ -59,7 +63,12 @@ struct NotchOfficeMug: View {
             .offset(y: hop)
             pour(inner)
             lastDrop(cup)
-            if brews || steamShown {
+            if let edition {
+                // One puff as the edition comes on; never a loop.
+                NotchOfficeSteamPuff(trigger: edition ? trigger : nil)
+                    .frame(width: 8, height: 7)
+                    .offset(x: cup.midX - 4, y: 0)
+            } else if brews || steamShown {
                 NotchOfficeSteam(color: .white.opacity(0.85), animates: brews)
                     .frame(width: 8, height: 7)
                     .offset(x: cup.midX - 4, y: 0)
@@ -67,9 +76,22 @@ struct NotchOfficeMug: View {
             }
         }
         .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
+        // Off, the mug is set down empty and dimmed, as the bubble's is.
+        .opacity(edition == false ? 0.62 : 1)
         .accessibilityHidden(true)
         .task(id: trigger) { await play() }
     }
+
+    /// The Office edition's mug: on, filled with the moment's colour and
+    /// brewing one puff of steam; off, set down empty. Each plays its one
+    /// move as the notice lands, and again for each new tap.
+    static func edition(_ on: Bool, coffee: Color, trigger: String) -> NotchOfficeMug {
+        NotchOfficeMug(state: on ? .charged : .onBattery, level: on ? editionFill : 0, coffee: coffee,
+                       trigger: trigger, edition: on)
+    }
+
+    /// How full the edition's mug stands: a fresh cup, short of the brim.
+    static let editionFill = 0.72
 
     private func handle(_ cup: CGRect) -> some View {
         Path { path in
@@ -145,6 +167,7 @@ struct NotchOfficeMug: View {
     }
 
     @MainActor private func play() async {
+        if let edition { await playEdition(edition); return }
         var reset = Transaction(animation: nil)
         reset.disablesAnimations = true
         withTransaction(reset) {
@@ -187,5 +210,25 @@ struct NotchOfficeMug: View {
             await pause(0.08)
             withAnimation(NotchSongMotion.spring) { tilt = 0 }
         }
+    }
+
+    /// The edition's one move each way. On, the steam puff (drawn by
+    /// NotchOfficeSteamPuff on the same trigger) is the move, and the cup
+    /// stands full and still. Off, the empty mug is set down from a short
+    /// lift on the song's spring. Reduce Motion and Low Power Mode show it
+    /// settled.
+    @MainActor private func playEdition(_ on: Bool) async {
+        var reset = Transaction(animation: nil)
+        reset.disablesAnimations = true
+        let calm = reduceMotion || lowPower.isOn
+        withTransaction(reset) {
+            fill = settled
+            pourIn = 0; pourOut = 0; tilt = 0; drop = 0; dropShown = false; glint = -1; steamShown = false
+            hop = on || calm ? 0 : -3
+        }
+        guard !on, !calm else { return }
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        guard !Task.isCancelled else { return }
+        withAnimation(NotchSongMotion.spring) { hop = 0 }
     }
 }

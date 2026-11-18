@@ -245,6 +245,7 @@ enum SettingsDirectory {
         let notchEditor = FeatureStrings.notchEditor(language)
         let notchMusic = FeatureStrings.notchMusicExtras(language)
         let notchDancers = FeatureStrings.notchDancers(language)
+        let notchEdition = FeatureStrings.notchOfficeEdition(language)
         let notchCalendar = FeatureStrings.notchCalendar(language)
         let notchAgents = FeatureStrings.notchAgents(language)
         let notchLowBattery = NotchLowBatteryStrings.localized(language)
@@ -295,6 +296,7 @@ enum SettingsDirectory {
                   notch: .module(.agents), when: state.on(DefaultsKey.notchAgentsClaude)),
             .init([notchEditor.activity, notchEditor.resting, notch.coverMenus, notchEditor.feedback, notch.inputSource,
                    notch.newTrack, lockScreen.title, lockScreen.sounds, lockScreen.show], notch: .activity),
+            .init([notchEdition.title, "Office", "mug"], notch: .activity),
             .init([notchLowBattery.title], feature: .monitorPower, notch: .activity, when: batteryRest),
             .init([notchLowBattery.threshold, notchLowBattery.early, notchLowBattery.menuBar],
                   feature: .monitorPower, notch: .activity, when: tintedBattery),

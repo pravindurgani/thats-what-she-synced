@@ -20,13 +20,24 @@ enum NotchMusicSide: String, CaseIterable, Identifiable {
         self = stored.flatMap(NotchMusicSide.init(rawValue:)) ?? .bars
     }
 
+    /// The stored choice, as Settings shows it.
     static func current(in defaults: UserDefaults) -> NotchMusicSide {
         NotchMusicSide(stored: defaults.string(forKey: DefaultsKey.notchMusicSide))
     }
 
-    /// The stored choice, read again only after a preference changes: the
-    /// island measures its music wings on every frame of a resize.
+    /// What the island shows: the stored choice, or upstream's bars while the
+    /// Office edition is off (NotchOfficeEdition), the choice kept for when
+    /// it is on again.
+    static func resolved(in defaults: UserDefaults) -> NotchMusicSide {
+        NotchOfficeEdition.isEnabled(in: defaults) ? current(in: defaults) : .bars
+    }
+
+    /// What the island shows, read again only after a preference changes:
+    /// the island measures its music wings on every frame of a resize.
     static var current: NotchMusicSide { NotchMusicSideCache.shared.read() }
+
+    /// Read again on the next ask (NotchOfficeEdition.set).
+    static func invalidateCache() { NotchMusicSideCache.shared.clear() }
 
     var dances: Bool { self != .bars }
 
@@ -86,14 +97,14 @@ private final class NotchMusicSideCache: @unchecked Sendable {
         if let cached { return cached }
         // Read outside the lock: a write on another thread posts its change
         // while this one waits for the defaults.
-        let fresh = NotchMusicSide.current(in: .standard)
+        let fresh = NotchMusicSide.resolved(in: .standard)
         lock.lock()
         if generation == seen { value = fresh }
         lock.unlock()
         return fresh
     }
 
-    private func clear() {
+    func clear() {
         lock.lock()
         value = nil
         generation &+= 1
