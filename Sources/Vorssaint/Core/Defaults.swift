@@ -254,6 +254,9 @@ enum DefaultsKey {
     // The read checksum fix needs its own recheck even if the paired-request
     // migration already ran and cached the monitor as write-only again.
     static let brightnessDDCReadChecksumRechecked = "brightnessDDCReadChecksumRechecked"
+    // Monitors behind an MCDP29XX HDMI converter were probed at an address
+    // it swallows; recheck them once now that it is addressed.
+    static let brightnessDDCHDMIConverterRechecked = "brightnessDDCHDMIConverterRechecked"
     /// A beta already installed the companion for this Command Bar user, once.
     static let notchMascotBetaInstalled = "notchMascotBetaInstalled"
     // Per-monitor connection paths a person has told this app to dim in
@@ -902,6 +905,10 @@ enum DefaultsKey {
     /// island (NotchOfficeEdition). Off, the island is plain Vorssaint and
     /// each extra's own switch and choices stay stored for when it is on.
     static let notchOfficeEditionEnabled = "notchOfficeEditionEnabled"
+    /// The island wearing the song's colours (NotchSongMode), under the master.
+    static let notchSongModeEnabled = "notchSongModeEnabled"
+    /// How much of a cover's colour the island wears: NotchSongLook.rawValue.
+    static let notchSongLook = "notchSongLook"
     static let notchLyricsEnabled = "notchLyricsEnabled"
     static let notchLyricsOnline = "notchLyricsOnline"
     static let notchBrowserCovers = "notchBrowserCovers"
@@ -938,8 +945,8 @@ enum DefaultsKey {
     static let notchAgentsLimitFocus = "notchAgentsLimitFocus"
     static let notchAgentsLiveActivity = "notchAgentsLiveActivity"
     /// The companion's colours glowing in the island while no song does
-    /// (NotchIdleGlowPreferences). On unless set false; Terminal only, like
-    /// the song mode's switch, and read again on the next launch.
+    /// (NotchIdleGlowPreferences), under the master. Set in Settings with the
+    /// fork's other switches (NotchOfficeEditionSettings).
     static let notchIdleGlowEnabled = "notchIdleGlowEnabled"
     static let notchAgentsReadout = "notchAgentsReadout"
     static let notchAgentsFinishAlert = "notchAgentsFinishAlert"
@@ -1535,6 +1542,10 @@ enum Defaults {
         DefaultsKey.notchAccessoriesEnabled: true,
         DefaultsKey.notchOfficeModeEnabled: true,
         DefaultsKey.notchOfficeEditionEnabled: true,
+        // The fork's own switches under the master, all on, in the full look.
+        DefaultsKey.notchSongModeEnabled: true,
+        DefaultsKey.notchSongLook: NotchSongLook.vivid.rawValue,
+        DefaultsKey.notchIdleGlowEnabled: true,
         DefaultsKey.notchCalendarEnabled: true,
         DefaultsKey.notchCalendarCountdown: false,
         DefaultsKey.notchCalendarCountdownLead: NotchCalendarSupport.defaultCountdownLeadMinutes,
@@ -2103,6 +2114,7 @@ enum Defaults {
         migrateAppVolumesToPositions(in: defaults)
         migrateSwitcherWindowlessFinder(in: defaults)
         recheckBrightnessDDCWriteOnlyPaths(in: defaults)
+        recheckBrightnessDDCHDMIConverterPaths(in: defaults)
         hideScratchpadControlOnce(in: defaults)
         hideKeyboardLightControlOnce(in: defaults)
         // The "all apps" output choice now lasts one session; a saved one
@@ -2233,6 +2245,16 @@ enum Defaults {
         }
         defaults.set(true, forKey: DefaultsKey.brightnessDDCWriteOnlyPathsRechecked)
         defaults.set(true, forKey: DefaultsKey.brightnessDDCReadChecksumRechecked)
+        defaults.removeObject(forKey: DefaultsKey.brightnessDDCWriteOnlyPaths)
+    }
+
+    /// A monitor behind an MCDP29XX HDMI converter was probed at the
+    /// standard DDC address, which the converter accepts and drops, so it was
+    /// cached as write-only and pinned to writes that never arrive. Drop the cache once so it is probed at the converter's address;
+    /// later verdicts stand.
+    static func recheckBrightnessDDCHDMIConverterPaths(in defaults: UserDefaults) {
+        guard !defaults.bool(forKey: DefaultsKey.brightnessDDCHDMIConverterRechecked) else { return }
+        defaults.set(true, forKey: DefaultsKey.brightnessDDCHDMIConverterRechecked)
         defaults.removeObject(forKey: DefaultsKey.brightnessDDCWriteOnlyPaths)
     }
 

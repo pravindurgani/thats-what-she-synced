@@ -16,6 +16,43 @@ enum NotchOfficeFamilyTests {
         measureContracts(suite)
         countdownContracts(suite)
         sourceContracts(suite)
+        frameRateContracts(suite)
+        NotchSongHoldTests.run(suite)
+    }
+
+    /// The motion asks Core Animation for the frames it needs, as the comet
+    /// rings always did: 30 a second for slow drifts and turns, 60 for a
+    /// beat's moves, never a ProMotion display's 120, each a frame
+    /// WindowServer composites. A beat's ease moves from where the layer
+    /// shows to where it is headed, at the beat's rate.
+    private static func frameRateContracts(_ suite: TestSuite) {
+        suite.expect(NotchSongMotion.slowFrames.maximum == 30 && NotchSongMotion.slowFrames.preferred == 30
+                     && NotchSongMotion.beatFrames.maximum == 60 && NotchSongMotion.beatFrames.preferred == 60,
+                     "slow motion asks for 30 frames a second and a beat's moves for 60")
+        suite.expect(NotchSongMotion.gentleFrames.maximum == 15 && NotchSongMotion.gentleFrames.preferred == 15,
+                     "the softest breaths ask for 15 frames a second, every other one of a slow motion's")
+        // Inside a transaction, as the island eases within a turn of the main
+        // queue: a layer on no screen drops its animations once one commits.
+        CATransaction.begin()
+        defer { CATransaction.commit() }
+        let layer = CALayer()
+        layer.opacity = 1
+        NotchSongMotion.ease(layer, "opacity", to: Float(0.4), duration: 0.08,
+                             curve: CAMediaTimingFunction(name: .easeOut))
+        let move = layer.animation(forKey: "opacity") as? CABasicAnimation
+        suite.expect(layer.opacity == 0.4 && move?.duration == 0.08 && (move?.fromValue as? Float) == 1
+                     && (move?.toValue as? Float) == 0.4 && move?.preferredFrameRateRange.maximum == 60,
+                     "a beat's ease lands on its value, from where the layer was, at 60 frames a second")
+        let directory = "Sources/Vorssaint/UI/Notch/"
+        for file in ["NotchMusicAurora.swift", "NotchOfficeComponents.swift", "NotchAgentCometView.swift"] {
+            guard let source = try? String(contentsOfFile: directory + file, encoding: .utf8) else {
+                suite.expect(false, "\(file) is readable from the repository root")
+                continue
+            }
+            let loops = source.components(separatedBy: "repeatCount = .infinity").count - 1
+            let rates = source.components(separatedBy: ".preferredFrameRateRange = ").count - 1
+            suite.expect(loops > 0 && rates >= loops, "\(file): every endless loop asks for its frame rate")
+        }
     }
 
     /// One resolver: the song while it plays, else the companion while it is
@@ -207,5 +244,76 @@ enum NotchOfficeFamilyTests {
         suite.expect(notice.components(separatedBy: "NotchOfficeMoments.titleFont").count - 1 >= 2
                      && notice.contains(".transition(notice.office != nil ? .opacity.animation(NotchSongMotion.reduced)"),
                      "the strip's Office titles are the family's title, and one notice fades out under the next")
+    }
+}
+
+/// The song's slow motion runs only while it is seen moving: a paused song,
+/// a covered island and Low Power Mode or Reduce Motion take the aurora's
+/// drift and the bubble's turn off their layers altogether, rather than
+/// holding them at speed zero, so a still island asks the compositor for
+/// nothing; playing and in sight again, they go back on from where they
+/// stood. The wings' glow, which never moves, is one bitmap under whatever
+/// moves over it.
+enum NotchSongHoldTests {
+    private final class Window: NSWindow {
+        override var isVisible: Bool { true }
+        override var occlusionState: NSWindow.OcclusionState { [.visible] }
+    }
+
+    static func run(_ suite: TestSuite) {
+        holdContracts(suite)
+        wingContracts(suite)
+    }
+
+    /// The aurora's view reaches the whole island, so it is read rather than run.
+    private static func holdContracts(_ suite: TestSuite) {
+        guard let source = try? String(contentsOfFile: "Sources/Vorssaint/UI/Notch/NotchMusicAurora.swift",
+                                       encoding: .utf8) else {
+            suite.expect(false, "NotchMusicAurora.swift is readable from the repository root")
+            return
+        }
+        func body(of function: String) -> String {
+            guard let start = source.range(of: function) else { return "" }
+            let rest = source[start.upperBound...]
+            let end = rest.range(of: "\n    }\n")?.lowerBound ?? rest.endIndex
+            return String(rest[..<end])
+        }
+        let syncClock = body(of: "private func syncClock()")
+        suite.expect(syncClock.contains("detachDrift()") && syncClock.contains("attachDrift()"),
+                     "the aurora's drift comes off its pools whenever it holds, and goes back on as it runs")
+        let detach = body(of: "private func detachDrift()")
+        suite.expect(detach.contains("presentation()?.transform") && detach.contains("removeAnimation(forKey: \"drift\")")
+                        && detach.contains("removeAnimation(forKey: \"breath\")"),
+                     "held, each pool keeps the pose it stood in with nothing left running")
+        let attach = body(of: "private func attachDrift()")
+        suite.expect(attach.contains("beginTime = begin") && attach.contains("guard let begin = motionBegin"),
+                     "the drift goes back on from the start it was made at, so the held clock picks it up")
+        let install = body(of: "private func installMotion()")
+        suite.expect(!install.contains("blob.add("), "making the drift attaches nothing until it runs")
+        let bubble = body(of: "    private func sync() {\n        // A withdrawn bubble")
+        suite.expect(!bubble.isEmpty && !bubble.contains("speed") && bubble.contains("removeAnimation(forKey: \"turn\")")
+                        && bubble.contains("spin.fromValue = angle"),
+                     "the bubble's turn comes off when held, never at speed zero, and goes on from its angle")
+        suite.expect(source.contains("moves: !reduceMotion && !still && !lowPower.isOn")
+                        && source.contains("moves: !reduceMotion && !lowPower.isOn"),
+                     "Low Power Mode stills the aurora and the bubbles as Reduce Motion does")
+    }
+
+    private static func wingContracts(_ suite: TestSuite) {
+        let window = Window(contentRect: CGRect(x: 0, y: 0, width: 240, height: 80),
+                            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let container = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: 80))
+        window.contentView = container
+        let wings = NotchWingGlowView(frame: CGRect(x: 0, y: 0, width: 200, height: 32))
+        container.addSubview(wings)
+        let glow = [NotchRGB(hex: 0xD97757), NotchRGB(hex: 0xEB9F7F), NotchRGB(hex: 0xFFD0B5)]
+        let colours = NotchWingGlowColors(left: glow, right: glow, fadesEdges: false)
+        wings.apply(colors: colours, camera: CGSize(width: 60, height: 32), veil: .strip, presence: 1, fades: false)
+        suite.expect(wings.drawsOnce, "the wings' glow, shown in full, is drawn once")
+        wings.apply(colors: colours, camera: CGSize(width: 60, height: 32), veil: .strip, presence: 0.4, fades: false)
+        suite.expect(!wings.drawsOnce, "fading with the island's resize, the wings' glow is drawn live")
+        wings.removeFromSuperview()
+        window.close()
     }
 }

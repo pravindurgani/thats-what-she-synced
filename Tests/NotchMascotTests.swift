@@ -3,6 +3,7 @@
 
 import CoreGraphics
 import Foundation
+import QuartzCore
 
 /// The companion's model: its preferences, faces, outlines and strolls, and
 /// the drop that carries the Command Bar out of the island.
@@ -30,6 +31,8 @@ enum NotchMascotTests {
         calendarContracts(suite)
         centeringContracts(suite)
         castContracts(suite)
+        castStillContracts(suite)
+        castBurstContracts(suite)
         shuffleContracts(suite)
         settleContracts(suite)
     }
@@ -71,6 +74,117 @@ enum NotchMascotTests {
 
     /// The cast: five members that each keep two eyes on their own face,
     /// fit their square, and wear a song only where it keeps them accurate.
+    /// While a member idles, its still figure is drawn once and moved as a
+    /// bitmap by the render server, at twice the display's scale; the parts
+    /// that move on their own are kept out of it, behind or in front as
+    /// they were drawn, and a beat that moves a part inside it (Goldenface's
+    /// rim, the Mug's coffee) draws it live again.
+    private static func castStillContracts(_ suite: TestSuite) {
+        for member in NotchMascotStyle.cast {
+            let parts = NotchMascotCastParts()
+            parts.configure(look: NotchMascotLook(style: member, shape: .ball, palette: .pearl), size: 20,
+                            contentsScale: 2)
+            let resting = parts.drawsStill
+            parts.setIdling(true)
+            let idling = parts.drawsStill && parts.drawing.rasterizationScale == 4
+            if [.scarn, .goldenface, .jello].contains(member), !ProcessInfo.processInfo.isLowPowerModeEnabled {
+                let rate = parts.idleStage.animation(forKey: "castIdle")?.preferredFrameRateRange.maximum ?? 0
+                suite.expect(rate > 0 && rate <= 60, "\(member.rawValue)'s idle loop never asks for 120 frames a second")
+            }
+            parts.beat(strength: 1, side: 1)
+            let movesInside = member == .goldenface || member == .mug
+            let afterBeat = parts.drawsStill
+            parts.setIdling(false)
+            suite.expect(!resting && idling && afterBeat == !movesInside && !parts.drawsStill,
+                         "\(member.rawValue) is drawn still only while it idles, and live after a beat inside it")
+        }
+        func drawn(_ member: NotchMascotStyle) -> NotchMascotCastParts {
+            let parts = NotchMascotCastParts()
+            parts.configure(look: NotchMascotLook(style: member, shape: .ball, palette: .pearl), size: 20,
+                            contentsScale: 2)
+            return parts
+        }
+        let scarn = drawn(.scarn), beet = drawn(.beet), mug = drawn(.mug), jello = drawn(.jello)
+        suite.expect(scarn.underlay.sublayers?.count == 2 && beet.underlay.sublayers?.count == 1
+                     && (mug.overlay.sublayers?.count ?? 0) >= 2
+                     && [scarn.overlay, beet.overlay, mug.underlay, jello.underlay, jello.overlay]
+                         .allSatisfy { ($0.sublayers ?? []).isEmpty }
+                     && [scarn, beet, mug, jello].allSatisfy { !($0.drawing.sublayers ?? []).isEmpty },
+                     "Scarn's arms and the Beet's tops move behind the still figure, the Mug's steam and notes in front")
+        let minimal = NotchMascotCastParts()
+        minimal.configure(look: .standard, size: 20, contentsScale: 2)
+        minimal.setIdling(true)
+        suite.expect(!minimal.drawsStill && (minimal.drawing.sublayers ?? []).isEmpty,
+                     "the minimal body draws nothing of the cast's, still or live")
+        let goldenface = drawn(.goldenface)
+        suite.expect(goldenface.overlay.sublayers?.count == 1 && goldenface.overlay.sublayers?.first?.opacity == 0
+                     && goldenface.overlay.sublayers?.first?.mask != nil,
+                     "Goldenface's glint crosses in front of the still figure, in a face-shaped window shown only while it does")
+    }
+
+    /// The cast's idle motion comes in bursts of 1.5 to 2.5 seconds, each
+    /// leaving from rest and coming back to it on the island's fade curve,
+    /// starting eight to twelve seconds apart at random; between them, and
+    /// once the member stops idling, nothing is set to run.
+    private static func castBurstContracts(_ suite: TestSuite) {
+        guard !ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
+        func rests(_ value: Any?) -> Bool {
+            if let number = value as? NSNumber { return abs(number.doubleValue) < 0.000_1 }
+            if let transform = (value as? NSValue)?.caTransform3DValue { return CATransform3DIsIdentity(transform) }
+            return false
+        }
+        func eased(_ animation: CAAnimation) -> Bool {
+            if let group = animation as? CAAnimationGroup {
+                // The wisps: shown only between the ends, on the fade curve.
+                let fade = group.animations?.first { ($0 as? CAKeyframeAnimation)?.keyPath == "opacity" }
+                    as? CAKeyframeAnimation
+                return group.timingFunction == NotchSongMotion.fadeCurve
+                    && rests(fade?.values?.first) && rests(fade?.values?.last)
+            }
+            if let keyframes = animation as? CAKeyframeAnimation {
+                let curves = keyframes.timingFunctions ?? keyframes.timingFunction.map { [$0] } ?? []
+                return !curves.isEmpty && curves.allSatisfy { $0 == NotchSongMotion.fadeCurve }
+                    && rests(keyframes.values?.first) && rests(keyframes.values?.last)
+            }
+            // The glint's sweep, crossing inside a window that is clear at both ends.
+            return animation.timingFunction == NotchSongMotion.fadeCurve
+        }
+        for member in NotchMascotStyle.cast {
+            let parts = NotchMascotCastParts()
+            parts.configure(look: NotchMascotLook(style: member, shape: .ball, palette: .pearl), size: 20,
+                            contentsScale: 2)
+            suite.expect(parts.burstAnimations.isEmpty, "\(member.rawValue) moves nothing before it idles")
+            let now = CACurrentMediaTime()
+            parts.setIdling(true)
+            let burst = parts.burstAnimations
+            let start = burst.map(\.beginTime).min() ?? 0
+            let end = burst.map { $0.beginTime + $0.duration }.max() ?? 0
+            suite.expect(!burst.isEmpty && NotchMascotCastParts.burstLength.contains(end - start)
+                            && start >= now + 0.4 && start <= CACurrentMediaTime() + 1.6,
+                         "\(member.rawValue)'s idle motion is one burst of 1.5 to 2.5 seconds, a moment from now")
+            suite.expect(burst.allSatisfy(eased),
+                         "\(member.rawValue)'s burst leaves from rest and comes back to it on the island's fade curve")
+            // The quicker parts: Goldenface's glint, crossing his face, and the Jello's wobble.
+            let quick = burst.filter { $0 is CABasicAnimation || ($0 as? CAKeyframeAnimation)?.keyPath == "opacity"
+                || member == .jello }
+            suite.expect(burst.allSatisfy { $0.preferredFrameRateRange.maximum > 0 }
+                            && burst.allSatisfy { $0.preferredFrameRateRange.maximum <= (quick.contains($0) ? 30 : 15) }
+                            && (member != .goldenface || quick.count == 2),
+                         "\(member.rawValue)'s burst asks for 15 frames a second, 30 for a glint or a wobble, never more")
+            suite.expect(burst.allSatisfy { $0.repeatCount == 0 && !$0.autoreverses },
+                         "\(member.rawValue)'s burst plays once; the next is queued as it ends")
+            parts.setIdling(false)
+            suite.expect(parts.burstAnimations.isEmpty, "\(member.rawValue) keeps nothing running once it stops idling")
+        }
+        let periods = (0..<400).map { _ -> TimeInterval in
+            let length = Double.random(in: NotchMascotCastParts.burstLength)
+            return length + NotchMascotCastParts.restAfter(burst: length)
+        }
+        suite.expect(periods.allSatisfy { NotchMascotCastParts.burstPeriod.contains($0) }
+                        && (periods.max() ?? 0) - (periods.min() ?? 0) > 2,
+                     "bursts start eight to twelve seconds apart, at random")
+    }
+
     private static func castContracts(_ suite: TestSuite) {
         suite.expect(NotchMascotStyle.cast == [.scarn, .goldenface, .jello, .mug, .beet]
                      && NotchMascotStyle.cast.allSatisfy(\.isCast)

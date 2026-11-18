@@ -4,11 +4,14 @@
 import Foundation
 
 /// How much colour the island wears with a song: `vivid`, the cover's whole
-/// palette (the default), or `duotone`, its lead colour and a neutral.
-/// `defaults write <bundle id> notchSongLook -string duotone`, then relaunch
-/// (a change from another process is read on the next launch).
-enum NotchSongLook: String {
+/// palette (the default), or `duotone`, its lead colour and a neutral
+/// ("One colour" in Settings). Chosen in Settings, where a change applies at
+/// once (NotchOfficeEditionSettings). A `defaults write` from Terminal posts
+/// no notification in this process, so it is read on the next launch.
+enum NotchSongLook: String, CaseIterable, Identifiable {
     case vivid, duotone
+
+    var id: String { rawValue }
 
     static var current: NotchSongLook { NotchSongPreferences.look }
 }
@@ -32,15 +35,16 @@ enum NotchSongPreferences {
         if let cached { return cached }
         if observer == nil { observer = NotchPreferenceCache.observeDefaults { cached = nil } }
         let defaults = UserDefaults.standard
-        let fresh = (look: NotchSongLook(rawValue: defaults.string(forKey: "notchSongLook") ?? "") ?? .vivid,
+        let fresh = (look: NotchOfficeEditionSettings.look(in: defaults),
                      enabled: NotchOfficeEdition.songModeEnabled(in: defaults),
                      colours: NotchOfficeEdition.isEnabled(in: defaults))
         cached = fresh
         return fresh
     }
 
-    /// Read again on the next ask. NotchOfficeEdition.set calls it straight
-    /// after writing the master, so nothing drawn before the change's
-    /// notification arrives keeps the old value.
+    /// Read again on the next ask. Every write from Settings or the mug
+    /// calls it straight after writing (NotchPreferenceCache.dropAll), so
+    /// nothing drawn before the change's notification arrives keeps the old
+    /// value.
     static func invalidate() { cached = nil }
 }

@@ -199,7 +199,9 @@ enum NotchAgentWings {
     /// enough for 4.5:1 over the glow's brightest point under its lightest veil.
     static let readingLuminance = 0.8
     /// One revolution of the comet, and one breath of the halo in or out.
-    static let orbit: CFTimeInterval = 1.4
+    /// Calm enough for an agent at work for hours: at 30 frames a second the
+    /// head steps about 4 degrees a frame, which still reads as smooth.
+    static let orbit: CFTimeInterval = 2.8
     static let breath: CFTimeInterval = 1.6
     static let haloRange: ClosedRange<Float> = 0.25...0.6
     /// The ring closing when a turn ends, and the check's colour.
