@@ -170,6 +170,8 @@ def main():
                         "    static func listWindowsForCommandBar(",
                         "    private static func listWindows(appRules:",
                         "    private static func listWindows(filterPID:",
+                        "    static func selectWindows(",
+                        "    private static func orderByUse(",
                         "    private struct AccessibilityWindowSnapshot {",
                         "    private struct AccessibilityWindowSnapshotList {",
                         "    private static func appendAccessibilityOnlyWindows(",
@@ -193,6 +195,22 @@ def main():
           + "extension SwitcherQuickCommitTests.HistoryFixture {\n"
           + declaration("Sources/Vorssaint/Services/Switcher/WindowUseTracker.swift",
                         "    func reconcile(")
+          + "}\n")
+    write("SwitcherRememberedSelection.swift", "import AppKit\nimport ApplicationServices\n"
+          + declaration("Sources/Vorssaint/Services/Switcher/SwitcherWindowInventory.swift",
+                        "struct SwitcherInventorySpaces {")
+          + declaration("Sources/Vorssaint/Services/Switcher/SwitcherWindowEvents.swift",
+                        "final class SwitcherNotificationLifetime {")
+          + declaration("Sources/Vorssaint/Services/Switcher/SwitcherWindowEvents.swift",
+                        "struct SwitcherWindowWatch {")
+          + "extension SwitcherRememberedSelectionTests.Selection {\n"
+          + declaration("Sources/Vorssaint/Services/Switcher/SwitcherWindowSelection.swift",
+                        "    static func contains(")
+          + declaration("Sources/Vorssaint/Services/Switcher/SwitcherWindowSelection.swift",
+                        "    static func select(")
+          + "}\nextension SwitcherRememberedSelectionTests.WindowEvents {\n"
+          + declaration("Sources/Vorssaint/Services/Switcher/SwitcherWindowEvents.swift",
+                        "    static func matchesWindowNumber(")
           + "}\n")
     write("RecorderSystemAudioTapLifecycle.swift", "import CoreAudio\nimport Foundation\n"
           + "extension RecorderSystemAudioTapLifecycleTests {\nfinal class Tap: Fixture, @unchecked Sendable {\n"
@@ -595,11 +613,14 @@ def main():
                     .replace("private static var", "static var", 1)
                     .replace("private func", "func", 1) for prefix in [
                         "    static func recoverIfNeeded(", "    func syncWithPreferences(",
-                        "    func returnToSystem(", "    func resumePreferenceDidChange(",
+                        "    func returnToSystem(", "    func forgetResume(", "    func resumePreferenceDidChange(",
                         "    private static var resumableConfiguration:", "    private func resume(",
                         "    private static var helperAwaitsRegistration:",
                         "    private func rememberForResume(", "    private func stopIdleWorkIfPossible(",
-                        "    @objc private func workspaceDidWake("])
+                        "    @objc private func workspaceDidWake(", "    @objc private func workspaceWillSleep(",
+                        "    private func beginResume(", "    private func cancelResumeRetry(",
+                        "    private func resumeDidFail(", "    private func scheduleResumeRetry(",
+                        "    private func retryResume(", "    private func applyStatus(", "    private func apply(_ response:"])
           + "}\n}\n")
     write("FanControlRecovery.swift", "import Foundation\n"
           + "extension FanControlRecoveryContract {\nfinal class Controller: Fixture {\n"
@@ -635,6 +656,13 @@ def main():
               "    private func insertPromoted("])
           + "func setEntries(_ values: [ClipboardHistoryEntry]) { entries = values }\n"
           + "}\n}\n")
+    write("ClipboardCommandBarUpdates.swift", "import Combine\nimport Foundation\nextension ClipboardPreviewContract {\n"
+          + "final class CommandSearch: CommandSearchFixture {\n"
+          + "".join(declaration("Sources/Vorssaint/Services/CommandBar/CommandBarService.swift", prefix)
+                    .replace("private func", "func", 1) for prefix in [
+                        "    private func observeClipboardSearch(", "    private func refreshClipboardSearch(",
+                        "    private func stopClipboardSearch("])
+          + "}\n}\n")
     write("ClipboardPreview.swift", "import Foundation\nimport Combine\n"
           + "extension ClipboardPreviewContract {\nfinal class Service: Fixture {\n"
           + declaration(clipboard, "    @Published private(set) var entries:")
@@ -643,7 +671,8 @@ def main():
               "    func togglePin(", "    func clearRecent(", "    var recentEntries:", "    var recentEntriesSnapshot:",
               "    func copy(_ entry:", "    func copy(_ selectedEntries:", "    private func touch(",
               "    private var firstRecentIndex:", "    private func normalizeEntryOrder(",
-              "    func filteredEntries(", "    var filteredQuickEntries:", "    var selectedQuickEntry:",
+              "    func cancelSearch(", "    func filteredEntries(", "    var filteredQuickEntries:", "    var selectedQuickEntry:",
+              "    private func scheduleDeferredSearch(",
               "    func moveQuickSelection(", "    func removeSelectedQuickEntries(",
               "    private var quickBatchEntries:", "    private func quickEntriesForPrimaryAction(",
               "    private func selectedQuickIndex(", "    private func promote(",
@@ -876,7 +905,7 @@ def main():
               "    var homebrewRemovalConfirmation:", "    func removeSelectedWithHomebrew("])
           + "}\nfinal class Service: ServiceState {\n"
           + "".join(declaration(bar, prefix).replace("private func", "func", 1) for prefix in [
-              "    @Published var query", "    private func beginUninstallReview(",
+              "    @Published var query", "    private func stopClipboardSearch(", "    private func beginUninstallReview(",
               "    private func handleUninstallKey(", "    func stepBack()",
               "    private func confirmUninstallReview(",
               "    private func finishUninstallReview()"])
@@ -1211,7 +1240,7 @@ def main():
           + "".join(declaration("Sources/Vorssaint/Services/Audio/PreciseVolumeRollerService.swift", prefix)
                     .replace("private func", "func", 1) for prefix in [
                         "    private func routeNotchVolume(", "    private func routeMonitorVolume(",
-                        "    private static func applyMonitorVolumeKey("])
+                        "    private func applyMonitorVolumeKey("])
           + "}\n}\n")
     mixer_section = "Sources/Vorssaint/UI/MenuPanel/MixerSection.swift"
     write("MixerPercentKey.swift", "import Foundation\nextension MixerPercentKeyTests {\nfinal class Coordinator: Fixture {\n"
@@ -1825,7 +1854,7 @@ def main():
           + declaration("Sources/Vorssaint/Services/Notch/NotchFileToolsService.swift", "    func hideMedia(")
           + declaration("Sources/Vorssaint/Services/Notch/NotchFileToolsService.swift", "    func showMedia(")
           + "}\nfinal class Notch: NotchState {\n"
-          + declaration(notch, "    var canAcceptFileDrop:")
+          + declaration(notch, "    func canAcceptFileDrop(")
           + declaration(notch, "    func beginFileDrop(")
           + declaration(notch, "    func updateFileDrop(")
           + declaration(notch, "    func endFileDrop(")
@@ -1953,9 +1982,14 @@ def main():
           + "Workspace(fixture: fixture, onContentHeightChange: nil, scrollsContent: false)\n"
           + "}.frame(width: 308)\n}.frame(width: 308, height: navigableScrollHeight)\n}\n"
           + declaration(menu_panel, "    private var navigableScrollHeight:")
-          + "}\nstruct Input: View {\nlet inNotch: Bool\n@State var isDropTargeted = false\n"
+          + "}\nstruct Input: View {\nlet acceptsDirectDrops: Bool\nvar fixture = DropFixture()\n@State var isDropTargeted = false\n"
           + "var inputSelector: some View { Color.clear.frame(width: 300, height: 70) }\n"
-          + "func acceptDrop(_ providers: [NSItemProvider]) -> Bool { false }\n"
+          + "var workspace: DropFixture { fixture }\nvar media: DropFixture { fixture }\n"
+          + "var selectedTool: MediaTool { fixture.tool }\nvar isRunning: Bool { fixture.running }\n"
+          + "func setInputs(_ urls: [URL]) { fixture.inputs = urls }\n"
+          + "typealias AppFeature = ShelfDropRoutingContract.AppFeature\n"
+          + declaration(media_workspace, "    private var inputTypes:")
+          + declaration(media_workspace, "    private func acceptDrop(").replace("private func", "func", 1)
           + "var body: some View { inputDropTarget }\n"
           + declaration(media_workspace, "    @ViewBuilder private var inputDropTarget:")
           + "}\nstruct ToolPicker {\nlet fixture: Selection\nlet onToolChange: (() -> Void)?\n"
@@ -2489,7 +2523,8 @@ def main():
           + "softwareDims.append((id, value)); events.append(\"picture:\\(value)\")\n"
           + "if softwareSucceeds { if value >= 0.999 { dimmedDisplays.remove(id) } else { dimmedDisplays.insert(id) } }\n"
           + "return softwareSucceeds\n}\n"
-          + "func ddcSend(to id: CGDirectDisplayID, service: CFTypeRef, packet: [UInt8], whileCurrent: () -> Bool) -> Bool {\n"
+          + "func ddcSend(to id: CGDirectDisplayID, service: CFTypeRef, chip: UInt32, packet: [UInt8], "
+          + "whileCurrent: () -> Bool) -> Bool {\n"
           + "guard whileCurrent() else { return false }\n"
           + "let value = UInt16(packet[3]) << 8 | UInt16(packet[4])\n"
           + "events.append(\"ddc:\\(value)\"); return ddcSucceeds\n}\n"
