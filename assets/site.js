@@ -60,7 +60,7 @@ function putMember() {
   const key = CAST[state.who][2];
   $$('.g-idle', heroIsl).forEach((g) => { g.className = g.className.replace(/\bpal-\w+/, `pal-${key}`); });
 }
-// the dancer wears the album playing: its tones, and glows from album-specific copies of the keyline filters
+// the dancer wears the album playing
 function putDancer() {
   const dn = $(`.card[data-dancer="${state.dancer}"] .dn`).cloneNode(true);
   const key = ALBUMS[state.album][0];
@@ -228,7 +228,7 @@ function addFilters() {
   }
 }
 
-// the notices wear the album playing: both wings' glows, the coffee, and the meter mixed in sRGB as the app mixes it
+// the notices wear the album playing; the meter mixes in sRGB, as the app does
 const hex = (h, i) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
 const mix = (a, b, t) => `rgb(${[0, 1, 2].map((i) => Math.round(hex(a, i) + (hex(b, i) - hex(a, i)) * t))})`;
 function paintNotices() {
@@ -244,7 +244,7 @@ function paintNotices() {
   });
 }
 
-// the widest strip, ears included, fits the screen: read after layout, so it forces none
+// the widest strip fits the screen; read after layout
 function fitNotices() {
   const fit = parseFloat(layer.style.getPropertyValue('--fit')) || 1;
   const z = parseFloat(getComputedStyle(hero).getPropertyValue('--z')) || 1;
