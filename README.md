@@ -15,8 +15,8 @@
 - 🥁 It **moves with the beat** and your volume
 - 🕺 **Dancers** move to the music beside the camera
 - ☕ An **Office character** keeps it company when nothing's playing
-- 🤖 **Claude Code and Codex** each get a side while they work
-- 📼 **Office-style alerts** for volume, charging, headphones, messages, calls and meetings
+- 🤖 **Claude Code and Codex** each get a side while they work, and a trophy when they finish
+- 📼 **Office-style alerts** for volume, charging, copying, headphones, messages, calls and meetings
 
 Works with Apple Music, Spotify, and music in Safari, Chrome or Firefox.
 
@@ -39,6 +39,8 @@ Also running the official Vorssaint? Quit it, so you don't get two islands.
 ## Make it yours
 
 The characters and the dancers change with every song. To keep a favourite, pick it under **Companion** or **Music side** in the app's Settings.
+
+**Turn it all off:** tap the ☕ mug at the end of the island's bottom row. Tap it again to bring everything back.
 
 <details>
 <summary><strong>More switches</strong> (paste one line into Terminal, then reopen the app)</summary>
