@@ -431,11 +431,14 @@ enum NotchLevelPaint {
 /// the palette's marks, the glow its deep glow colours: one palette, toned
 /// twice, so they are always the same hues. Main thread only.
 enum NotchMomentPaint {
-    /// Whose colours, read now: the song's only while it plays.
+    /// Whose colours, read now: the song's while it plays, or while the
+    /// island itself still wears them (the open player keeps a paused
+    /// song's colours), so a notice never disagrees with the island behind it.
     static func source() -> NotchMomentColours {
         NotchMomentColours.of(
             songWorn: NotchMomentColours.songWorn(songMode: NotchSongMode.enabled,
-                                                  playing: NotchMusicService.shared.playback?.isPlaying == true),
+                                                  playing: NotchMusicService.shared.playback?.isPlaying == true
+                                                      || NotchSongPaint.shared.palette != nil),
             companionOn: NotchMascotSupport.isEnabled())
     }
 
