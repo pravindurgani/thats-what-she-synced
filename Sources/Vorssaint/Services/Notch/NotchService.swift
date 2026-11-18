@@ -67,6 +67,13 @@ struct NotchNotice: Equatable {
         // the island holds still as the value gains or loses a digit; the
         // meter takes the same width on the other side.
         if level != nil, event != .accessory {
+            // A volume or brightness moment holds its sides for its widest
+            // caption and the VU meter, so a held key never resizes it.
+            if let office, office.isLevel {
+                let plain = ceil(Self.levelInset + 18 + 8 + max(measured(detail), measured("100%")))
+                return NotchOfficeMoments.levelWings(office, plain: NotchNoticeWings(leading: plain, trailing: plain),
+                                                     inset: Self.levelInset)
+            }
             let wing = ceil(Self.levelInset + 18 + 8 + max(leading, measured("100%")))
             return NotchNoticeWings(leading: wing, trailing: wing)
         }
@@ -2571,10 +2578,14 @@ final class NotchService: ObservableObject {
     }
 
     func showBrightness(_ level: Double) -> Bool {
-        let text = FeatureStrings.notch(L10n.shared.language)
+        let language = L10n.shared.language
+        let text = FeatureStrings.notch(language)
+        // With the Office moments on, the blinds open with the level.
         return show(NotchNotice(event: .brightness, title: text.brightness,
                                 detail: "\(BrightnessSupport.wholePercent(level))%",
-                                symbol: "sun.max.fill", level: level))
+                                symbol: "sun.max.fill", level: level,
+                                office: NotchOfficeMoments.isEnabled()
+                                    ? NotchOfficeMoments.brightnessCue(level: level, language: language) : nil))
     }
 
     @discardableResult
@@ -4603,9 +4614,13 @@ final class NotchService: ObservableObject {
         } else {
             symbol = value == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill"
         }
-        return show(NotchNotice(event: .volume, title: FeatureStrings.notch(L10n.shared.language).volume,
+        let language = L10n.shared.language
+        // With the Office moments on, Cafe Disco: the boombox and the VU meter.
+        return show(NotchNotice(event: .volume, title: FeatureStrings.notch(language).volume,
                                 detail: "\(Int((value * 100).rounded()))%",
-                                symbol: symbol, level: value))
+                                symbol: symbol, level: value,
+                                office: NotchOfficeMoments.isEnabled()
+                                    ? NotchOfficeMoments.volumeCue(level: value, language: language) : nil))
     }
 
     /// The Command Bar borrows a Latin layout while it is up and gives it
