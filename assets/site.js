@@ -174,7 +174,7 @@ $$('[data-copy]').forEach((btn) => btn.addEventListener('click', async () => {
   }
 }));
 
-// ---------- two one-shot moments, never under Reduce Motion: the deal (native), the charger (anime.js, loaded on approach) ----------
+// ---------- one-shot moments, never under Reduce Motion: the deal, the copier and the confetti (native), the charger (anime.js, loaded on approach) ----------
 let anime = null;
 function loadAnime() {
   anime ??= import('animejs');
@@ -204,7 +204,44 @@ function setupDeal() {
   }));
 }
 
-// the charger moment: punch-in, pour, the level rises to the charge, the battery glints.
+// the copier: one scan sweeps the glass, then the sheet slides out. Without motion the sheet is simply out.
+function setupCopier() {
+  const fig = $('[data-copier]');
+  if (!fig || !fig.animate || !below(fig)) return;
+  const scan = $('.scan', fig);
+  const sheet = $('.sheet', fig);
+  sheet.style.transform = 'translateY(-6.4px)';
+  onEnter(fig, () => {
+    sheet.style.transform = '';
+    if (state.paused) return;
+    scan.animate([{ opacity: 0, transform: 'translateX(0)' }, { opacity: 1, offset: 0.15 }, { opacity: 1, offset: 0.85 }, { opacity: 0, transform: 'translateX(15px)' }],
+      { duration: 700, easing: 'cubic-bezier(.45, 0, .55, 1)' });
+    sheet.animate([{ transform: 'translateY(-6.4px)' }, { transform: 'none' }], { duration: 480, delay: 620, easing: 'cubic-bezier(.16, 1, .3, 1)', fill: 'backwards' });
+  });
+}
+
+// the agent finished: one small burst of confetti from the gold ring, then nothing
+function setupConfetti() {
+  const fig = $('[data-finish]');
+  if (!fig || !fig.animate || !below(fig)) return;
+  const bits = $$('.confetti i', fig);
+  onEnter(fig, () => {
+    if (state.paused) return;
+    bits.forEach((bit, i) => {
+      const a = (i / bits.length) * Math.PI * 2 - Math.PI / 2 + (i % 2 ? 0.25 : -0.1);
+      const d = 13 + (i % 3) * 4;
+      const x = Math.cos(a) * d;
+      const y = Math.sin(a) * d;
+      bit.animate([
+        { opacity: 1, transform: 'translate(0, 0) rotate(0deg) scale(.6)' },
+        { opacity: 1, offset: 0.55, transform: `translate(${x * 0.8}px, ${y * 0.8}px) rotate(${i * 70}deg)` },
+        { opacity: 0, transform: `translate(${x}px, ${y + 6}px) rotate(${i * 120}deg)` },
+      ], { duration: 1100, delay: 120 + (i % 4) * 30, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+    });
+  });
+}
+
+// the charger moment: punch-in, pour, the level rises to the charge, the bolt glints.
 // On SVG, anime.js reads x and y as attributes, so these moves name translateY.
 function setupMoment({ createTimeline, utils, spring, stagger }) {
   const card = $('[data-moment]');
@@ -252,6 +289,8 @@ document.fonts?.ready.then(markScrollers);
 
 if (!reduce.matches && 'IntersectionObserver' in window) {
   setupDeal();
+  setupCopier();
+  setupConfetti();
   const moment = $('[data-moment]');
   const near = new IntersectionObserver((entries) => {
     if (!entries.some((e) => e.isIntersecting)) return;
