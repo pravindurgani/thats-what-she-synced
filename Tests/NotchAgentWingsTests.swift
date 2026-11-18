@@ -293,10 +293,16 @@ enum NotchAgentCometViewTests {
                         && (orbit?.preferredFrameRateRange.preferred ?? 0) == 30,
                      "the comet asks for 30 frames a second, about 4 degrees a frame, never a ProMotion display's 120")
         let breath = view.breathAnimation
-        suite.expect(breath?.duration == NotchAgentWings.breath && breath?.autoreverses == true
-                        && breath?.timingFunction == CAMediaTimingFunction(name: .easeInEaseOut)
-                        && (breath?.fromValue as? Float) == 0.25 && (breath?.toValue as? Float) == 0.6,
-                     "the halo breathes over 1.6 seconds, eased, between 0.25 and 0.6")
+        suite.expect(breath?.duration == NotchAgentWings.breath * 2 && breath?.repeatCount == 0
+                        && breath?.autoreverses == false
+                        && breath?.timingFunctions?.allSatisfy { $0 == CAMediaTimingFunction(name: .easeInEaseOut) } == true
+                        && (breath?.values as? [Float]) == [NotchAgentWings.haloRest, 0.6, 0.25, NotchAgentWings.haloRest],
+                     "the halo breathes once from its rest, 1.6 seconds each way, eased, between 0.25 and 0.6, and back")
+        suite.expect((breath?.beginTime ?? 0) > CACurrentMediaTime() && breath?.delegate != nil,
+                     "the first breath waits a moment, and its end queues the next")
+        suite.expect(NotchAgentWings.breathRest.lowerBound >= NotchAgentWings.breath * 2
+                        && NotchAgentWings.haloRange.contains(NotchAgentWings.haloRest),
+                     "between breaths the halo rests, within its range, longer than a breath lasts")
         let breathRate = breath?.preferredFrameRateRange.maximum ?? 0
         suite.expect(breathRate > 0 && breathRate <= 15 && (orbit?.preferredFrameRateRange.preferred ?? 0)
                         .truncatingRemainder(dividingBy: breath?.preferredFrameRateRange.preferred ?? 1) == 0,
