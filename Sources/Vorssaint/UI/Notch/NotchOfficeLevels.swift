@@ -25,27 +25,23 @@ struct NotchOfficeLevelReading: View {
 
     var body: some View {
         HStack(spacing: NotchOfficeMoments.levelMarkGap) {
-            Group {
-                if cue.kind == .volume {
-                    NotchOfficeMiniBoombox(level: level, colors: NotchOfficeInk.colors(), calm: calm)
-                } else {
-                    NotchOfficeWindowBlinds(level: level, calm: calm)
-                }
-            }
-            .frame(width: NotchOfficeMoments.levelMarkWidth(cue))
+            NotchOfficeLevelMark(cue: cue, level: level, calm: calm)
+                .frame(width: NotchOfficeMoments.levelMarkWidth(cue))
             VStack(alignment: .leading, spacing: 0) {
                 Text(reading)
                     .font(Font(NotchOfficeMoments.levelReadingFont as CTFont))
                     .monospacedDigit()
                     .lineLimit(1)
                     .fixedSize()
-                    .contentTransition(.numericText())
+                    .contentTransition(calm ? .identity : .numericText())
                 if let caption { NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm) }
             }
             .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
         }
         .notchPunchIn(trigger)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The digits roll to a new reading; calm, they change in place.
+        .animation(calm ? nil : .easeOut(duration: 0.14), value: reading)
     }
 }
 
@@ -61,6 +57,9 @@ struct NotchOfficeLevelMeter: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
 
+    /// Brightness's meter, in daylight's colours.
+    static let daylight = [NotchOfficeInk.mustard, NotchOfficeInk.jelly, NotchOfficeInk.paper]
+
     private var calm: Bool { reduceMotion || lowPower.isOn }
 
     var body: some View {
@@ -70,8 +69,7 @@ struct NotchOfficeLevelMeter: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             } else {
                 VStack(alignment: .leading, spacing: 3) {
-                    NotchMeter(value: level, height: 5,
-                               colors: [NotchOfficeInk.mustard, NotchOfficeInk.jelly, NotchOfficeInk.paper])
+                    NotchMeter(value: level, height: 5, colors: Self.daylight)
                         .animation(calm ? nil : .easeOut(duration: 0.14), value: level)
                     if let caption { NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm) }
                 }
@@ -84,6 +82,135 @@ struct NotchOfficeLevelMeter: View {
     }
 }
 
+/// A level moment in a floating capsule's one row, in the plain row's order:
+/// the boombox or the blinds and the meter at the capsule's size, the
+/// reading, then the band's caption where the capsule holds it, measured as
+/// the service measures the capsule (NotchOfficeMoments.capsuleContent).
+struct NotchOfficeCapsuleLevel: View {
+    let cue: NotchOfficeCue
+    let level: Double
+    let reading: String
+    let geometry: NotchGeometry
+    /// Nil where the band has none or the capsule has no room for it.
+    let caption: String?
+    /// Changes once per moment, so a held key's steps do not punch in again.
+    let trigger: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
+
+    var body: some View {
+        let layout = NotchCapsuleLayout.self
+        let font = NotchOfficeMoments.capsuleCaptionFont(geometry)
+        HStack(spacing: layout.spacing) {
+            NotchOfficeLevelMark(cue: cue, level: level, calm: calm)
+                .scaleEffect(NotchOfficeMoments.capsuleMarkScale(cue, geometry: geometry))
+                .frame(width: NotchOfficeMoments.capsuleMarkWidth(cue, geometry: geometry),
+                       height: NotchOfficeMoments.capsuleLevelHeight(geometry))
+            meter
+            Text(reading)
+                .font(Font(layout.readingFont as CTFont))
+                .lineLimit(1)
+                .contentTransition(calm ? .identity : .numericText())
+                .frame(width: NotchOfficeMoments.capsuleReadingWidth(reading), alignment: .trailing)
+            if let caption {
+                // In the room the capsule keeps for it (capsuleCaptionSlot),
+                // so the row holds still as the band's words change.
+                NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm,
+                                       size: font === NotchOfficeMoments.cardCaptionFont ? .card : .strip)
+                    .frame(width: NotchOfficeMoments.captionWidth(NotchOfficeMoments.capsuleCaptionSlot(cue, caption: caption),
+                                                                  font: font),
+                           alignment: .leading)
+                    .padding(.leading, layout.groupSpacing - layout.spacing)
+            }
+        }
+        .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
+        .animation(calm ? nil : .easeOut(duration: 0.14), value: reading)
+        .notchPunchIn(trigger)
+        .transaction { $0.disablesAnimations = false }
+    }
+
+    @ViewBuilder private var meter: some View {
+        if cue.kind == .volume {
+            NotchOfficeVUMeter(level: level, colors: NotchOfficeInk.colors(),
+                               scale: NotchOfficeMoments.capsuleMeterScale(geometry))
+        } else {
+            NotchMeter(value: level, height: NotchCapsuleLayout.meterHeight, colors: NotchOfficeLevelMeter.daylight)
+                .frame(width: NotchCapsuleLayout.meterWidth)
+                .animation(calm ? nil : .easeOut(duration: 0.14), value: level)
+        }
+    }
+}
+
+/// A level moment in the open island's top row, where a reading covers one
+/// side for the moment it shows, in the plain reading's order: the mark and
+/// the meter as the strip draws them, then the reading large with the band's
+/// caption under it where the side holds it
+/// (NotchOfficeMoments.expandedCaptionFits).
+struct NotchOfficeExpandedLevel: View {
+    let cue: NotchOfficeCue
+    let level: Double
+    let reading: String
+    /// A side too narrow for the percentage keeps the mark and the meter.
+    let showsReading: Bool
+    /// Whether the side holds the caption. Its column keeps the widest
+    /// caption's room through every band, words or none.
+    let captionFits: Bool
+    let trigger: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
+
+    var body: some View {
+        let caption = showsReading && captionFits ? cue.caption : nil
+        HStack(spacing: NotchOfficeMoments.expandedSpacing) {
+            NotchOfficeLevelMark(cue: cue, level: level, calm: calm)
+                .frame(width: NotchOfficeMoments.levelMarkWidth(cue))
+            if cue.kind == .volume {
+                NotchOfficeVUMeter(level: level, colors: NotchOfficeInk.colors())
+            } else {
+                NotchMeter(value: level, height: 5, colors: NotchOfficeLevelMeter.daylight)
+                    .frame(maxWidth: 96)
+                    .animation(calm ? nil : .easeOut(duration: 0.14), value: level)
+            }
+            if showsReading {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(reading)
+                        .font(Font(NotchOfficeMoments.levelReadingFont as CTFont))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .fixedSize()
+                        .contentTransition(calm ? .identity : .numericText())
+                    if let caption { NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm) }
+                }
+                .frame(width: NotchOfficeMoments.expandedReadingColumn(cue, caption: captionFits), alignment: .leading)
+                .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
+            }
+        }
+        .animation(calm ? nil : .easeOut(duration: 0.14), value: reading)
+        .notchPunchIn(trigger)
+        .transaction { $0.disablesAnimations = false }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The boombox for the volume, the window's blinds for brightness.
+private struct NotchOfficeLevelMark: View {
+    let cue: NotchOfficeCue
+    let level: Double
+    let calm: Bool
+
+    var body: some View {
+        if cue.kind == .volume {
+            NotchOfficeMiniBoombox(level: level, colors: NotchOfficeInk.colors(), calm: calm)
+        } else {
+            NotchOfficeWindowBlinds(level: level, calm: calm)
+        }
+    }
+}
+
 /// A level band's lower third. Its words are its identity, so it arrives
 /// again only when the band changes, never on a step inside one: the last
 /// band's is gone in a blink, before the next one's comes in out of its
@@ -92,10 +219,12 @@ private struct NotchOfficeBandCaption: View {
     let kind: NotchOfficeCue.Kind
     let caption: String
     let calm: Bool
+    /// A capsule in a taller bar reads it at the card's size.
+    var size: NotchLowerThird.Size = .strip
 
     var body: some View {
         ZStack(alignment: .leading) {
-            NotchLowerThird(caption: caption, trigger: calm ? nil : "\(kind)|\(caption)", delay: 0.1)
+            NotchLowerThird(caption: caption, size: size, trigger: calm ? nil : "\(kind)|\(caption)", delay: 0.1)
                 .id(caption)
                 .transition(.asymmetric(insertion: .opacity,
                                         removal: .opacity.animation(.easeOut(duration: calm ? 0.2 : 0.08))))
@@ -290,6 +419,9 @@ struct NotchOfficeWindowBlinds: View {
 struct NotchOfficeVUMeter: View {
     let level: Double
     let colors: [Color]
+    /// The segments' heights in a capsule shorter than the strip; their
+    /// widths stay.
+    var scale: CGFloat = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
 
@@ -302,10 +434,10 @@ struct NotchOfficeVUMeter: View {
                 RoundedRectangle(cornerRadius: 1, style: .continuous)
                     .fill(on ? paints[segment] : Color.white.opacity(0.14))
                     .shadow(color: on ? paints[segment].opacity(0.55) : .clear, radius: on ? 2.5 : 0)
-                    .frame(width: NotchOfficeMoments.vuBar, height: NotchOfficeMoments.vuHeight(segment))
+                    .frame(width: NotchOfficeMoments.vuBar, height: NotchOfficeMoments.vuHeight(segment) * scale)
             }
         }
-        .frame(height: NotchOfficeMoments.vuHeights.highest, alignment: .bottom)
+        .frame(height: NotchOfficeMoments.vuHeights.highest * scale, alignment: .bottom)
         .animation(reduceMotion || lowPower.isOn ? nil : .easeOut(duration: 0.12), value: lit)
         .accessibilityHidden(true)
     }
