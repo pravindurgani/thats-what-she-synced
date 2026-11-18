@@ -13,10 +13,10 @@
 
 - 🎨 The notch takes the **colours of the album cover**
 - 🥁 It **moves with the beat** and your volume
-- 🕺 **Little dancers** move to the music beside the camera
+- 🕺 **Dancers** move to the music beside the camera
 - ☕ An **Office character** keeps it company when nothing's playing
 - 🤖 **Claude Code and Codex** each get a side while they work
-- 📼 **Office-style alerts** for charging, headphones, messages, calls and meetings
+- 📼 **Office-style alerts** for volume, charging, headphones, messages, calls and meetings
 
 Works with Apple Music, Spotify, and music in Safari, Chrome or Firefox.
 
@@ -71,7 +71,6 @@ To undo one, run the same line with `vivid` or `true` at the end.
 ## Not working?
 
 - **No beat?** Check step 2, then reopen the app.
-- **No colours?** Black-and-white covers stay plain; try a colourful album.
 - **Using Firefox?** Turn on *Find covers for Firefox and Zen* in the app's music settings.
 
 ## Update
