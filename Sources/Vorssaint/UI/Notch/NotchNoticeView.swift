@@ -11,6 +11,12 @@ struct NotchNoticeView: View {
     /// and out again, and the notice leaves its own out meanwhile.
     var hidesMascot = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Low Power Mode calms an Office moment as Reduce Motion does.
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
+
+    /// An Office moment's own moves rest under Reduce Motion or in Low Power
+    /// Mode; a plain notice keeps upstream's Reduce Motion alone.
+    private var calm: Bool { reduceMotion || (notice.office != nil && lowPower.isOn) }
 
     private var wings: NotchNoticeWings { notice.wings(in: geometry) }
     private var tint: Color {
@@ -55,6 +61,23 @@ struct NotchNoticeView: View {
     }
 
     var body: some View {
+        // A container, so the last notice can leave while the next arrives.
+        ZStack {
+            strip
+                // Another kind of notice is drawn anew at its place, as the island
+                // springs to it, rather than easing out of the last one's layout.
+                // An Office moment's last one fades out as the next comes in, so
+                // the island never stands empty between them; a plain notice
+                // keeps upstream's cut.
+                .id(notice.event)
+                .transition(notice.office != nil ? .opacity.animation(NotchSongMotion.reduced) : .identity)
+        }
+        .transaction { if notice.office != nil { $0.disablesAnimations = false } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(notice.accessibilityText)
+    }
+
+    private var strip: some View {
         HStack(spacing: 0) {
             leading
                 .padding(.leading, notice.inset(wing: wings.leading))
@@ -82,12 +105,11 @@ struct NotchNoticeView: View {
         .animation(reduceMotion ? nil : .spring(duration: NotchMotion.steadyWidth.duration, bounce: 0),
                    value: notice.preferredWings)
         .transaction { $0.disablesAnimations = false }
-        // Another kind of notice is drawn anew at its place, as the island
-        // springs to it, rather than easing out of the last one's layout.
-        .id(notice.event)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(notice.accessibilityText)
     }
+
+    /// The key an Office moment's words arrive on: the connect flourish's for
+    /// a device joining, the moment's own otherwise.
+    private var wordsKey: String? { connects ? connectKey : officeKey }
 
     @ViewBuilder private var leading: some View {
         if let content = notice.notification, notice.office != nil {
@@ -143,6 +165,18 @@ struct NotchNoticeView: View {
                 .id(officeKey)
                 .transition(.identity)
                 .transaction { $0.disablesAnimations = false }
+        } else if let cue = notice.office, case .battery(let state) = cue.kind {
+            // The mug in the prop's place, as every moment's prop stands, the
+            // title and its caption beside it; the charge reads across the camera.
+            HStack(spacing: NotchOfficeMoments.levelMarkGap) {
+                NotchOfficeMug(state: state, level: cue.level ?? 0, coffee: NotchOfficeInk.coffee(), trigger: officeKey ?? "")
+                    .frame(width: NotchOfficeMoments.mugSide)
+                    .notchPunchIn(officeKey)
+                officeTitle
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(calm ? nil : NotchSongMotion.stepEase, value: notice.detail)
+            .transaction { $0.disablesAnimations = false }
         } else {
             HStack(spacing: 8) {
                 mark
@@ -162,7 +196,7 @@ struct NotchNoticeView: View {
             // A level's mark keeps its place while a shorter reading leaves
             // room it holds for the widest.
             .frame(maxWidth: .infinity, alignment: notice.readsFromEnds || notice.level != nil ? .leading : .trailing)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: notice.detail)
+            .animation(calm ? nil : NotchSongMotion.stepEase, value: notice.detail)
             .transaction { $0.disablesAnimations = false }
         }
     }
@@ -204,22 +238,35 @@ struct NotchNoticeView: View {
     }
 
     /// The title with its Office caption under it: the real words first and
-    /// large, the joke small beside its rule, and both punching in.
+    /// large, in the family's title size, the joke small beside its rule, the
+    /// title out of its blur and the caption on the family's beat after it.
     private var officeTitle: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(notice.level == nil ? notice.title : notice.detail)
-                .font(.system(size: 11, weight: .medium))
+                .font(Font(NotchOfficeMoments.titleFont as CTFont))
                 .foregroundStyle(textTint)
                 .monospacedDigit()
                 .lineLimit(1)
                 .truncationMode(notice.event == .track ? .tail : .middle)
                 .contentTransition(.numericText())
-                .notchArrival(connects ? connectKey : trackKey)
+                .notchArrival(wordsKey)
             if let officeCaption {
                 NotchLowerThird(caption: officeCaption, accent: officeAccent, trigger: officeKey)
             }
         }
         .notchPunchIn(officeKey)
+    }
+
+    /// The far side's reading on an Office moment: one font, one white, and
+    /// one arrival after the title, whatever the moment.
+    private func officeReading(_ text: String, lines: Int = 1) -> some View {
+        Text(text)
+            .font(Font(NotchOfficeMoments.detailFont as CTFont))
+            .foregroundStyle(.white.opacity(NotchOfficeMoments.detailOpacity))
+            .lineLimit(lines)
+            .truncationMode(notice.event == .accessory ? .middle : .tail)
+            .notchArrival(wordsKey, delay: NotchOfficeMoments.readingBeat)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     /// A mirrored message as a talking head: the sender is the lower third's
@@ -241,10 +288,11 @@ struct NotchNoticeView: View {
                             .frame(width: iconSize * 2, height: iconSize * 2)
                     }
                 }
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(content.compactTitle)
-                    .font(Font(NotchNotificationBannerLayout.titleFont as CTFont))
+                    .font(Font(NotchOfficeMoments.titleFont as CTFont))
                     .lineLimit(1)
+                    .notchArrival(officeKey)
                 if let caption {
                     NotchLowerThird(caption: caption, trigger: officeKey)
                 }
@@ -258,23 +306,20 @@ struct NotchNoticeView: View {
     }
 
     @ViewBuilder private var trailing: some View {
-        if let cue = notice.office, case .battery(let state) = cue.kind, notice.notification == nil, notice.level == nil {
-            // The charge, with the mug filled to it beside.
-            HStack(spacing: NotchOfficeMoments.mugGap) {
-                NotchOfficeMug(state: state, level: cue.level ?? 0, coffee: NotchOfficeInk.coffee(), trigger: officeKey ?? "")
-                Text(notice.detail)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(textTint.opacity(0.8))
-                    .lineLimit(1)
-                    .notchPunchIn(officeKey)
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+        if let cue = notice.office, case .battery = cue.kind, notice.notification == nil, notice.level == nil {
+            // The charge alone: its mug stands in the prop's place.
+            officeReading(notice.detail)
         } else if notice.office?.edition != nil {
             // On or Off, at the far end.
             NotchOfficeEditionStateText(state: notice.detail, trigger: officeKey)
                 .id(officeKey)
                 .transition(.identity)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+        } else if let content = notice.notification, notice.office != nil {
+            // The message as every moment's reading, measured in its font
+            // (NotchOfficeMoments.bannerFonts).
+            officeReading(content.compactDetail,
+                          lines: NotchNotificationBannerLayout.messageLines(stripHeight: geometry.stripHeight))
         } else if let content = notice.notification {
             // At the far end, as far from it as the sender is from the other
             // one, with the air that fits it beside the camera.
@@ -294,12 +339,15 @@ struct NotchNoticeView: View {
             NotchOfficeAgentReading(detail: notice.detail, trigger: key)
         } else if let level = notice.level {
             NotchMeter(value: level, height: 5, tint: tint, colors: levelColors)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: level)
+                .animation(reduceMotion ? nil : NotchSongMotion.stepEase, value: level)
                 .transaction { $0.disablesAnimations = false }
         } else if notice.office?.kind == .copy {
             // What was copied, in a word, never the copy itself.
             NotchOfficeCopySummary(summary: notice.detail, trigger: officeKey)
                 .transaction { $0.disablesAnimations = false }
+        } else if notice.office != nil {
+            // A device's name, or an event's hours.
+            officeReading(notice.detail)
         } else {
             Text(notice.detail)
                 .font(.system(size: 11, weight: .medium))
@@ -308,7 +356,7 @@ struct NotchNoticeView: View {
                 .lineLimit(1)
                 .truncationMode(notice.event == .accessory ? .middle : .tail)
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .notchArrival(trackKey, delay: 0.2)
+                .notchArrival(trackKey, delay: NotchOfficeMoments.readingBeat)
         }
     }
 }
@@ -334,7 +382,7 @@ private struct NotchTrackArtwork: View {
                 var reset = Transaction(animation: nil)
                 reset.disablesAnimations = true
                 withTransaction(reset) { arrived = false }
-                try? await Task.sleep(nanoseconds: 16_000_000)
+                try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
                 arrived = true
             }
     }

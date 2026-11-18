@@ -262,7 +262,7 @@ private struct ProbeGlowScene: View {
             agentStrip: scene.closed == .agents || scene.closed == .agentsEmptied, songGlows: false,
             companionRests: scene.closed == .resting, idleAllowed: true,
             notice: scene.closed == .notice
-                ? NotchIslandGlow.notice(office: true, agent: nil, songWorn: false, idleAllowed: true) : nil)
+                ? NotchIslandGlow.notice(office: true, agent: nil, colours: .companion, idleAllowed: true) : nil)
         let live = scene.closed == .agents ? Self.agents : nil
         let wings: NotchWingGlowColors? = {
             switch closed {

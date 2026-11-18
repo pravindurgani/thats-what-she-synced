@@ -129,32 +129,26 @@ struct NotchCapsuleNoticeView: View {
         notice.office.map { "\($0.kind)|\(notice.title)|\(notice.notificationID?.uuidString ?? "")" }
     }
 
-    /// The lower third at the row's end, at the size the capsule's height allows.
-    private func lowerThird(_ caption: String, delay: Double = 0.22) -> some View {
+    /// The lower third at the row's end, at the size the capsule's height
+    /// allows, on the family's beat after the title.
+    private func lowerThird(_ caption: String) -> some View {
         let card = NotchOfficeMoments.capsuleCaptionFont(geometry) === NotchOfficeMoments.cardCaptionFont
         let low = notice.office?.kind == .battery(.low) || notice.office?.agentBeat == .budgetReached
         return NotchLowerThird(caption: caption, size: card ? .card : .strip,
                                accent: low ? NotchOfficeInk.beet : NotchOfficeInk.mustard,
-                               trigger: notice.officeAgentKey ?? officeKey, delay: delay)
+                               trigger: notice.officeAgentKey ?? officeKey)
             .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
-    }
-
-    /// The mug filled to the charge, scaled to the capsule's body.
-    private func mug(_ state: NotchOfficeBattery, level: Double) -> some View {
-        let scale = NotchOfficeMoments.capsuleMugScale(geometry)
-        return NotchOfficeMug(state: state, level: level, coffee: NotchOfficeInk.coffee(), trigger: officeKey ?? "")
-            .scaleEffect(scale, anchor: .topLeading)
-            .frame(width: (NotchOfficeMoments.mugSide * scale).rounded(.up),
-                   height: NotchOfficeMoments.mugHeight * scale, alignment: .topLeading)
     }
 
     private func banner(_ content: NotchNotificationContent) -> some View {
         HStack(spacing: CapsuleLayout.spacing) {
             NotchNotificationAppIcon(app: content.app, size: CapsuleLayout.notificationIconSide(geometry))
             Text(content.compactTitle).capsuleTitle().layoutPriority(1)
+                .notchArrival(officeKey)
             if !content.compactDetail.isEmpty {
                 Text(content.compactDetail).capsuleDetail()
                     .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+                    .notchArrival(officeKey, delay: NotchOfficeMoments.readingBeat)
             }
             if let officeCaption { lowerThird(officeCaption) }
         }
@@ -186,9 +180,9 @@ struct NotchCapsuleNoticeView: View {
             if !notice.detail.isEmpty {
                 Text(notice.detail).capsuleDetail()
                     .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
-                    .notchArrival(key, delay: 0.2)
+                    .notchArrival(key, delay: NotchOfficeMoments.readingBeat)
             }
-            if let officeCaption { lowerThird(officeCaption, delay: 0.32) }
+            if let officeCaption { lowerThird(officeCaption) }
         }
     }
 
@@ -216,11 +210,7 @@ struct NotchCapsuleNoticeView: View {
             // A timer's notice keeps the orange its strip wears.
             Text(notice.title).capsuleTitle().layoutPriority(1)
                 .foregroundStyle(notice.event == .timer ? Color.orange : .white)
-            // A battery's Office moment fills the mug beside its reading.
-            if let cue = notice.office, case .battery(let state) = cue.kind {
-                mug(state, level: cue.level ?? 0)
-                    .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
-            }
+                .notchArrival(officeKey)
             if !notice.detail.isEmpty {
                 Text(notice.detail).capsuleDetail()
                     .truncationMode(notice.event == .accessory ? .middle : .tail)
@@ -228,7 +218,8 @@ struct NotchCapsuleNoticeView: View {
                     // one, as the service measures it, so a tap back moves nothing.
                     .frame(minWidth: notice.office?.widestDetail.map { CapsuleLayout.width($0, font: CapsuleLayout.detailFont) },
                            alignment: .leading)
-                    .padding(.leading, notice.office?.showsMug == true ? 0 : CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+                    .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+                    .notchArrival(officeKey, delay: NotchOfficeMoments.readingBeat)
             }
             if let officeCaption { lowerThird(officeCaption) }
         }
@@ -244,6 +235,12 @@ struct NotchCapsuleNoticeView: View {
             NotchOfficeCapsuleEditionMug(on: on, geometry: geometry, trigger: officeKey ?? "")
                 .id(officeKey)
                 .transition(.identity)
+        } else if let cue = notice.office, case .battery(let state) = cue.kind {
+            // A battery's mug filled to the charge, in the symbol's place as
+            // every moment's prop stands.
+            NotchOfficeCapsuleMug(mug: NotchOfficeMug(state: state, level: cue.level ?? 0, coffee: NotchOfficeInk.coffee(),
+                                                      trigger: officeKey ?? ""),
+                                  geometry: geometry, trigger: officeKey ?? "")
         } else if NotchMascotSupport.isEnabled(), let reaction = notice.mascot {
             let side = min(CapsuleLayout.symbolWidth, CapsuleLayout.artworkSide(geometry))
             NotchMascotView(look: NotchMascotSupport.islandLook(), mood: NotchService.shared.mascotRestingMood,

@@ -411,23 +411,52 @@ extension NSColor {
 
 import SwiftUI
 
-/// The colours the island's volume meter wears: the loaded song's palette, so
-/// turning it up feels part of the music; with no song, the companion's own
-/// colours, so the island keeps one identity instead of falling back to grey.
+/// The colours the island's volume meter wears: the moment's colours
+/// (NotchMomentPaint), so turning it up feels part of the music, or of the
+/// companion with no song, instead of falling back to grey. With neither,
+/// the plain meter keeps the island's white.
 enum NotchLevelPaint {
     static func volume() -> [Color]? {
         // The Office edition off keeps upstream's white meter.
         guard NotchSongPreferences.colours else { return nil }
-        let music = NotchMusicService.shared
-        // A real cover's colours only: without one, the meter follows the
-        // companion rule below, white when the companion is off.
-        if music.playback != nil, let palette = NotchArtworkPalette.worn(NotchArtworkPalette.of(music.artwork)) {
-            return palette.marks.map { Color(nsColor: $0) }
+        let source = NotchMomentPaint.source()
+        guard source != .office else { return nil }
+        return NotchMomentPaint.marks(source)
+    }
+}
+
+/// The one resolver for an Office moment's colours, its props and its glow
+/// alike (NotchMomentColours): the worn song's palette, else the companion's
+/// glow palette while it is out, else the Office's own accents. Props take
+/// the palette's marks, the glow its deep glow colours: one palette, toned
+/// twice, so they are always the same hues. Main thread only.
+enum NotchMomentPaint {
+    /// Whose colours, read now: the song's only while it plays.
+    static func source() -> NotchMomentColours {
+        NotchMomentColours.of(
+            songWorn: NotchMomentColours.songWorn(songMode: NotchSongMode.enabled,
+                                                  playing: NotchMusicService.shared.playback?.isPlaying == true),
+            companionOn: NotchMascotSupport.isEnabled())
+    }
+
+    /// The Office's own accents as a palette, toned as a cover's.
+    static let office = NotchArtworkPalette(pure: NotchMomentColours.officeSeeds.map(\.nsColor))
+
+    static func palette(_ source: NotchMomentColours = source()) -> NotchArtworkPalette {
+        switch source {
+        case .song:
+            // The song's own, or its colourless fallback; nil only with the
+            // edition off, which no worn song can be.
+            return NotchArtworkPalette.song(NotchMusicService.shared.artwork)
+                ?? palette(NotchMascotSupport.isEnabled() ? .companion : .office)
+        case .companion: return NotchIdlePalette.current()
+        case .office: return office
         }
-        // The companion's colours only while the companion is on; otherwise
-        // the meter keeps the island's plain white.
-        guard NotchMascotSupport.isEnabled() else { return nil }
-        let companion = NotchMascotSupport.look().palette
-        return [companion.shade, companion.light].map { Color(cgColor: $0.cgColor) }
+    }
+
+    /// The props' colours: the palette's marks, never fewer than two.
+    static func marks(_ source: NotchMomentColours = source()) -> [Color] {
+        let marks = palette(source).marks.map { Color(nsColor: $0) }
+        return marks.count > 1 ? marks : marks + marks
     }
 }

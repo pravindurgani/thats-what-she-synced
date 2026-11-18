@@ -131,10 +131,10 @@ extension NotchOfficeMoments {
 
     /// The copier beside "Copied", at the boombox's scale.
     static let copier = CGSize(width: 22, height: 16)
-    /// "Copied", as large as a level moment's reading: the real information comes first.
-    static let copyTitleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
-    /// The kind at the far side, at the plain notice's detail size.
-    static let copySummaryFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    /// "Copied", in the family's title size: the real information comes first.
+    static var copyTitleFont: NSFont { titleFont }
+    /// The kind at the far side, as every moment's reading.
+    static var copySummaryFont: NSFont { detailFont }
 
     static func copySummaryWidth(_ summary: String) -> CGFloat {
         ceil((summary as NSString).size(withAttributes: [.font: copySummaryFont]).width)
@@ -164,14 +164,6 @@ extension NotchOfficeMoments {
                                 trailing: ceil(inset + content.trailing + levelAir))
     }
 
-    /// The first copy's caption lands after its title, as its sheet comes
-    /// out; a later copy's follows its replay at once, as a level's band does.
-    static let copyCaptionDelay = (first: 0.32, next: 0.1)
-
-    static func copyCaptionDelay(take: Int?, firstTake: Int?) -> Double {
-        firstTake == nil || take == firstTake ? copyCaptionDelay.first : copyCaptionDelay.next
-    }
-
     // MARK: In the capsule
 
     /// The copier, no taller than the capsule's body leaves it.
@@ -191,11 +183,12 @@ extension NotchOfficeMoments {
     }
 
     /// A copy's row in the capsule, before its caption: the copier, "Copied"
-    /// as large as a level's reading, and the kind in the room of the widest.
+    /// in the capsule's title size, as every capsule moment's title, and the
+    /// kind in the room of the widest.
     static func capsuleCopyRow(_ cue: NotchOfficeCue, title: String, detail: String,
                                geometry: NotchGeometry) -> CGFloat {
         let layout = NotchCapsuleLayout.self
-        return capsuleCopierWidth(geometry) + layout.spacing + layout.width(title, font: copyTitleFont)
+        return capsuleCopierWidth(geometry) + layout.spacing + layout.width(title, font: layout.titleFont)
             + layout.groupSpacing + capsuleCopySummaryWidth(cue, detail: detail)
     }
 }

@@ -54,8 +54,11 @@ struct NotchNotice: Equatable {
         let office = captions ? self.office
             : self.office.map { NotchOfficeCue(kind: $0.kind, level: $0.level, copy: $0.copy, widestDetail: $0.widestDetail) }
         if let notification {
+            // An Office banner is measured in the family's fonts, as it draws.
+            let fonts = NotchOfficeMoments.bannerFonts(office)
             let fitted = NotchOfficeMoments.bannerWings(
-                office, fitted: NotchNotificationBannerLayout.wings(for: notification, wrapsMessage: wrapsMessage))
+                office, fitted: NotchNotificationBannerLayout.wings(for: notification, wrapsMessage: wrapsMessage,
+                                                                    titleFont: fonts.title, messageFont: fonts.message))
             return NotchNoticeWings(leading: max(minimumWings.leading, fitted.leading),
                                     trailing: max(minimumWings.trailing, fitted.trailing))
         }
@@ -69,8 +72,9 @@ struct NotchNotice: Equatable {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         func measured(_ text: String) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
         // An Office caption reads under the title, so that side is as wide
-        // as the wider of the two.
-        let leading = max(measured(level == nil ? title : detail), NotchOfficeMoments.captionWidth(office))
+        // as the wider of the two; an Office title is the family's size.
+        let leading = office.map { NotchOfficeMoments.wordsWidth($0, title: level == nil ? title : detail) }
+            ?? measured(level == nil ? title : detail)
         // A level's wings are as wide as its mark and its widest reading, so
         // the island holds still as the value gains or loses a digit; the
         // meter takes the same width on the other side.
@@ -93,17 +97,30 @@ struct NotchNotice: Equatable {
         if let office, office.kind == .copy {
             return NotchOfficeMoments.copyWings(office, title: title, detail: detail, inset: Self.levelInset)
         }
+        // A mug's moments, the edition's and a battery's, stand their mug
+        // where every moment's prop stands, inset as a level's boombox is.
+        func propped(_ content: CGFloat) -> CGFloat {
+            min(maximum, max(Self.minimumWing, ceil(content) + Self.levelInset + cameraGap))
+        }
         // The Office edition's mug and title, with the caption under them,
         // and the state across the camera, each at its widest.
         if let office, office.edition != nil {
-            return NotchNoticeWings(leading: fitted(NotchOfficeMoments.editionLeading(office, title: title)),
-                                    trailing: fitted(NotchOfficeMoments.editionTrailing(office, detail: detail)))
+            return NotchNoticeWings(leading: propped(NotchOfficeMoments.editionLeading(office, title: title)),
+                                    trailing: propped(NotchOfficeMoments.editionTrailing(office, detail: detail)))
+        }
+        // A battery's mug in its symbol's place, the title and caption
+        // beside it, and the charge alone across the camera.
+        if let office, office.showsMug, level == nil {
+            return NotchNoticeWings(leading: propped(NotchOfficeMoments.propWidth(office) + leading),
+                                    trailing: propped(NotchOfficeMoments.detailWidth(detail)))
         }
         // An empty title leaves the mark alone, without the space after it.
         let mark = fitted(leading > 0 ? leading + 18 + 8 : 18)
         guard level == nil else { return NotchNoticeWings(leading: mark, trailing: mark) }
-        return NotchNoticeWings(leading: mark, trailing: fitted((detail as NSString).size(withAttributes: [.font: font]).width
-                                                                 + NotchOfficeMoments.readingAccessoryWidth(office)))
+        // An Office reading is the family's; a plain one keeps its own font.
+        let reading = office == nil ? (detail as NSString).size(withAttributes: [.font: font]).width
+            : NotchOfficeMoments.detailWidth(detail)
+        return NotchNoticeWings(leading: mark, trailing: fitted(reading))
     }
 
     /// The wider side, for what still takes one width for both.
@@ -134,9 +151,10 @@ struct NotchNotice: Equatable {
     /// side's content takes some of it. A copy's copier stands where a
     /// level's boombox does.
     func inset(wing: CGFloat) -> CGFloat {
-        // An agent's Office moment and the copier sit where a level's mark
-        // does, so their badges and words line up with the boombox's.
+        // An agent's Office moment, the copier and the mugs sit where a
+        // level's mark does, so their props and words line up with the boombox's.
         (level != nil && event != .accessory) || office?.kind == .copy || office?.agentBeat != nil
+            || office?.edition != nil || (office?.showsMug == true && notification == nil)
             ? Self.levelInset : min(NotchNotificationBannerLayout.inset, wing / 2)
     }
 

@@ -401,6 +401,18 @@ enum NotchOfficeMoments {
         return halves(meetingSoonCaption)
     }
 
+    /// The countdown strip's caption halves, where the strip carries them:
+    /// the Office moments on, five minutes out, a strip `contentHeight` tall
+    /// enough for a second line, and each half inside its wing's `room`. The
+    /// strip draws them and the island glows under them on the same answer.
+    static func countdownCaption(enabled: Bool, meeting: NotchCalendarCountdown?, now: Date, language: AppLanguage,
+                                 contentHeight: CGFloat, room: CGFloat) -> (leading: String, trailing: String)? {
+        guard enabled, contentHeight >= 24,
+              let halves = meetingSoonHalves(meeting, now: now, language: language) else { return nil }
+        guard captionWidth(halves.leading) <= room, captionWidth(halves.trailing, rule: false) <= room else { return nil }
+        return halves
+    }
+
     /// Split after the comma nearest the middle, else the space nearest it.
     static func halves(_ caption: String) -> (leading: String, trailing: String) {
         let characters = Array(caption)
@@ -460,6 +472,40 @@ enum NotchOfficeMoments {
         return event.start.formatted(style) + "\u{2009}\u{2013}\u{2009}" + event.end.formatted(style)
     }
 
+    // MARK: - One family
+
+    /// Every Office moment's title in the closed strip: the real information,
+    /// large, beside its prop. A level's reading and a copy's, an agent's or
+    /// the edition's title are all this one size.
+    static let titleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    /// Every Office moment's secondary reading at the strip's far end: a
+    /// message, a caller's app, a device, an event's hours, a charge, a
+    /// copy's kind, an agent's time and cost, the edition's state. Digits
+    /// keep one width, so a reading never jitters as it changes.
+    static let detailFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    /// The far-side reading's white, a step below the title's.
+    static let detailOpacity = 0.8
+    /// The card a call, a meeting or a connection opens into: one title size.
+    static let cardTitleFont = NSFont.systemFont(ofSize: 18, weight: .bold)
+
+    /// When each part of a moment arrives after it lands, the same for every
+    /// moment: the prop punches in at once, the title follows out of its blur,
+    /// the far side's reading after it, and the lower third a beat after the
+    /// title, in the strip, the capsule and the cards alike.
+    static let titleBeat = 0.1
+    static let readingBeat = 0.2
+    static let captionBeat = 0.32
+    /// A card's words follow its prop by a hair.
+    static let cardWordsBeat = 0.06
+
+    static func titleWidth(_ title: String) -> CGFloat {
+        title.isEmpty ? 0 : ceil((title as NSString).size(withAttributes: [.font: titleFont]).width)
+    }
+
+    static func detailWidth(_ detail: String) -> CGFloat {
+        detail.isEmpty ? 0 : ceil((detail as NSString).size(withAttributes: [.font: detailFont]).width)
+    }
+
     // MARK: - Measures
 
     /// The caption beside a closed notice's title, and on the cards.
@@ -467,9 +513,8 @@ enum NotchOfficeMoments {
     static let cardCaptionFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
     static let stripRule = (width: CGFloat(1.5), gap: CGFloat(3))
     static let cardRule = (width: CGFloat(2), gap: CGFloat(5))
-    /// The mug beside a battery's percentage, and the air between them.
+    /// The mug in a battery moment's prop slot, at the boombox's scale.
     static let mugSide: CGFloat = 18
-    static let mugGap: CGFloat = 5
     /// The mug's box is taller than wide: room above the brim for the steam.
     static let mugHeight: CGFloat = 22
     /// The room above the cup the steam rises into, which leaves the cup
@@ -503,17 +548,33 @@ enum NotchOfficeMoments {
         cue?.caption.map { captionWidth($0) } ?? 0
     }
 
-    /// The extra width beside a closed notice's reading: the mug and its air.
-    static func readingAccessoryWidth(_ cue: NotchOfficeCue?) -> CGFloat {
-        cue?.showsMug == true ? mugSide + mugGap : 0
+    /// A closed Office notice's words beside its prop: the title, in the
+    /// family's size, and the caption under it, whichever is wider.
+    static func wordsWidth(_ cue: NotchOfficeCue, title: String) -> CGFloat {
+        max(titleWidth(title), captionWidth(cue))
+    }
+
+    /// The prop and its gap before a battery moment's words: the mug stands
+    /// where every other moment's prop does.
+    static func propWidth(_ cue: NotchOfficeCue?) -> CGFloat {
+        cue?.showsMug == true ? mugSide + levelMarkGap : 0
     }
 
     /// A banner's sides with the role or the call's caption under the sender.
+    /// `fitted` is the banner measured in the fonts it draws with
+    /// (bannerFonts).
     static func bannerWings(_ cue: NotchOfficeCue?, fitted: NotchNoticeWings) -> NotchNoticeWings {
         guard let caption = cue?.caption else { return fitted }
         let layout = NotchNotificationBannerLayout.self
         let side = layout.iconSize + layout.spacing + captionWidth(caption) + layout.inset + layout.air
         return NotchNoticeWings(leading: max(fitted.leading, min(bannerWingLimit, side)), trailing: fitted.trailing)
+    }
+
+    /// The fonts a banner draws with: the family's title and reading for an
+    /// Office moment's, the plain banner's own otherwise.
+    static func bannerFonts(_ cue: NotchOfficeCue?) -> (title: NSFont, message: NSFont) {
+        cue == nil ? (NotchNotificationBannerLayout.titleFont, NotchNotificationBannerLayout.messageFont)
+            : (titleFont, detailFont)
     }
 
     /// Whether a banner's caption fits under the sender in a side `wing`
@@ -548,9 +609,10 @@ extension NotchOfficeMoments {
         min(1, max(0, geometry.stripBodyHeight - 2) / mugHeight)
     }
 
-    /// The mug and its air before a battery's reading.
+    /// What a battery's mug adds to its row: it takes the symbol's slot, as
+    /// every moment's prop does, so only what it needs past a symbol's width.
     static func capsuleMugWidth(_ cue: NotchOfficeCue?, geometry: NotchGeometry) -> CGFloat {
-        cue?.showsMug == true ? (mugSide * capsuleMugScale(geometry)).rounded(.up) + NotchCapsuleLayout.spacing : 0
+        cue?.showsMug == true ? capsuleEditionMarkWidth(geometry) - NotchCapsuleLayout.symbolWidth : 0
     }
 
     /// The caption a capsule notice shows after a row `content` wide, mug
@@ -717,9 +779,10 @@ extension NotchOfficeMoments {
     /// The cones at silence and all the way up; each press kicks them 12%.
     static let coneRange = (rest: CGFloat(1), loud: CGFloat(1.35))
     static let coneKick: CGFloat = 1.12
-    /// One kick, out and back. A held key's steps arriving inside it are
-    /// absorbed, so the cones pump in time instead of restarting each step.
-    static let coneKickDuration: TimeInterval = 0.22
+    /// One kick, out and back, as a cone's push on the connect card. A held
+    /// key's steps arriving inside it are absorbed, so the cones pump in
+    /// time instead of restarting each step.
+    static let coneKickDuration: TimeInterval = NotchSongMotion.push.out + NotchSongMotion.push.back
 
     static func coneScale(_ level: Double) -> CGFloat {
         let level = level.isFinite ? CGFloat(min(1, max(0, level))) : 0
@@ -789,8 +852,9 @@ extension NotchOfficeMoments {
     static let miniBoombox = CGSize(width: 22, height: 13)
     /// The window beside the brightness reading.
     static let blindsSide: CGFloat = 18
-    /// The reading, large: the real information comes first.
-    static let levelReadingFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    /// The reading, large: the real information comes first, in the
+    /// family's title size, its digits of one width.
+    static let levelReadingFont = NSFont.monospacedDigitSystemFont(ofSize: titleFont.pointSize, weight: .semibold)
     static let levelMarkGap: CGFloat = 7
     /// Air between a level moment's content and the camera.
     static let levelAir: CGFloat = 8
@@ -877,11 +941,10 @@ extension NotchOfficeMoments {
                               })
     }
 
-    /// The title beside the mug, as large as the volume's reading: the real
-    /// information comes first.
-    static let editionTitleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
-    /// The state on the far side, as a notice's reading.
-    static let editionStateFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+    /// The title beside the mug, in the family's title size.
+    static var editionTitleFont: NSFont { titleFont }
+    /// The state on the far side, as every moment's reading.
+    static var editionStateFont: NSFont { detailFont }
 
     static func editionWidth(_ text: String, font: NSFont) -> CGFloat {
         ceil((text as NSString).size(withAttributes: [.font: font]).width)
@@ -901,8 +964,9 @@ extension NotchOfficeMoments {
 
     // MARK: In the capsule
 
-    /// The mug in the capsule, in place of a notice's symbol and no
-    /// narrower than one, as tall as the capsule's body leaves it.
+    /// The mug in the capsule, the edition's or a battery's, in place of a
+    /// notice's symbol and no narrower than one, as tall as the capsule's
+    /// body leaves it.
     static func capsuleEditionMarkWidth(_ geometry: NotchGeometry) -> CGFloat {
         max(NotchCapsuleLayout.symbolWidth, (mugSide * capsuleMugScale(geometry)).rounded(.up))
     }

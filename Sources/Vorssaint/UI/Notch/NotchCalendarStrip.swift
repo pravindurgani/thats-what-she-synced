@@ -90,13 +90,18 @@ struct NotchCalendarStrip: View {
     /// as the next one begins still earns it for the next.
     private func officeCaption(_ countdown: NotchCalendarCountdown,
                                now: Date) -> (leading: String, trailing: String)? {
-        guard NotchOfficeMoments.isEnabled(), geometry.compactActivityContentHeight >= 24,
-              let halves = NotchOfficeMoments.meetingSoonHalves(calendar.meeting, now: now,
-                                                                language: l10n.language) else { return nil }
-        let room = geometry.compactActivityWingWidth - geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)
-        guard NotchOfficeMoments.captionWidth(halves.leading) <= room,
-              NotchOfficeMoments.captionWidth(halves.trailing, rule: false) <= room else { return nil }
-        return halves
+        Self.officeCaption(geometry: geometry, meeting: calendar.meeting, now: now, language: l10n.language)
+    }
+
+    /// The caption's halves where the strip's wings carry them; the island
+    /// glows under the strip on the same answer (NotchGlowBackdrop).
+    static func officeCaption(geometry: NotchGeometry, meeting: NotchCalendarCountdown?, now: Date,
+                              language: AppLanguage) -> (leading: String, trailing: String)? {
+        guard !geometry.compactActivityUsesFooter, geometry.compactActivityWingWidth > 0 else { return nil }
+        return NotchOfficeMoments.countdownCaption(
+            enabled: NotchOfficeMoments.isEnabled(), meeting: meeting, now: now, language: language,
+            contentHeight: geometry.compactActivityContentHeight,
+            room: geometry.compactActivityWingWidth - geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0))
     }
 
     private func wings(_ countdown: NotchCalendarCountdown, title: String, remaining: String,
@@ -130,7 +135,7 @@ struct NotchCalendarStrip: View {
                     }
                     Self.clock(remaining, ongoing: countdown.ongoing)
                 }
-                if let caption { NotchLowerThird(caption: caption.trailing, rule: false, trigger: key, delay: 0.32) }
+                if let caption { NotchLowerThird(caption: caption.trailing, rule: false, trigger: key) }
             }
             .padding(.trailing, inset)
             .frame(width: geometry.compactActivityWingWidth, alignment: .leading)

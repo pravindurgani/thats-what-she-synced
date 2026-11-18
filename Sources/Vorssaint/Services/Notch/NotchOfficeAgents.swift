@@ -184,9 +184,10 @@ extension NotchOfficeMoments {
     /// Between the badge and the words: the words start where a volume
     /// moment's reading does, beside its boombox.
     static var agentMarkGap: CGFloat { max(3, miniBoombox.width + levelMarkGap - agentBadgeWidth) }
-    /// The real information, as large as a level's reading.
-    static let agentTitleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
-    static let agentDetailFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    /// The real information in the family's title size, and the reading
+    /// across the camera as every moment's.
+    static var agentTitleFont: NSFont { titleFont }
+    static var agentDetailFont: NSFont { detailFont }
     /// The widest an agent moment's side grows, as a plain notice's.
     static let agentWingLimit: CGFloat = 240
 

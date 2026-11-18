@@ -148,11 +148,11 @@ struct NotchOfficeCopier: View {
     // MARK: The run
 
     /// The sheet starts out as the light crosses the glass's first part.
-    private static let sheetDelay = 0.12
-    /// The light goes out as it reaches the far end.
-    private static let lightOut = 0.3
-    /// The first run waits for the punch-in to land, as the boombox's first kick does.
-    private static let firstDelay: UInt64 = 120_000_000
+    private static let sheetDelay = NotchSongMotion.step
+    /// The light goes out as its crossing ends.
+    private static let lightOut = NotchSongMotion.fadeDuration
+    /// The first run waits for the punch-in's fade, as the boombox's first kick does.
+    private static let firstDelay = UInt64(NotchSongMotion.punch * 1_000_000_000)
 
     private func replay() {
         let now = ProcessInfo.processInfo.systemUptime
@@ -178,12 +178,12 @@ struct NotchOfficeCopier: View {
             // The newest sheet, out already; the glass lights and goes out.
             sheets = [runs]
             withAnimation(NotchSongMotion.reduced) { light = 1 }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(NotchSongMotion.swap * 1_000_000_000))
             withAnimation(NotchSongMotion.reduced) { light = 0 }
             return
         }
         // The light snaps on as a copier's lamp does; it moves a frame later.
-        try? await Task.sleep(nanoseconds: 16_000_000)
+        try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
         guard !Task.isCancelled else { return }
         sheets = NotchOfficeMoments.copySheets(sheets, adding: runs)
         // An even curve, so the light is seen crossing rather than cutting across.
@@ -292,9 +292,6 @@ struct NotchOfficeCopyReading: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
 
-    /// The copy this notice opened with, whose caption lands after the title.
-    @State private var firstTake: Int?
-
     private var calm: Bool { reduceMotion || lowPower.isOn }
 
     var body: some View {
@@ -305,18 +302,15 @@ struct NotchOfficeCopyReading: View {
                     .font(Font(NotchOfficeMoments.copyTitleFont as CTFont))
                     .lineLimit(1)
                     .fixedSize()
-                    .notchArrival(calm ? nil : trigger)
+                    .notchArrival(trigger)
                 if let caption {
-                    NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm,
-                                           delay: NotchOfficeMoments.copyCaptionDelay(take: cue.copy?.take,
-                                                                                      firstTake: firstTake))
+                    NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm)
                 }
             }
-            .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
+            .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.swapEase, value: caption)
         }
         .notchPunchIn(trigger)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { firstTake = firstTake ?? cue.copy?.take }
     }
 }
 
@@ -333,11 +327,11 @@ struct NotchOfficeCopySummary: View {
     var body: some View {
         Text(summary)
             .font(Font(NotchOfficeMoments.copySummaryFont as CTFont))
-            .foregroundStyle(.white.opacity(0.8))
+            .foregroundStyle(.white.opacity(NotchOfficeMoments.detailOpacity))
             .lineLimit(1)
             .contentTransition(.opacity)
             .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.fade, value: summary)
-            .notchPunchIn(trigger, delay: 0.05)
+            .notchArrival(trigger, delay: NotchOfficeMoments.readingBeat)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
@@ -355,7 +349,6 @@ struct NotchOfficeCapsuleCopy: View {
     let trigger: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
-    @State private var firstTake: Int?
 
     private var calm: Bool { reduceMotion || lowPower.isOn }
 
@@ -368,10 +361,10 @@ struct NotchOfficeCapsuleCopy: View {
                 .frame(width: NotchOfficeMoments.capsuleCopierWidth(geometry),
                        height: NotchOfficeMoments.capsuleLevelHeight(geometry))
             Text(title)
-                .font(Font(NotchOfficeMoments.copyTitleFont as CTFont))
+                .font(Font(layout.titleFont as CTFont))
                 .lineLimit(1)
                 .fixedSize()
-                .notchArrival(calm ? nil : trigger)
+                .notchArrival(trigger)
             Text(detail)
                 .font(Font(layout.detailFont as CTFont))
                 .foregroundStyle(.white.opacity(0.62))
@@ -382,19 +375,16 @@ struct NotchOfficeCapsuleCopy: View {
             if let caption {
                 // In the room of the widest caption, so the row holds still as copies deal the next.
                 NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm,
-                                       size: font === NotchOfficeMoments.cardCaptionFont ? .card : .strip,
-                                       delay: NotchOfficeMoments.copyCaptionDelay(take: cue.copy?.take,
-                                                                                  firstTake: firstTake))
+                                       size: font === NotchOfficeMoments.cardCaptionFont ? .card : .strip)
                     .frame(width: NotchOfficeMoments.captionWidth(NotchOfficeMoments.capsuleCaptionSlot(cue, caption: caption),
                                                                   font: font),
                            alignment: .leading)
                     .padding(.leading, layout.groupSpacing - layout.spacing)
             }
         }
-        .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
+        .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.swapEase, value: caption)
         .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.fade, value: detail)
         .notchPunchIn(trigger)
         .transaction { $0.disablesAnimations = false }
-        .onAppear { firstTake = firstTake ?? cue.copy?.take }
     }
 }
