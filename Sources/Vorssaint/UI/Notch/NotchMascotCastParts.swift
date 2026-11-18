@@ -15,13 +15,24 @@ import QuartzCore
 /// nothing runs in between. They play only while the rig idles, which it
 /// does only while it can be seen, and never under Reduce Motion or in Low
 /// Power Mode.
+///
+/// The parts that move on their own, Scarn's arms, the Beet's tops and the
+/// Mug's steam and notes, sit apart from the rest of the figure, behind it
+/// or in front, as they are drawn. The rest holds still within itself, so
+/// while the member idles it is drawn once into a bitmap the render server
+/// moves with the stages (see syncStill), rather than every mask, gradient
+/// and glow of it drawn again on each frame of the loop.
 final class NotchMascotCastParts {
     /// The whole figure on the beat.
     let beatStage = CALayer()
     /// The whole figure in its idle loop.
     let idleStage = CALayer()
+    /// Parts that move on their own behind the figure: Scarn's arms, the Beet's tops.
+    let underlay = CALayer()
     /// The member's drawing, under the face.
     let drawing = CALayer()
+    /// Parts that move on their own in front of the figure: the Mug's steam and notes.
+    let overlay = CALayer()
     private(set) var member: NotchMascotStyle?
     var reduceMotion = false
     private var size: CGFloat = 0
@@ -51,8 +62,12 @@ final class NotchMascotCastParts {
         "anchorPoint": NSNull(), "mask": NSNull(), "lineWidth": NSNull(),
     ]
 
+    /// When a beat last moved a part inside the still figure: Goldenface's
+    /// glint or rim, or the Mug's coffee.
+    private var partBeat: CFTimeInterval = -.infinity
+
     init() {
-        for layer in [beatStage, idleStage, drawing] { layer.actions = Self.noActions }
+        for layer in [beatStage, idleStage, underlay, drawing, overlay] { layer.actions = Self.noActions }
     }
 
     /// The eyes each member wears: ink, and on the dark beet a light rim so
@@ -74,7 +89,7 @@ final class NotchMascotCastParts {
         self.scale = scale
         arms = []; glint = nil; rim = nil; wisps = []; notes = []; coffee = nil; tops = nil; leaves = []
         steam = CALayer()
-        drawing.sublayers = nil
+        for layer in [underlay, drawing, overlay] { layer.sublayers = nil }
         let box = CGRect(x: 0, y: 0, width: size, height: size)
         // The stages turn and squash about the figure's feet.
         let pivot = member.map { NotchMascotGeometry.castBounds($0, size: 1).maxY } ?? 0.5
@@ -86,8 +101,11 @@ final class NotchMascotCastParts {
             layer.transform = CATransform3DIdentity
             layer.contentsScale = scale
         }
-        drawing.frame = box
-        drawing.contentsScale = scale
+        for layer in [underlay, drawing, overlay] {
+            layer.frame = box
+            layer.contentsScale = scale
+        }
+        syncStill()
         guard let member, size > 0 else { return }
         let tint = NotchMascotCastTint(look: look)
         switch member {
@@ -174,7 +192,7 @@ final class NotchMascotCastParts {
         // Arms behind the jacket, out of sight until one reaches out.
         for (arm, hand, shoulder) in [(parts.leftArm, parts.leftHand, parts.leftShoulder),
                                       (parts.rightArm, parts.rightHand, parts.rightShoulder)] {
-            let holder = pivoting(at: shoulder, in: drawing)
+            let holder = pivoting(at: shoulder, in: underlay)
             shape(arm, fill: NotchMascotCastColor.suit, stroke: tint.rim.with(alpha: rimAlpha * 0.8),
                   width: size * 0.035, in: holder)
             shape(hand, fill: NotchMascotCastColor.paper, in: holder)
@@ -266,7 +284,7 @@ final class NotchMascotCastParts {
         let brew = tint.glow == nil ? NotchMascotCastColor.coffee : NotchMascotCastColor.coffee.mixed(with: tint.accent, 0.4)
         shape(parts.coffee, fill: brew, in: surface)
         coffee = surface
-        steam = layer(CALayer(), in: drawing)
+        steam = layer(CALayer(), in: overlay)
         for wisp in parts.steam {
             let line = shape(wisp, fill: nil, stroke: tint.glow == nil ? NotchMascotCastColor.steam : tint.rim,
                              width: parts.steamWidth, in: steam)
@@ -274,7 +292,7 @@ final class NotchMascotCastParts {
             wisps.append(line)
         }
         for note in parts.notes {
-            let mark = shape(note, fill: tint.rim, in: drawing)
+            let mark = shape(note, fill: tint.rim, in: overlay)
             mark.opacity = 0
             notes.append(mark)
         }
@@ -284,7 +302,7 @@ final class NotchMascotCastParts {
     /// rim-light and a glow around the bulb.
     private func drawBeet(tint: NotchMascotCastTint) {
         let parts = NotchMascotGeometry.beet(size: size)
-        let crown = pivoting(at: parts.crown, in: drawing)
+        let crown = pivoting(at: parts.crown, in: underlay)
         for stem in parts.stems {
             shape(stem, fill: nil, stroke: NotchMascotCastColor.stem, width: parts.stemWidth, in: crown)
         }
@@ -312,6 +330,7 @@ final class NotchMascotCastParts {
     func setIdling(_ on: Bool) {
         guard on != idling else { return }
         idling = on
+        syncStill()
         if on { scheduleIdle(after: Double.random(in: 0.4...1.6)) } else { stopIdling() }
     }
 
@@ -322,13 +341,37 @@ final class NotchMascotCastParts {
     }
 
     /// Slow motions need no more than 30 frames a second.
-    private static let slowRate = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+    private static let slowRate = NotchSongMotion.slowFrames
+
+    /// A beat inside the figure draws it live until the beats have paused this long.
+    static let stillAfterBeat: CFTimeInterval = 1.5
+
+    /// Whether the still figure is drawn once and moved as a bitmap: while
+    /// the member idles, unless a beat has just moved a part inside it. At
+    /// twice the display's scale, so its edges stay as fine as drawn ones
+    /// while the stages turn and squash it; between episodes, at rest, it is
+    /// the same figure. Each change to its parts, a song's colours, a new
+    /// look, draws the bitmap again once.
+    var drawsStill: Bool { drawing.shouldRasterize }
+
+    private func syncStill() {
+        let still = idling && member != nil && size > 0
+            && CACurrentMediaTime() - partBeat >= Self.stillAfterBeat
+        guard still != drawing.shouldRasterize || (still && drawing.rasterizationScale != scale * 2) else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        drawing.rasterizationScale = scale * 2
+        drawing.shouldRasterize = still
+        CATransaction.commit()
+    }
 
     /// One episode of the member's idle loop, `gap` seconds from now, and the
     /// next one queued as it ends. Low Power Mode is read again before each
     /// one, so a loop running when it comes on stops once the episode
     /// playing ends, even if the rig has not yet heard of the change.
     private func scheduleIdle(after gap: TimeInterval) {
+        // Beats that moved a part inside the figure may have paused since the last episode.
+        syncStill()
         guard idling, !reduceMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled, let member, size > 0 else { return }
         let begin = CACurrentMediaTime() + gap
         let ease = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -370,6 +413,9 @@ final class NotchMascotCastParts {
             wobble.keyTimes = [0, 0.18, 0.4, 0.62, 0.82, 1]
             wobble.timingFunctions = Array(repeating: ease, count: 5)
             wobble.duration = 1.1
+            // Quicker than the others' loops, so a beat's rate rather than
+            // theirs: still never a ProMotion display's 120.
+            wobble.preferredFrameRateRange = NotchSongMotion.beatFrames
             play(wobble, on: idleStage, carries: true)
         case .mug:
             // Two or three wisps curl up from the coffee and thin away.
@@ -402,7 +448,7 @@ final class NotchMascotCastParts {
             sway.timingFunctions = Array(repeating: ease, count: 4)
             sway.duration = 3
             sway.preferredFrameRateRange = Self.slowRate
-            play(sway, on: tops ?? drawing, carries: true)
+            play(sway, on: tops ?? underlay, carries: true)
             for (index, leaf) in leaves.enumerated() {
                 let flutter = CAKeyframeAnimation(keyPath: "transform.rotation.z")
                 let way: CGFloat = index % 2 == 0 ? 1 : -1
@@ -444,6 +490,12 @@ final class NotchMascotCastParts {
     /// one has the figure, so a quick beat never makes it jump.
     func beat(strength: CGFloat, side: CGFloat) {
         guard let member, !reduceMotion, size > 0 else { return }
+        // Goldenface's glint and rim and the Mug's coffee move inside the
+        // still figure, which is then drawn live while the beats go on.
+        if member == .goldenface || member == .mug {
+            partBeat = CACurrentMediaTime()
+            syncStill()
+        }
         let push = 0.55 + 0.45 * min(1, max(0, strength))
         let way: CGFloat = side >= 0 ? 1 : -1
         switch member {
@@ -462,7 +514,7 @@ final class NotchMascotCastParts {
             shake.keyTimes = [0, 0.22, 0.38, 0.52, 0.68, 1]
             shake.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             shake.duration = 0.62
-            arm?.add(shake, forKey: "castBeat")
+            arm?.add(Self.atBeatRate(shake), forKey: "castBeat")
         case .goldenface:
             // A gold glint sweeps across the face.
             if let glint {
@@ -477,14 +529,14 @@ final class NotchMascotCastParts {
                 pass.animations = [sweep, shine]
                 pass.duration = 0.48
                 pass.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                glint.add(pass, forKey: "castBeat")
+                glint.add(Self.atBeatRate(pass), forKey: "castBeat")
             }
             if let rim {
                 let flare = CAKeyframeAnimation(keyPath: "opacity")
                 flare.values = [1, 0.4, 1]
                 flare.keyTimes = [0, 0.3, 1]
                 flare.duration = 0.45
-                rim.add(flare, forKey: "castBeat")
+                rim.add(Self.atBeatRate(flare), forKey: "castBeat")
             }
             move(beatStage, [Self.at(x: 0, y: 0, scale: 1 + 0.04 * push), CATransform3DIdentity],
                  times: [0.35, 1], duration: 0.36)
@@ -509,7 +561,7 @@ final class NotchMascotCastParts {
                 slosh.keyTimes = [0, 0.2, 0.45, 0.72, 1]
                 slosh.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 slosh.duration = 0.62
-                coffee.add(slosh, forKey: "castBeat")
+                coffee.add(Self.atBeatRate(slosh), forKey: "castBeat")
             }
             guard !notes.isEmpty else { return }
             let note = notes[nextNote % notes.count]
@@ -524,12 +576,12 @@ final class NotchMascotCastParts {
             float.animations = [show, rise]
             float.duration = 0.8
             float.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            note.add(float, forKey: "castBeat")
+            note.add(Self.atBeatRate(float), forKey: "castBeat")
             let clear = CAKeyframeAnimation(keyPath: "opacity")
             clear.values = [1, 0, 0, 1]
             clear.keyTimes = [0, 0.12, 0.8, 1]
             clear.duration = 0.8
-            steam.add(clear, forKey: "castBeat")
+            steam.add(Self.atBeatRate(clear), forKey: "castBeat")
         case .beet:
             // The leaves flick and the bulb bounces.
             if let tops {
@@ -539,7 +591,7 @@ final class NotchMascotCastParts {
                 flick.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 flick.isAdditive = true
                 flick.duration = 0.52
-                tops.add(flick, forKey: "castBeat")
+                tops.add(Self.atBeatRate(flick), forKey: "castBeat")
             }
             move(beatStage, [Self.at(x: 0, y: -size * 0.09 * push, squash: -0.05),
                              Self.at(x: 0, y: 0, squash: 0.08), Self.at(x: 0, y: 0, squash: -0.02),
@@ -576,7 +628,13 @@ final class NotchMascotCastParts {
         move.keyTimes = ([0] + times).map { NSNumber(value: $0) }
         move.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: frames.count)
         move.duration = duration
-        layer.add(move, forKey: "castBeat")
+        layer.add(Self.atBeatRate(move), forKey: "castBeat")
+    }
+
+    /// A beat's move, at the song's beat frame rate (NotchSongMotion.beatFrames).
+    private static func atBeatRate(_ animation: CAAnimation) -> CAAnimation {
+        animation.preferredFrameRateRange = NotchSongMotion.beatFrames
+        return animation
     }
 
     /// Moved by `x` and `y` points, grown by `scale`, and squashed by

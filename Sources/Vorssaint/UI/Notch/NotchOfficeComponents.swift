@@ -541,6 +541,7 @@ final class NotchOfficeRingView: NotchOfficeLoopView {
             group.duration = Self.period
             group.repeatCount = .infinity
             group.beginTime = now + (index == 0 ? 0 : Self.secondRing)
+            group.preferredFrameRateRange = NotchSongMotion.beatFrames
             ring.add(group, forKey: "ring")
         }
         // The handset rattles in its cradle with the pair of rings.
@@ -550,6 +551,7 @@ final class NotchOfficeRingView: NotchOfficeLoopView {
         rattle.duration = Self.period
         rattle.repeatCount = .infinity
         rattle.beginTime = now
+        rattle.preferredFrameRateRange = NotchSongMotion.beatFrames
         glyph.add(rattle, forKey: "rattle")
     }
 
@@ -634,6 +636,7 @@ final class NotchOfficeSteamView: NotchOfficeLoopView {
             group.repeatCount = .infinity
             group.timingFunction = NotchSongMotion.fadeCurve
             group.beginTime = now + Double(index) * Self.period / 2
+            group.preferredFrameRateRange = NotchSongMotion.slowFrames
             wisp.add(group, forKey: "steam")
         }
     }

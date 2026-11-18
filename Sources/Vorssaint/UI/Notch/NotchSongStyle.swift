@@ -92,6 +92,39 @@ enum NotchSongMotion {
     static let push = (out: blink, back: step)
     /// One pass of light across a surface.
     static let sweep = Animation.easeInOut(duration: sweepDuration)
+
+    // MARK: Frame rates
+
+    // Every frame a layer moves is a frame WindowServer composites, and on a
+    // ProMotion display Core Animation runs an animation at up to 120 a
+    // second unless it is asked for fewer. The song's motion asks for what
+    // it needs to look the same, as the comet rings and the cast's idle
+    // loops already do.
+
+    /// Slow drifts, breaths and turns that take seconds: 30 frames a second
+    /// moves a soft glow less than a point a frame.
+    static let slowFrames = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+    /// A beat's quick moves: smooth at 60, as the comet's head is.
+    static let beatFrames = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+
+    /// Moves `layer`'s `key` to `value` from where it shows now, over
+    /// `duration` on `curve`, at the beat's frame rate: what a transaction's
+    /// implicit animation does, without asking for 120 frames a second for
+    /// each of the twenty readings a second the beat follows.
+    static func ease(_ layer: CALayer, _ key: String, to value: Any, duration: CFTimeInterval,
+                     curve: CAMediaTimingFunction) {
+        let move = CABasicAnimation(keyPath: key)
+        move.fromValue = layer.presentation()?.value(forKey: key) ?? layer.value(forKey: key)
+        move.toValue = value
+        move.duration = duration
+        move.timingFunction = curve
+        move.preferredFrameRateRange = beatFrames
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.setValue(value, forKey: key)
+        layer.add(move, forKey: key)
+        CATransaction.commit()
+    }
 }
 
 /// Text in the cover's hue. The levels match the island's own hierarchy, a

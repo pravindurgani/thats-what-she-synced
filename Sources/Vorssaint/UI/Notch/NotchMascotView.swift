@@ -89,7 +89,9 @@ final class NotchMascotRig: NSObject {
         squasher.addSublayer(cast.beatStage)
         cast.beatStage.addSublayer(cast.idleStage)
         cast.idleStage.addSublayer(tilter)
-        for layer in [cast.drawing, ears, antenna, bulb, fill, visor, shine] { tilter.addSublayer(layer) }
+        for layer in [cast.underlay, cast.drawing, cast.overlay, ears, antenna, bulb, fill, visor, shine] {
+            tilter.addSublayer(layer)
+        }
         tilter.addSublayer(attention)
         attention.addSublayer(face)
         face.addSublayer(leftEye)

@@ -302,6 +302,7 @@ final class NotchDanceStage {
                     move.toValue = path
                     move.duration = duration
                     move.timingFunction = curve
+                    move.preferredFrameRateRange = NotchSongMotion.beatFrames
                     shape.add(move, forKey: "dance")
                 } else {
                     shape.removeAnimation(forKey: "dance")
@@ -338,6 +339,8 @@ final class NotchDanceStage {
             move.keyTimes = times
             move.timingFunctions = curves
             move.duration = step.duration
+            // Each move is redrawn from its path on every frame it runs.
+            move.preferredFrameRateRange = NotchSongMotion.beatFrames
             shape.path = frames[frames.count - 1][place]
             shape.add(move, forKey: "dance")
         }
@@ -354,6 +357,7 @@ final class NotchDanceStage {
         swell.keyTimes = [0, NSNumber(value: Self.spotAttack / (Self.spotAttack + Self.spotDecay)), 1]
         swell.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeIn)]
         swell.duration = Self.spotAttack + Self.spotDecay
+        swell.preferredFrameRateRange = NotchSongMotion.beatFrames
         spot.add(swell, forKey: "pulse")
     }
 

@@ -286,6 +286,8 @@ private struct NotchMusicAuroraBridge: NSViewRepresentable {
 
 final class NotchMusicAuroraView: NSView {
     private static let settle = NotchSongMotion.settleCurve
+    /// A beat's push and its quick fall, made once rather than on every reading.
+    private static let beatCurve = CAMediaTimingFunction(name: .easeOut)
     private static let entrance: CFTimeInterval = 0.55
     private static let colorChange = NotchSongMotion.colorChange
     private static let pauseChange: CFTimeInterval = 0.7
@@ -728,15 +730,21 @@ final class NotchMusicAuroraView: NSView {
         if resting { bounce = 0 } else { appliedBounce = bounce }
         if !resting {
             NotchMusicPulse.shared.beat.send(bounce)
+            let duration: CFTimeInterval = onset ? 0.06 : 0.09
+            // One commit for the three moves, as one transaction made them before.
             CATransaction.begin()
-            CATransaction.setAnimationDuration(onset ? 0.06 : 0.09)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+            defer { CATransaction.commit() }
             // The veil never thins below its level's share, so text keeps its contrast at the loudest beat.
-            scrim.opacity = quiet ? 1 : Float(1 - min(1 - veil.thinnest, bounce * 0.55))
+            let veiled = quiet ? 1 : Float(1 - min(1 - veil.thinnest, bounce * 0.55))
+            if veiled != scrim.opacity {
+                NotchSongMotion.ease(scrim, "opacity", to: veiled, duration: duration, curve: Self.beatCurve)
+            }
             let swell = 1 + 0.07 * bounce
-            stage.transform = CATransform3DMakeScale(swell, swell, 1)
-            lift.transform = CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)
-            CATransaction.commit()
+            NotchSongMotion.ease(stage, "transform", to: NSValue(caTransform3D: CATransform3DMakeScale(swell, swell, 1)),
+                                 duration: duration, curve: Self.beatCurve)
+            NotchSongMotion.ease(lift, "transform",
+                                 to: NSValue(caTransform3D: CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)),
+                                 duration: duration, curve: Self.beatCurve)
         }
         if resting { appliedBounce = 0 }
 
@@ -772,6 +780,7 @@ final class NotchMusicAuroraView: NSView {
         group.animations = [grow, fade]
         group.duration = 0.45
         group.timingFunction = Self.settle
+        group.preferredFrameRateRange = NotchSongMotion.beatFrames
         burst.add(group, forKey: "kick")
     }
 
@@ -842,6 +851,7 @@ final class NotchMusicAuroraView: NSView {
             drift.duration = pool.drift
             drift.repeatCount = .infinity
             drift.beginTime = now
+            drift.preferredFrameRateRange = NotchSongMotion.slowFrames
             blob.add(drift, forKey: "drift")
 
             let breath = CABasicAnimation(keyPath: "transform.scale")
@@ -854,6 +864,7 @@ final class NotchMusicAuroraView: NSView {
             // Each pool starts part-way into its breath, so they never pulse together.
             breath.timeOffset = pool.breath * Double(index) / 3
             breath.beginTime = now
+            breath.preferredFrameRateRange = NotchSongMotion.slowFrames
             blob.add(breath, forKey: "breath")
         }
         syncClock()
@@ -983,6 +994,7 @@ private struct NotchAuroraBubbleBridge: NSViewRepresentable {
 final class NotchAuroraBubbleView: NSView {
     private static let turn: CFTimeInterval = 14
     private static let settle = NotchSongMotion.settleCurve
+    private static let beatCurve = CAMediaTimingFunction(name: .easeOut)
     private let canvas = CALayer()
     private let swirl = CAGradientLayer()
     private let shine = CAGradientLayer()
@@ -1068,6 +1080,7 @@ final class NotchAuroraBubbleView: NSView {
             spin.toValue = -2 * Double.pi * (phase + 1)
             spin.duration = Self.turn
             spin.repeatCount = .infinity
+            spin.preferredFrameRateRange = NotchSongMotion.slowFrames
             swirl.speed = 0
             swirl.timeOffset = 0
             swirl.add(spin, forKey: "turn")
@@ -1093,13 +1106,18 @@ final class NotchAuroraBubbleView: NSView {
 
     private func pulse(_ bounce: Double) {
         let push = min(1, max(0, bounce))
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(push > 0.05 ? 0.08 : NotchSongMotion.beatReturn)
-        CATransaction.setAnimationTimingFunction(push > 0.05 ? CAMediaTimingFunction(name: .easeOut) : Self.settle)
+        let duration = push > 0.05 ? 0.08 : NotchSongMotion.beatReturn
+        let curve = push > 0.05 ? Self.beatCurve : Self.settle
         let swell = 1 + 0.12 * push
-        canvas.sublayerTransform = CATransform3DMakeScale(swell, swell, 1)
-        veil.opacity = Float(1 - 0.35 * push)
-        CATransaction.commit()
+        CATransaction.begin()
+        defer { CATransaction.commit() }
+        NotchSongMotion.ease(canvas, "sublayerTransform",
+                             to: NSValue(caTransform3D: CATransform3DMakeScale(swell, swell, 1)),
+                             duration: duration, curve: curve)
+        let thinned = Float(1 - 0.35 * push)
+        if thinned != veil.opacity {
+            NotchSongMotion.ease(veil, "opacity", to: thinned, duration: duration, curve: curve)
+        }
     }
 
     override func layout() {

@@ -16,6 +16,40 @@ enum NotchOfficeFamilyTests {
         measureContracts(suite)
         countdownContracts(suite)
         sourceContracts(suite)
+        frameRateContracts(suite)
+    }
+
+    /// The motion asks Core Animation for the frames it needs, as the comet
+    /// rings always did: 30 a second for slow drifts and turns, 60 for a
+    /// beat's moves, never a ProMotion display's 120, each a frame
+    /// WindowServer composites. A beat's ease moves from where the layer
+    /// shows to where it is headed, at the beat's rate.
+    private static func frameRateContracts(_ suite: TestSuite) {
+        suite.expect(NotchSongMotion.slowFrames.maximum == 30 && NotchSongMotion.slowFrames.preferred == 30
+                     && NotchSongMotion.beatFrames.maximum == 60 && NotchSongMotion.beatFrames.preferred == 60,
+                     "slow motion asks for 30 frames a second and a beat's moves for 60")
+        // Inside a transaction, as the island eases within a turn of the main
+        // queue: a layer on no screen drops its animations once one commits.
+        CATransaction.begin()
+        defer { CATransaction.commit() }
+        let layer = CALayer()
+        layer.opacity = 1
+        NotchSongMotion.ease(layer, "opacity", to: Float(0.4), duration: 0.08,
+                             curve: CAMediaTimingFunction(name: .easeOut))
+        let move = layer.animation(forKey: "opacity") as? CABasicAnimation
+        suite.expect(layer.opacity == 0.4 && move?.duration == 0.08 && (move?.fromValue as? Float) == 1
+                     && (move?.toValue as? Float) == 0.4 && move?.preferredFrameRateRange.maximum == 60,
+                     "a beat's ease lands on its value, from where the layer was, at 60 frames a second")
+        let directory = "Sources/Vorssaint/UI/Notch/"
+        for file in ["NotchMusicAurora.swift", "NotchOfficeComponents.swift", "NotchAgentCometView.swift"] {
+            guard let source = try? String(contentsOfFile: directory + file, encoding: .utf8) else {
+                suite.expect(false, "\(file) is readable from the repository root")
+                continue
+            }
+            let loops = source.components(separatedBy: "repeatCount = .infinity").count - 1
+            let rates = source.components(separatedBy: ".preferredFrameRateRange = ").count - 1
+            suite.expect(loops > 0 && rates >= loops, "\(file): every endless loop asks for its frame rate")
+        }
     }
 
     /// One resolver: the song while it plays, else the companion while it is
