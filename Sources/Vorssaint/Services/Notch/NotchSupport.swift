@@ -1216,6 +1216,14 @@ enum NotchCapsuleLayout {
         return surface(content: content, maximum: Maximum.activity, geometry: geometry)
     }
 
+    /// Upstream's capsule while agents work, kept for the Office edition off:
+    /// the working agents' marks and the reading the person chose.
+    static func plainAgentSurface(reading: String, working: Int, geometry: NotchGeometry) -> CGSize {
+        let content = agentMarksWidth(working: working) + spacing
+            + width(NotchAgentSupport.readingShape(reading), font: readingFont)
+        return surface(content: content, maximum: Maximum.activity, geometry: geometry)
+    }
+
     /// A download's arrow and name, then its meter and percentage, or a
     /// spinner until its size is known.
     static func downloadSurface(name: String, hasProgress: Bool, geometry: NotchGeometry, language: AppLanguage) -> CGSize {
@@ -1410,6 +1418,10 @@ enum NotchQuickAccessSide: String, CaseIterable, Codable {
 
 enum NotchQuickAction: Hashable, Identifiable {
     case explore, settings, pin, module(NotchModule), control(NotchControlItem)
+    /// The Office edition's mug, which turns all of this fork's extras on or
+    /// off at once. It is never chosen or stored: the island adds it to the
+    /// end of the bottom row (NotchQuickAccessConfiguration.island).
+    case officeEdition
 
     var id: String {
         switch self {
@@ -1418,6 +1430,7 @@ enum NotchQuickAction: Hashable, Identifiable {
         case .pin: return "pin"
         case .module(let module): return module.rawValue
         case .control(let item): return "control." + item.rawValue
+        case .officeEdition: return "officeEdition"
         }
     }
 
@@ -1426,6 +1439,7 @@ enum NotchQuickAction: Hashable, Identifiable {
         case "explore": self = .explore
         case "settings": self = .settings
         case "pin": self = .pin
+        case "officeEdition": self = .officeEdition
         default:
             if id.hasPrefix("control."), let item = NotchControlItem(rawValue: String(id.dropFirst(8))) {
                 self = .control(item)
@@ -1468,6 +1482,12 @@ struct NotchQuickAccessConfiguration: Equatable, Codable {
     var buttons: [NotchQuickButton]
     private var version = 1
     static let maximumPerSide = 3
+    /// The most a side shows: the person's own three, and on the bottom row
+    /// the Office edition's mug after them, which takes none of their places.
+    static let maximumShownPerSide = maximumPerSide + 1
+    /// The mug's own place, the same on every launch, so the bubble keeps
+    /// its identity as the person's buttons change around it.
+    static let officeEditionButtonID = UUID(uuidString: "00000000-0000-4000-8000-0000000000ed")!
     static let initial = Self(buttons: [
         NotchQuickButton(id: UUID(uuidString: "00000000-0000-4000-8000-000000000001")!, action: .explore, side: .left),
         NotchQuickButton(id: UUID(uuidString: "00000000-0000-4000-8000-000000000002")!, action: .module(.timer), side: .left),
@@ -1493,7 +1513,9 @@ struct NotchQuickAccessConfiguration: Equatable, Codable {
         var ids = Set<UUID>()
         var counts: [NotchQuickAccessSide: Int] = [:]
         let safe = buttons.prefix(64).compactMap { button -> NotchQuickButton? in
-            guard button.action != nil, ids.insert(button.id).inserted,
+            // The mug is the island's own, never one of the person's.
+            guard let action = button.action, action != .officeEdition, button.id != Self.officeEditionButtonID,
+                  ids.insert(button.id).inserted,
                   counts[button.side, default: 0] < Self.maximumPerSide else { return nil }
             counts[button.side, default: 0] += 1
             var result = button
@@ -1533,6 +1555,19 @@ struct NotchQuickAccessConfiguration: Equatable, Codable {
     static func current(in defaults: UserDefaults = .standard) -> Self {
         var configuration = stored(in: defaults)
         configuration.buttons = configuration.shown(in: defaults)
+        return configuration
+    }
+
+    /// What the island floats beside itself: the person's buttons as shown
+    /// (`current`), with the Office edition's mug at the end of the bottom
+    /// row whenever there are any. It joins their buttons, never takes the
+    /// place of one and needs no room of their three. An island with no
+    /// buttons at all keeps none; Settings has the same switch.
+    static func island(in defaults: UserDefaults = .standard) -> Self {
+        var configuration = current(in: defaults)
+        if !configuration.buttons.isEmpty {
+            configuration.buttons.append(NotchQuickButton(id: officeEditionButtonID, action: .officeEdition, side: .bottom))
+        }
         return configuration
     }
 
@@ -1607,7 +1642,8 @@ enum NotchQuickAccessLayout {
                           side: NotchQuickAccessSide) -> CGRect {
         guard count > 0 else { return .null }
         let first = center(index: 0, progress: 1, edge: edge, top: top, side: side)
-        let last = center(index: min(3, count) - 1, progress: 1, edge: edge, top: top, side: side)
+        let last = center(index: min(NotchQuickAccessConfiguration.maximumShownPerSide, count) - 1, progress: 1,
+                          edge: edge, top: top, side: side)
         let radius = diameter / 2
         if side == .bottom {
             return CGRect(x: first.x - radius, y: edge, width: last.x - first.x + diameter,
@@ -1639,7 +1675,7 @@ enum NotchQuickAccessLayout {
 
     static func hitTest(_ point: CGPoint, count: Int, edge: CGFloat, top: CGFloat,
                         side: NotchQuickAccessSide) -> Bool {
-        (0..<max(0, min(3, count))).contains { index in
+        (0..<max(0, min(NotchQuickAccessConfiguration.maximumShownPerSide, count))).contains { index in
             let center = center(index: index, progress: 1, edge: edge, top: top, side: side)
             return hypot(point.x - center.x, point.y - center.y) <= diameter / 2
         }
@@ -1650,6 +1686,8 @@ enum NotchEvent: String, CaseIterable {
     case volume, brightness, battery, clipboard, capture, systemNotification, keyboardLight, timer, accessory, download, agents, track, microphone, watch, inputSource
     /// A calendar event beginning, which only the Office moments announce.
     case calendar
+    /// The Office edition switched on or off from the island's mug.
+    case officeEdition
 
     var preferenceKey: String {
         switch self {
@@ -1669,12 +1707,15 @@ enum NotchEvent: String, CaseIterable {
         case .clipboard: return DefaultsKey.notchClipboard
         case .capture: return DefaultsKey.notchCapture
         case .calendar: return DefaultsKey.notchCalendarEnabled
+        // The switch's own notice answers a tap on the island, so the island
+        // being on is all it needs.
+        case .officeEdition: return DefaultsKey.notchEnabled
         }
     }
 
     var priority: Int {
         switch self {
-        case .volume, .brightness, .keyboardLight, .microphone, .inputSource: return 3
+        case .volume, .brightness, .keyboardLight, .microphone, .inputSource, .officeEdition: return 3
         case .capture, .timer, .watch, .calendar: return 2
         case .battery, .systemNotification, .accessory, .agents: return 1
         case .clipboard, .download, .track: return 0
@@ -1687,6 +1728,8 @@ enum NotchEvent: String, CaseIterable {
         case .systemNotification, .track: return 3
         case .timer, .download, .watch: return 6
         case .agents, .calendar: return 5
+        // Long enough to read the caption that arrives after the title.
+        case .officeEdition: return 2
         case .battery, .accessory: return 4
         case .clipboard: return 2.5
         case .capture: return 12
@@ -2108,6 +2151,7 @@ enum NotchSupport {
         // A layout notice needs no feature of its own, only its own toggle.
         case .inputSource: return true
         case .calendar: return NotchCalendarSupport.isEnabled(in: defaults) && NotchOfficeMoments.isEnabled(in: defaults)
+        case .officeEdition: return true
         }
     }
 

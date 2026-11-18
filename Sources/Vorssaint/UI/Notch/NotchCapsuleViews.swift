@@ -88,8 +88,14 @@ struct NotchCapsuleNoticeView: View {
                 // Cafe Disco, or the blinds, at the capsule's size.
                 NotchOfficeCapsuleLevel(cue: cue, level: level, reading: notice.detail, geometry: geometry,
                                         caption: officeCaption, trigger: officeKey)
+            } else if let cue = notice.office, cue.kind == .copy, notice.level == nil {
+                // The copier at the capsule's size.
+                NotchOfficeCapsuleCopy(cue: cue, title: notice.title, detail: notice.detail, geometry: geometry,
+                                       caption: officeCaption, trigger: officeKey)
             } else if let level = notice.level {
                 levelRow(level)
+            } else if let beat = notice.office?.agentBeat, let key = notice.officeAgentKey {
+                agentRow(beat, key: key)
             } else {
                 messageRow
             }
@@ -124,11 +130,12 @@ struct NotchCapsuleNoticeView: View {
     }
 
     /// The lower third at the row's end, at the size the capsule's height allows.
-    private func lowerThird(_ caption: String) -> some View {
+    private func lowerThird(_ caption: String, delay: Double = 0.22) -> some View {
         let card = NotchOfficeMoments.capsuleCaptionFont(geometry) === NotchOfficeMoments.cardCaptionFont
-        let low = notice.office?.kind == .battery(.low)
+        let low = notice.office?.kind == .battery(.low) || notice.office?.agentBeat == .budgetReached
         return NotchLowerThird(caption: caption, size: card ? .card : .strip,
-                               accent: low ? NotchOfficeInk.beet : NotchOfficeInk.mustard, trigger: officeKey)
+                               accent: low ? NotchOfficeInk.beet : NotchOfficeInk.mustard,
+                               trigger: notice.officeAgentKey ?? officeKey, delay: delay)
             .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
     }
 
@@ -150,6 +157,38 @@ struct NotchCapsuleNoticeView: View {
                     .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
             }
             if let officeCaption { lowerThird(officeCaption) }
+        }
+    }
+
+    /// An agent's Office moment in one row: the badge at the capsule's ring
+    /// size, the title, the detail and the caption where the capsule holds it.
+    private func agentRow(_ beat: NotchOfficeAgentBeat, key: String) -> some View {
+        let scale = NotchOfficeMoments.capsuleAgentScale(geometry)
+        return HStack(spacing: CapsuleLayout.spacing) {
+            Group {
+                if NotchMascotSupport.isEnabled(), notice.mascot != nil {
+                    mark
+                } else {
+                    NotchOfficeAgentBadge(beat: beat, provider: notice.agent, trigger: key,
+                                          confettiReach: NotchOfficeMoments.capsuleConfettiReach(geometry))
+                        .scaleEffect(scale, anchor: .topLeading)
+                        .frame(width: NotchOfficeMoments.agentBadgeWidth * scale,
+                               height: NotchOfficeMoments.agentRingSide * scale, alignment: .topLeading)
+                }
+            }
+            .frame(width: NotchOfficeMoments.capsuleAgentBadgeWidth(geometry), alignment: .leading)
+            .notchPunchIn(key)
+            // A moment replacing another starts afresh, with nothing of the last.
+            .id(key)
+            .transition(.identity)
+            Text(notice.title).capsuleTitle().layoutPriority(1)
+                .notchArrival(key)
+            if !notice.detail.isEmpty {
+                Text(notice.detail).capsuleDetail()
+                    .padding(.leading, CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
+                    .notchArrival(key, delay: 0.2)
+            }
+            if let officeCaption { lowerThird(officeCaption, delay: 0.32) }
         }
     }
 
@@ -185,6 +224,10 @@ struct NotchCapsuleNoticeView: View {
             if !notice.detail.isEmpty {
                 Text(notice.detail).capsuleDetail()
                     .truncationMode(notice.event == .accessory ? .middle : .tail)
+                    // The Office edition's state keeps the room of the wider
+                    // one, as the service measures it, so a tap back moves nothing.
+                    .frame(minWidth: notice.office?.widestDetail.map { CapsuleLayout.width($0, font: CapsuleLayout.detailFont) },
+                           alignment: .leading)
                     .padding(.leading, notice.office?.showsMug == true ? 0 : CapsuleLayout.groupSpacing - CapsuleLayout.spacing)
             }
             if let officeCaption { lowerThird(officeCaption) }
@@ -196,7 +239,12 @@ struct NotchCapsuleNoticeView: View {
         // its reactions are off. A
         // notice about the agent itself wears its mark; warnings and renewals
         // keep a symbol that says what happened.
-        if NotchMascotSupport.isEnabled(), let reaction = notice.mascot {
+        if let on = notice.office?.edition {
+            // The Office edition's mug, in the symbol's place.
+            NotchOfficeCapsuleEditionMug(on: on, geometry: geometry, trigger: officeKey ?? "")
+                .id(officeKey)
+                .transition(.identity)
+        } else if NotchMascotSupport.isEnabled(), let reaction = notice.mascot {
             let side = min(CapsuleLayout.symbolWidth, CapsuleLayout.artworkSide(geometry))
             NotchMascotView(look: NotchMascotSupport.islandLook(), mood: NotchService.shared.mascotRestingMood,
                             size: side, reaction: NotchMascotSupport.reacts() ? reaction : nil)
@@ -506,9 +554,49 @@ struct NotchCapsuleAgentStrip: View {
     @AppStorage(DefaultsKey.notchAgentsLimitFocus) private var focus = NotchAgentLimitFocus.mostUsed.rawValue
 
     var body: some View {
-        let model = finishes.model(live: usage.snapshot.live)
-        // The last agent stopping empties the list before the strip has left.
-        NotchStripHold(model, shows: !model.wings.isEmpty) { row(model: $0) }
+        if NotchOfficeEdition.agentWings() {
+            let model = finishes.model(live: usage.snapshot.live)
+            // The last agent stopping empties the list before the strip has left.
+            NotchStripHold(model, shows: !model.wings.isEmpty) { row(model: $0) }
+        } else {
+            NotchStripHold(usage.snapshot.live, shows: !usage.snapshot.live.isEmpty) { plainRow(live: $0) }
+        }
+    }
+
+    /// With the Office edition off, upstream's capsule: the working agents'
+    /// marks and the reading the person chose, in the first agent's colour,
+    /// measured as the service measures it (NotchCapsuleLayout.plainAgentSurface).
+    @ViewBuilder private func plainRow(live: [AgentLiveSession]) -> some View {
+        let working = AgentProvider.allCases.filter { provider in live.contains { $0.provider == provider } }
+        NotchCapsuleRow(size: size, geometry: displayGeometry ?? service.geometry) {
+            HStack(spacing: CapsuleLayout.spacing) {
+                NotchCapsuleAgentMarks(providers: working)
+                NotchAgentReadoutTimeline(readout: chosenReadout) { date in
+                    let text = plainReading(at: date, live: live)
+                    Text(text)
+                        .font(Font(CapsuleLayout.readingFont as CTFont))
+                        .foregroundStyle(working.first?.tint ?? .white)
+                        .lineLimit(1).fixedSize()
+                        // A reading that gains a digit, like an hour passing,
+                        // widens the capsule; the service measures the same.
+                        .onChange(of: NotchAgentSupport.readingShape(text)) { _, _ in
+                            DispatchQueue.main.async { service.refreshPresentation() }
+                        }
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(working.map(\.displayName).joined(separator: ", "))
+        .accessibilityValue(plainReading(at: Date(), live: live))
+        .accessibilityHint(FeatureStrings.notch(l10n.language).open)
+    }
+
+    private func plainReading(at now: Date, live: [AgentLiveSession]) -> String {
+        var snapshot = usage.snapshot
+        snapshot.live = live
+        return NotchAgentSupport.stripReading(snapshot, readout: chosenReadout,
+                                              display: NotchAgentLimitDisplay(rawValue: display) ?? .remaining,
+                                              focus: NotchAgentLimitFocus(rawValue: focus) ?? .mostUsed, now: now)
     }
 
     @ViewBuilder private func row(model: NotchAgentStripModel) -> some View {

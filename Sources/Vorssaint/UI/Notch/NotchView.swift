@@ -552,6 +552,9 @@ struct NotchView: View {
     }
 
     private var headerFeedback: NotchNotice? {
+        // The Office edition's notice answers a tap on the open island's own
+        // mug, so it reads in the top row, as a level does.
+        if let notice = service.notice, notice.event == .officeEdition, notice.office?.edition != nil { return notice }
         guard let notice = service.notice, notice.level != nil,
               [.volume, .brightness, .keyboardLight].contains(notice.event) else { return nil }
         // The home page shows its levels in the top row, or just below it,

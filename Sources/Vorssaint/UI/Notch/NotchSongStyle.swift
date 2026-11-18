@@ -12,6 +12,8 @@ enum NotchSongMotion {
     /// A surface wearing the song arriving or leaving: an even, standard
     /// curve, since a front-loaded one makes a fade read as a cut.
     static let fade = Animation.timingCurve(0.4, 0, 0.2, 1, duration: 0.35)
+    /// The same fade's curve, for Core Animation.
+    static let fadeCurve = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.2, 1)
     /// Words arriving out of a blur.
     static let arrive = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.45)
     /// A glow opening behind something arriving.

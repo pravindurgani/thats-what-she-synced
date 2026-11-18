@@ -898,6 +898,10 @@ enum DefaultsKey {
     static let notchAccessoriesEnabled = "notchAccessoriesEnabled"
     /// The Office moments on the island's notices (NotchOfficeMoments).
     static let notchOfficeModeEnabled = "notchOfficeModeEnabled"
+    /// "Office edition": the one switch over everything this fork adds to the
+    /// island (NotchOfficeEdition). Off, the island is plain Vorssaint and
+    /// each extra's own switch and choices stay stored for when it is on.
+    static let notchOfficeEditionEnabled = "notchOfficeEditionEnabled"
     static let notchLyricsEnabled = "notchLyricsEnabled"
     static let notchLyricsOnline = "notchLyricsOnline"
     static let notchBrowserCovers = "notchBrowserCovers"
@@ -1530,6 +1534,7 @@ enum Defaults {
         DefaultsKey.notchCameraEnabled: true,
         DefaultsKey.notchAccessoriesEnabled: true,
         DefaultsKey.notchOfficeModeEnabled: true,
+        DefaultsKey.notchOfficeEditionEnabled: true,
         DefaultsKey.notchCalendarEnabled: true,
         DefaultsKey.notchCalendarCountdown: false,
         DefaultsKey.notchCalendarCountdownLead: NotchCalendarSupport.defaultCountdownLeadMinutes,

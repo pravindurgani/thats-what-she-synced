@@ -16,17 +16,36 @@ enum NotchIslandGlow: Equatable {
     case agents
     /// The companion's colours.
     case idle
+    /// An Office notice's colours (NotchNoticeGlow), on the same wings as
+    /// the agents' and the companion's.
+    case notice(NotchNoticeGlow)
 
-    /// The closed island. The agents' glow wins while their strip is what
-    /// shows: it is the island's news. Otherwise a song's glow, while its
-    /// strip shows, and, with nothing else there, the companion's colours
-    /// around it as it rests beside the camera. The glows that are not the
-    /// song's, the agents' and the companion's, share one switch
-    /// (`idleAllowed`: on, and not in Low Power Mode).
-    static func closed(agentStrip: Bool, songGlows: Bool, companionRests: Bool, idleAllowed: Bool) -> NotchIslandGlow {
+    /// The closed island. A notice is its news while it shows, in its own
+    /// colours, unless it is the song's own strip glowing (a volume change
+    /// over the playing song). Otherwise the agents' glow wins while their
+    /// strip is what shows, then a song's glow, while its strip shows, and,
+    /// with nothing else there, the companion's colours around it as it
+    /// rests beside the camera. The glows that are not the song's, the
+    /// agents' and the companion's, share one switch (`idleAllowed`: on,
+    /// and not in Low Power Mode); a notice's glow is resolved under it
+    /// (`notice(office:agent:songWorn:idleAllowed:)`).
+    static func closed(agentStrip: Bool, songGlows: Bool, companionRests: Bool, idleAllowed: Bool,
+                       notice: NotchNoticeGlow? = nil) -> NotchIslandGlow {
+        if let notice, !songGlows { return .notice(notice) }
         if agentStrip { return idleAllowed ? .agents : .none }
         if songGlows { return .song }
         return companionRests && idleAllowed ? .idle : .none
+    }
+
+    /// The colours an Office notice glows in, or nil for the plain black
+    /// notice: without its Office moment (`office`, which the notice carries
+    /// only while the Office moments are on), or with the glow switched off
+    /// or in Low Power Mode. An agent's notice wears that agent's colours;
+    /// any other wears the song's while one plays, else the companion's.
+    static func notice(office: Bool, agent: AgentProvider?, songWorn: Bool, idleAllowed: Bool) -> NotchNoticeGlow? {
+        guard office, idleAllowed else { return nil }
+        if let agent { return .agent(agent) }
+        return songWorn ? .song : .companion
     }
 
     /// The open island: the song's colours while it wears one, otherwise
@@ -110,6 +129,103 @@ enum NotchIslandGlow: Equatable {
     }
 }
 
+/// Whose colours an Office notice glows in.
+enum NotchNoticeGlow: Equatable {
+    /// The playing song's.
+    case song
+    /// The agent the notice is about.
+    case agent(AgentProvider)
+    /// The companion's (the cast member's own, or grown from its body).
+    case companion
+}
+
+/// One resize of the island, as its window plans it when the shape starts
+/// to move: the glows fade along it, so they leave and arrive with the
+/// island's own size and curve, frame by frame, rather than on a clock of
+/// their own. Read against the outline drawn each frame, the one source of
+/// the island's geometry.
+struct NotchGlowPlan: Equatable {
+    /// A new plan for every resize.
+    var id = 0
+    var start = CGSize.zero
+    var end = CGSize.zero
+
+    /// How far the island has come from `start` to `end` at `size`, from 0
+    /// to 1, along whichever side travels further. A resize with nowhere to
+    /// go is already there.
+    func progress(at size: CGSize) -> Double {
+        let width = end.width - start.width, height = end.height - start.height
+        let travel = abs(height) >= abs(width) ? (height, size.height - start.height) : (width, size.width - start.width)
+        guard abs(travel.0) >= 1 else { return 1 }
+        return Double(min(1, max(0, travel.1 / travel.0)))
+    }
+}
+
+/// Whether one glow is drawn and how strongly, as what the island shows
+/// changes. A glow that comes or goes while the island resizes follows the
+/// resize (NotchGlowPlan): fully drawn where its state is, gone where it is
+/// not, so the island is never left sitting at one size in plain black, and
+/// a glow never outlives the size it belongs to. A change with the island
+/// staying still fades on the song's fade, run by Core Animation. Gone for
+/// good, it is no longer drawn at all.
+struct NotchGlowPresence: Equatable {
+    struct Frame: Equatable {
+        /// Drawn at all.
+        var mounted: Bool
+        /// How strongly, from 0 to 1.
+        var opacity: Double
+        /// Eased to `opacity` over `fade` rather than set at once.
+        var fades: Bool
+    }
+
+    /// The song's fade (NotchSongMotion.fade).
+    static let fade: Double = 0.35
+    /// A resize already this far along is too nearly done to follow.
+    static let followable: Double = 0.7
+
+    private(set) var shown = false
+    private(set) var opacity = 0.0
+    private var seenPlan: Int?
+    private var following: Int?
+    private var from = 0.0
+    private var origin = 0.0
+    private var reached = 0.0
+    /// Until when a fade with the island still is under way.
+    private(set) var fadeEnd: Double?
+
+    mutating func step(shown next: Bool, plan: NotchGlowPlan, progress: Double, now: Double) -> Frame {
+        let target: Double = next ? 1 : 0
+        let newPlan = seenPlan != plan.id
+        seenPlan = plan.id
+        let changed = next != shown
+        shown = next
+        if following == plan.id { reached = max(reached, progress) }
+        if changed || (newPlan && opacity != target) {
+            if progress < Self.followable {
+                // Follows the rest of the resize, from wherever it stands.
+                following = plan.id
+                from = opacity
+                origin = progress
+                reached = progress
+                fadeEnd = nil
+            } else {
+                following = nil
+                fadeEnd = now + Self.fade
+            }
+        }
+        if let end = fadeEnd, now >= end { fadeEnd = nil }
+        if following == plan.id, reached < 1 {
+            let share = (reached - origin) / max(0.000_1, 1 - origin)
+            opacity = from + (target - from) * share
+            return Frame(mounted: true, opacity: opacity, fades: false)
+        }
+        following = nil
+        opacity = target
+        let fading = fadeEnd != nil
+        return Frame(mounted: next || fading, opacity: target, fades: fading)
+    }
+}
+
 /// The colours a song wears when its cover has none of its own: black and
 /// white, greys, or too little colour to read (NotchArtworkPalette.of finds
 /// no palette, which takes a peak saturation of about 0.2 or more). The rule
@@ -164,16 +280,18 @@ enum NotchIdleGlowPreferences {
 
     static var enabled: Bool {
         if let cached { return cached }
-        if observer == nil {
-            observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
-                                                              object: nil, queue: .main) { _ in cached = nil }
-        }
+        if observer == nil { observer = NotchPreferenceCache.observeDefaults { cached = nil } }
         let fresh = enabled(in: .standard)
         cached = fresh
         return fresh
     }
 
+    /// Read again on the next ask (NotchOfficeEdition.set).
+    static func invalidate() { cached = nil }
+
+    /// Its own switch under the Office edition's master (NotchOfficeEdition).
     static func enabled(in defaults: UserDefaults) -> Bool {
-        defaults.object(forKey: DefaultsKey.notchIdleGlowEnabled) as? Bool ?? true
+        NotchOfficeEdition.allows(defaults.object(forKey: DefaultsKey.notchIdleGlowEnabled) as? Bool ?? true,
+                                  in: defaults)
     }
 }

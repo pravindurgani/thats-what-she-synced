@@ -81,6 +81,9 @@ struct NotchArtworkPalette: Equatable {
     /// track the cover belongs to, the playing one when not given.
     static func song(_ artwork: NSImage?, remembers: Bool = true,
                      song track: RadialNowPlayingSnapshot? = nil) -> NotchArtworkPalette? {
+        // With the Office edition off a song lends no colour anywhere, so
+        // the player, the bars and the strip are upstream's own.
+        guard NotchSongPreferences.colours else { return nil }
         if let artwork {
             let palette = of(artwork)
             let song = track ?? NotchMusicService.shared.playback?.track
@@ -408,44 +411,13 @@ extension NSColor {
 
 import SwiftUI
 
-/// How much colour the island wears with a song: `vivid`, the cover's whole
-/// palette (the default), or `duotone`, its lead colour and a neutral.
-/// `defaults write <bundle id> notchSongLook -string duotone`, then relaunch
-/// (a change from another process is read on the next launch).
-enum NotchSongLook: String {
-    case vivid, duotone
-
-    static var current: NotchSongLook { NotchSongPreferences.look }
-}
-
-/// The song mode's two settings, read once and again only after a change,
-/// since the island asks for them on every frame of a resize. Main thread only.
-enum NotchSongPreferences {
-    private static var cached: (look: NotchSongLook, enabled: Bool)?
-    private static var observer: NSObjectProtocol?
-
-    static var look: NotchSongLook { read().look }
-    static var enabled: Bool { read().enabled }
-
-    private static func read() -> (look: NotchSongLook, enabled: Bool) {
-        if let cached { return cached }
-        if observer == nil {
-            observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
-                                                              object: nil, queue: .main) { _ in cached = nil }
-        }
-        let defaults = UserDefaults.standard
-        let fresh = (look: NotchSongLook(rawValue: defaults.string(forKey: "notchSongLook") ?? "") ?? .vivid,
-                     enabled: defaults.object(forKey: "notchSongModeEnabled") as? Bool ?? true)
-        cached = fresh
-        return fresh
-    }
-}
-
 /// The colours the island's volume meter wears: the loaded song's palette, so
 /// turning it up feels part of the music; with no song, the companion's own
 /// colours, so the island keeps one identity instead of falling back to grey.
 enum NotchLevelPaint {
     static func volume() -> [Color]? {
+        // The Office edition off keeps upstream's white meter.
+        guard NotchSongPreferences.colours else { return nil }
         let music = NotchMusicService.shared
         // A real cover's colours only: without one, the meter follows the
         // companion rule below, white when the companion is off.

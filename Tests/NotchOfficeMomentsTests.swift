@@ -25,6 +25,7 @@ enum NotchOfficeMomentsTests {
         meterContracts(suite)
         levelMeasureContracts(suite)
         expandedLevelContracts(suite)
+        NotchOfficeCopierTests.run(suite)
     }
 
     private static func content(_ app: String, _ title: String = "Jane", subtitle: String = "",

@@ -169,20 +169,24 @@ struct NotchConnectIcon: View {
 }
 
 /// Words arriving out of a soft blur just behind their icon: a device's name
-/// as it connects, a new song's title and artist.
+/// as it connects, a new song's title and artist. Reduce Motion and Low
+/// Power Mode keep the fade alone, as the punch-in does.
 struct NotchArrival: ViewModifier {
     let trigger: String
     var delay: Double = 0.1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @State private var arrived = false
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
 
     func body(content: Content) -> some View {
         let shown = arrived
         content
-            .offset(x: shown || reduceMotion ? 0 : 10)
-            .blur(radius: shown || reduceMotion ? 0 : 5)
+            .offset(x: shown || calm ? 0 : 10)
+            .blur(radius: shown || calm ? 0 : 5)
             .opacity(shown ? 1 : 0)
-            .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.arrive.delay(delay), value: arrived)
+            .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.arrive.delay(delay), value: arrived)
             .task(id: trigger) {
                 var reset = Transaction(animation: nil)
                 reset.disablesAnimations = true

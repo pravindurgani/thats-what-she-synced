@@ -22,10 +22,92 @@ struct NotchAgentStrip: View {
     @AppStorage(DefaultsKey.notchAgentsLimitFocus) private var focus = NotchAgentLimitFocus.mostUsed.rawValue
 
     var body: some View {
-        let model = finishes.model(live: usage.snapshot.live)
-        // The last agent stopping empties the list before the strip has left.
-        NotchStripHold(model, shows: !model.wings.isEmpty) { strip(model: $0) }
+        if NotchOfficeEdition.agentWings() {
+            let model = finishes.model(live: usage.snapshot.live)
+            // The last agent stopping empties the list before the strip has left.
+            NotchStripHold(model, shows: !model.wings.isEmpty) { strip(model: $0) }
+        } else {
+            NotchStripHold(usage.snapshot.live, shows: !usage.snapshot.live.isEmpty) { plainStrip(live: $0) }
+        }
     }
+
+    // MARK: Upstream's strip
+
+    /// With the Office edition off, upstream's strip: the working agents'
+    /// marks on one side of the camera, the reading the person chose on the
+    /// other, in the first agent's colour. The service measures it the same
+    /// way (NotchService.plainAgentStripWing).
+    @ViewBuilder private func plainStrip(live: [AgentLiveSession]) -> some View {
+        let geometry = displayGeometry ?? service.compactActivityGeometry
+        let working = AgentProvider.allCases.filter { provider in live.contains { $0.provider == provider } }
+        let tint = working.first?.tint ?? .white
+        let budget = geometry.compactActivityContentHeight - NotchLayout.compactEdgeGap * 2
+        let iconSize = min(working.count > 1 ? 11.0 : 14.0, max(8, budget - 4))
+        let textSize = NotchAgentSupport.stripTextSize(height: geometry.compactActivityContentHeight)
+        let iconInset = !geometry.compactActivityUsesFooter
+            ? geometry.compactActivityEdgeInset(boxHeight: iconSize + 4, radius: (iconSize + 4) / 2) : 0
+        let textInset = !geometry.compactActivityUsesFooter
+            ? geometry.compactActivityEdgeInset(boxHeight: textSize * 0.72, radius: 0) : 0
+        HStack(spacing: 0) {
+            Button { service.openActivity(.agents) } label: {
+                HStack(spacing: 1) {
+                    if geometry.compactActivityWingWidth >= 28 {
+                        ForEach(working) { NotchAgentGlyph(provider: $0, size: iconSize) }
+                    }
+                }
+                .padding(.leading, iconInset)
+                .frame(width: geometry.compactActivityWingWidth, height: geometry.compactActivityContentHeight,
+                       alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            Color.clear.frame(width: geometry.compactActivityCameraGap)
+            Button { service.openActivity(.agents) } label: {
+                Group {
+                    if geometry.compactActivityWingWidth >= 42 {
+                        NotchAgentReadoutTimeline(readout: chosenReadout) { date in
+                            let text = plainReading(at: date, live: live)
+                            Text(text)
+                                .font(.system(size: textSize, weight: .medium))
+                                .monospacedDigit()
+                                .foregroundStyle(tint)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                                // A reading that gains a digit, like an hour
+                                // passing, needs wider wings; the service
+                                // measures the same reading.
+                                .onChange(of: NotchAgentSupport.readingShape(text)) { _, _ in
+                                    DispatchQueue.main.async { service.refreshPresentation() }
+                                }
+                        }
+                    }
+                }
+                .padding(.trailing, textInset)
+                .frame(width: geometry.compactActivityWingWidth, height: geometry.compactActivityContentHeight,
+                       alignment: .trailing)
+                .contentShape(Rectangle())
+            }
+        }
+        .frame(height: geometry.compactActivityContentHeight)
+        .padding(.horizontal, geometry.compactActivityHorizontalPadding)
+        .padding(.top, geometry.compactActivityTopPadding)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(working.map(\.displayName).joined(separator: ", "))
+        .accessibilityValue(plainReading(at: Date(), live: live))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { service.openActivity(.agents) }
+        .accessibilityHint(FeatureStrings.notch(l10n.language).open)
+    }
+
+    private func plainReading(at now: Date, live: [AgentLiveSession]) -> String {
+        var snapshot = usage.snapshot
+        snapshot.live = live
+        return NotchAgentSupport.stripReading(snapshot, readout: chosenReadout,
+                                              display: NotchAgentLimitDisplay(rawValue: display) ?? .remaining,
+                                              focus: NotchAgentLimitFocus(rawValue: focus) ?? .mostUsed, now: now)
+    }
+
+    // MARK: The Office edition's wings
 
     @ViewBuilder private func strip(model: NotchAgentStripModel) -> some View {
         // Resolve layout once per presentation update. The timeline captures

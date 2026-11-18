@@ -1298,7 +1298,17 @@ enum NotchMascotSupport {
         return look
     }
 
+    /// The companion as the island and the Command Bar draw it: the chosen
+    /// look, with the cast giving way to the minimal body while the Office
+    /// edition is off (NotchOfficeEdition.companionStyle).
     static func look(in defaults: UserDefaults = .standard) -> NotchMascotLook {
+        var look = storedLook(in: defaults)
+        look.style = NotchOfficeEdition.companionStyle(look.style, in: defaults)
+        return look
+    }
+
+    /// The look as chosen in Settings, whatever the Office edition says.
+    static func storedLook(in defaults: UserDefaults = .standard) -> NotchMascotLook {
         NotchMascotLook(
             style: NotchMascotStyle(rawValue: defaults.string(forKey: DefaultsKey.notchMascotStyle) ?? "") ?? .minimal,
             shape: NotchMascotShape(rawValue: defaults.string(forKey: DefaultsKey.notchMascotShape) ?? "") ?? .ball,

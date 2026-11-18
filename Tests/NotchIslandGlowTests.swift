@@ -13,6 +13,9 @@ enum NotchIslandGlowTests {
         restingTone(suite)
         stripVeil(suite)
         preferences(suite)
+        noticePrecedence(suite)
+        glowPlan(suite)
+        glowPresence(suite)
     }
 
     private static func precedence(_ suite: TestSuite) {
@@ -210,5 +213,112 @@ enum NotchIslandGlowTests {
         defaults.set(false, forKey: DefaultsKey.notchIdleGlowEnabled)
         suite.expect(!NotchIdleGlowPreferences.enabled(in: defaults), "the switch turns the companion's glow off")
         suite.expect(DefaultsKey.notchIdleGlowEnabled == "notchIdleGlowEnabled", "the switch keeps its documented name")
+    }
+
+    /// An Office notice glows in its own colours, under the same switch as
+    /// the companion's, and never over the song's own strip.
+    private static func noticePrecedence(_ suite: TestSuite) {
+        let companion = NotchIslandGlow.notice(office: true, agent: nil, songWorn: false, idleAllowed: true)
+        suite.expect(companion == .companion, "an Office notice with no song wears the companion's colours")
+        suite.expect(NotchIslandGlow.notice(office: true, agent: nil, songWorn: true, idleAllowed: true) == .song,
+                     "an Office notice wears the playing song's colours")
+        suite.expect(NotchIslandGlow.notice(office: true, agent: .codex, songWorn: true, idleAllowed: true) == .agent(.codex),
+                     "an agent's notice wears that agent's colours, song or not")
+        suite.expect(NotchIslandGlow.notice(office: false, agent: .claude, songWorn: true, idleAllowed: true) == nil,
+                     "without its Office moment a notice stays exactly the plain black notice")
+        suite.expect(NotchIslandGlow.notice(office: true, agent: nil, songWorn: true, idleAllowed: false) == nil,
+                     "the glow switch and Low Power Mode keep a notice black too")
+        for agentStrip in [false, true] {
+            for companionRests in [false, true] {
+                suite.expect(NotchIslandGlow.closed(agentStrip: agentStrip, songGlows: false, companionRests: companionRests,
+                                                    idleAllowed: true, notice: .companion) == .notice(.companion),
+                             "a notice is the closed island's news: agents \(agentStrip), companion \(companionRests)")
+            }
+        }
+        suite.expect(NotchIslandGlow.closed(agentStrip: false, songGlows: true, companionRests: false, idleAllowed: true,
+                                            notice: .song) == .song,
+                     "a volume change over the glowing song strip keeps the song's own glow")
+        suite.expect(NotchIslandGlow.closed(agentStrip: false, songGlows: false, companionRests: true, idleAllowed: true,
+                                            notice: nil) == .idle,
+                     "with no notice glow the closed island keeps its own precedence")
+    }
+
+    /// How far the island has come along a resize, read from the size drawn.
+    private static func glowPlan(_ suite: TestSuite) {
+        let close = NotchGlowPlan(id: 1, start: CGSize(width: 480, height: 228), end: CGSize(width: 298, height: 32))
+        suite.expect(close.progress(at: CGSize(width: 480, height: 228)) == 0
+                        && close.progress(at: CGSize(width: 298, height: 32)) == 1,
+                     "a resize runs from 0 at its start to 1 at its end")
+        suite.expect(abs(close.progress(at: CGSize(width: 389, height: 130)) - 0.5) < 0.01,
+                     "halfway along the side that travels further is halfway")
+        suite.expect(close.progress(at: CGSize(width: 290, height: 20)) == 1
+                        && close.progress(at: CGSize(width: 500, height: 240)) == 0,
+                     "a spring's swing past either end reads as that end")
+        let wider = NotchGlowPlan(id: 2, start: CGSize(width: 298, height: 32), end: CGSize(width: 448, height: 32))
+        suite.expect(abs(wider.progress(at: CGSize(width: 373, height: 32)) - 0.5) < 0.01,
+                     "a strip widening at one height is read by its width")
+        suite.expect(NotchGlowPlan(id: 3, start: CGSize(width: 298, height: 32), end: CGSize(width: 298, height: 32))
+                        .progress(at: CGSize(width: 100, height: 10)) == 1,
+                     "a resize with nowhere to go is already there")
+    }
+
+    /// The glows leave and arrive with the island's own resize, and fade in
+    /// place only when the island stays still.
+    private static func glowPresence(_ suite: TestSuite) {
+        let settled = NotchGlowPlan(id: 1, start: CGSize(width: 480, height: 228), end: CGSize(width: 480, height: 228))
+        let closing = NotchGlowPlan(id: 2, start: CGSize(width: 480, height: 228), end: CGSize(width: 298, height: 32))
+        var open = NotchGlowPresence(), closed = NotchGlowPresence()
+        _ = open.step(shown: true, plan: settled, progress: 1, now: 0)
+        let shownOpen = open.step(shown: true, plan: settled, progress: 1, now: 1)
+        suite.expect(shownOpen.mounted && shownOpen.opacity == 1 && !shownOpen.fades, "a shown glow settles at full strength")
+
+        // The island closes: the open glow is still whole while the island
+        // has not moved (the floating controls withdraw first), and the
+        // closed island's glow has not yet arrived.
+        let leaving = open.step(shown: false, plan: closing, progress: 0, now: 1)
+        let arriving = closed.step(shown: true, plan: closing, progress: 0, now: 1)
+        suite.expect(leaving.mounted && leaving.opacity == 1 && !leaving.fades,
+                     "closing keeps the open glow whole until the island starts to shrink: no black box")
+        suite.expect(arriving.mounted && arriving.opacity == 0, "the closed island's glow arrives from nothing")
+        let halfLeaving = open.step(shown: false, plan: closing, progress: 0.5, now: 1.2)
+        let halfArriving = closed.step(shown: true, plan: closing, progress: 0.5, now: 1.2)
+        suite.expect(abs(halfLeaving.opacity - 0.5) < 0.001 && abs(halfArriving.opacity - 0.5) < 0.001,
+                     "halfway through the resize the two glows cross halfway")
+        let swung = open.step(shown: false, plan: closing, progress: 0.4, now: 1.25)
+        suite.expect(abs(swung.opacity - 0.5) < 0.001, "a spring's swing back never brings a leaving glow back")
+        let gone = open.step(shown: false, plan: closing, progress: 1, now: 1.5)
+        let there = closed.step(shown: true, plan: closing, progress: 1, now: 1.5)
+        suite.expect(!gone.mounted && gone.opacity == 0, "at the closed size the open glow is gone and no longer drawn")
+        suite.expect(there.mounted && there.opacity == 1 && !there.fades, "and the closed island's glow is whole")
+
+        // The pointer returns halfway through a close: the island reopens
+        // from where it stood, and the glow carries on from its strength there.
+        var reversed = NotchGlowPresence()
+        _ = reversed.step(shown: true, plan: settled, progress: 1, now: 0)
+        _ = reversed.step(shown: true, plan: settled, progress: 1, now: 1)
+        _ = reversed.step(shown: false, plan: closing, progress: 0, now: 1)
+        _ = reversed.step(shown: false, plan: closing, progress: 0.4, now: 1.1)
+        let reopening = NotchGlowPlan(id: 3, start: CGSize(width: 407, height: 150), end: CGSize(width: 480, height: 228))
+        let back = reversed.step(shown: true, plan: reopening, progress: 0, now: 1.1)
+        suite.expect(abs(back.opacity - 0.6) < 0.001, "a reversed resize carries the glow on from where it stood")
+        let whole = reversed.step(shown: true, plan: reopening, progress: 1, now: 1.4)
+        suite.expect(whole.opacity == 1 && whole.mounted, "and the reopened island has it whole again")
+
+        // Nothing resizes: the glow fades in place, then is no longer drawn.
+        var still = NotchGlowPresence()
+        _ = still.step(shown: true, plan: settled, progress: 1, now: 0)
+        _ = still.step(shown: true, plan: settled, progress: 1, now: 1)
+        let fading = still.step(shown: false, plan: settled, progress: 1, now: 2)
+        suite.expect(fading.mounted && fading.fades && fading.opacity == 0,
+                     "with the island still, a glow eases out on the song's fade")
+        suite.expect(still.fadeEnd.map { abs($0 - (2 + NotchGlowPresence.fade)) < 0.000_1 } == true,
+                     "the fade in place runs the song's fade")
+        let faded = still.step(shown: false, plan: settled, progress: 1, now: 2 + NotchGlowPresence.fade)
+        suite.expect(!faded.mounted && still.fadeEnd == nil, "once faded it is no longer drawn")
+
+        // A change late in a resize has too little of it left to follow.
+        var late = NotchGlowPresence()
+        let lateFrame = late.step(shown: true, plan: closing, progress: 0.9, now: 3)
+        suite.expect(lateFrame.fades && lateFrame.opacity == 1, "a glow arriving at the end of a resize fades in place")
     }
 }

@@ -108,6 +108,41 @@ struct NotchNoticeView: View {
                                     caption: NotchOfficeMoments.captionUnderReading(cue) ? officeCaption : nil,
                                     trigger: officeKey)
                 .transaction { $0.disablesAnimations = false }
+        } else if let cue = notice.office, cue.kind == .copy {
+            // The copier, "Copied" large beside it and the caption under it.
+            // Another copy replays the copier and deals the next caption.
+            NotchOfficeCopyReading(cue: cue, title: notice.title, caption: officeCaption, trigger: officeKey)
+                .transaction { $0.disablesAnimations = false }
+        } else if let cue = notice.office, let beat = cue.agentBeat, let key = notice.officeAgentKey {
+            // Employee of the Month: the agent's mark in its ring closing in
+            // the moment's colour, the words large beside it and the caption
+            // under them. The companion keeps its cameo where the notice has one.
+            // A moment replacing another, as a second agent finishing, starts
+            // afresh in place: nothing of the last one shows in its first frame.
+            HStack(spacing: NotchOfficeMoments.agentMarkGap) {
+                if companionReaction != nil {
+                    mark
+                } else {
+                    NotchOfficeAgentBadge(beat: beat, provider: notice.agent, trigger: key)
+                        .notchPunchIn(key)
+                        .id(key)
+                        .transition(.identity)
+                }
+                NotchOfficeAgentWords(title: notice.title, caption: officeCaption, beat: beat, trigger: key)
+                    .notchPunchIn(key)
+                    .id(key)
+                    .transition(.identity)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .transaction { $0.disablesAnimations = false }
+        } else if let cue = notice.office, let on = cue.edition {
+            // The Office edition's mug, its title large and the caption under
+            // it. Each tap draws it anew, so the move replays from its start
+            // and the last one never lingers under it.
+            NotchOfficeEditionReading(on: on, title: notice.title, caption: officeCaption, trigger: officeKey)
+                .id(officeKey)
+                .transition(.identity)
+                .transaction { $0.disablesAnimations = false }
         } else {
             HStack(spacing: 8) {
                 mark
@@ -234,6 +269,12 @@ struct NotchNoticeView: View {
                     .notchPunchIn(officeKey)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
+        } else if notice.office?.edition != nil {
+            // On or Off, at the far end.
+            NotchOfficeEditionStateText(state: notice.detail, trigger: officeKey)
+                .id(officeKey)
+                .transition(.identity)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         } else if let content = notice.notification {
             // At the far end, as far from it as the sender is from the other
             // one, with the air that fits it beside the camera.
@@ -248,9 +289,16 @@ struct NotchNoticeView: View {
             NotchOfficeLevelMeter(cue: cue, level: level,
                                   caption: NotchOfficeMoments.captionUnderReading(cue) ? nil : officeCaption,
                                   trigger: officeKey)
+        } else if notice.office?.agentBeat != nil, let key = notice.officeAgentKey {
+            // The turn's time and cost, the share left or the sum spent.
+            NotchOfficeAgentReading(detail: notice.detail, trigger: key)
         } else if let level = notice.level {
             NotchMeter(value: level, height: 5, tint: tint, colors: levelColors)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: level)
+                .transaction { $0.disablesAnimations = false }
+        } else if notice.office?.kind == .copy {
+            // What was copied, in a word, never the copy itself.
+            NotchOfficeCopySummary(summary: notice.detail, trigger: officeKey)
                 .transaction { $0.disablesAnimations = false }
         } else {
             Text(notice.detail)
@@ -303,7 +351,16 @@ struct NotchExpandedLevelView: View {
     var width: CGFloat? = nil
 
     var body: some View {
-        if let cue = notice.office, cue.isLevel, let level = notice.level {
+        if let cue = notice.office, cue.edition != nil {
+            // The Office edition's mug, in the row's own sizes.
+            let trigger = "\(cue.kind)|\(notice.title)"
+            NotchOfficeExpandedEdition(cue: cue, title: notice.title, detail: notice.detail, width: width,
+                                       trigger: trigger)
+                .id(trigger)
+                .transition(.identity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(notice.accessibilityText)
+        } else if let cue = notice.office, cue.isLevel, let level = notice.level {
             // Cafe Disco, or the blinds, in the row's own sizes.
             NotchOfficeExpandedLevel(cue: cue, level: level, reading: notice.detail, showsReading: showsDetail,
                                      captionFits: NotchOfficeMoments.expandedCaptionFits(cue, width: width),
