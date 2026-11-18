@@ -20,6 +20,10 @@ enum NotchOfficeMomentsTests {
         captionContracts(suite)
         measureContracts(suite)
         capsuleContracts(suite)
+        volumeContracts(suite)
+        brightnessContracts(suite)
+        meterContracts(suite)
+        levelMeasureContracts(suite)
     }
 
     private static func content(_ app: String, _ title: String = "Jane", subtitle: String = "",
@@ -449,5 +453,199 @@ enum NotchOfficeMomentsTests {
                      "a message that already fills the capsule is never cut for the role")
         let plain = NotchOfficeMoments.capsuleContent(nil, base: base, maximum: Layout.Maximum.notice, geometry: standard)
         suite.expect(plain == base, "a notice without a moment measures as it always has")
+        let level = Layout.noticeContent(title: "Volume", detail: "50%", level: true)
+        let volume = NotchOfficeMoments.volumeCue(level: 0.5, language: .enUS)
+        let brightness = NotchOfficeMoments.brightnessCue(level: 1, language: .enUS)
+        suite.expect(NotchOfficeMoments.capsuleCaption(volume, content: level, maximum: Layout.Maximum.notice,
+                                                       geometry: standard) == nil
+                     && NotchOfficeMoments.capsuleContent(volume, base: level, maximum: Layout.Maximum.notice,
+                                                          geometry: standard) == level
+                     && NotchOfficeMoments.capsuleContent(brightness, base: level, maximum: Layout.Maximum.notice,
+                                                          geometry: standard) == level,
+                     "a level's capsule keeps its meter and reading as they were, so a held key never resizes it")
+    }
+
+    // MARK: - Volume and brightness
+
+    /// Cafe Disco's bands and captions, read from the percentage the notice shows.
+    private static func volumeContracts(_ suite: TestSuite) {
+        typealias Moments = NotchOfficeMoments
+        let bands: [(Int, NotchOfficeVolumeBand)] = [(-3, .mute), (0, .mute), (1, .low), (33, .low), (34, .mid),
+                                                     (66, .mid), (67, .high), (99, .high), (100, .full), (140, .full)]
+        suite.expect(bands.allSatisfy { Moments.volumeBand(percent: $0.0) == $0.1 },
+                     "silence is mute, 1-33 low, 34-66 mid, 67-99 high and only 100 full")
+        let captions: [NotchOfficeVolumeBand: String] = [
+            .mute: "Jinx.", .low: "Inside voices.", .mid: "Threat level: mid-tempo.",
+            .high: "Corporate can hear this.", .full: "That's what she synced.",
+        ]
+        suite.expect(NotchOfficeVolumeBand.allCases.allSatisfy { Moments.caption(for: $0) == captions[$0] },
+                     "each band has its caption")
+        suite.expect(Set(captions.values).count == captions.count,
+                     "no two bands share a caption, so the caption's words say which band it is")
+        suite.expect(Moments.percent(0.564) == 56 && Moments.percent(0.996) == 100 && Moments.percent(1.4) == 100
+                     && Moments.percent(-1) == 0 && Moments.percent(.nan) == 0,
+                     "the band is read from the percentage the notice shows")
+        let cue = Moments.volumeCue(level: 0.56, language: .enUS)
+        suite.expect(cue.kind == .volume && cue.isLevel && cue.caption == "Threat level: mid-tempo."
+                     && cue.level == 0.56 && !cue.opensCard && !cue.showsMug,
+                     "a volume moment stays in the strip with its band's caption")
+        suite.expect(Moments.volumeCue(level: 0, language: .enUS).caption == "Jinx."
+                     && Moments.volumeCue(level: 1, language: .enUS).caption == "That's what she synced."
+                     && Moments.volumeCue(level: .nan, language: .enUS).level == 0,
+                     "muted reads jinx, and only all the way up is synced")
+        // A held key steps through every percentage: the caption changes
+        // exactly where the band does, and nowhere else.
+        let steps = (0...100).map { Moments.volumeCue(level: Double($0) / 100, language: .enUS) }
+        let changes = zip(steps, steps.dropFirst()).filter { $0.caption != $1.caption }.count
+        suite.expect(changes == 4 && Set(steps.map(\.widestCaption)).count == 1,
+                     "under a held key the caption changes only at the four band edges, and the widest never changes")
+        let widest = cue.widestCaption ?? ""
+        suite.expect(captions.values.allSatisfy { Moments.captionWidth($0) <= Moments.captionWidth(widest) },
+                     "the side is sized for the widest caption of all the bands")
+        let german = Moments.volumeCue(level: 0.56, language: .de)
+        suite.expect(german.caption == nil && german.widestCaption == nil && german.kind == .volume,
+                     "other languages keep the boombox and the meter and drop the joke")
+        suite.expect(captions.values.allSatisfy { $0.count <= 28 }, "every volume caption is at most 28 characters")
+    }
+
+    /// The blinds: a caption only at either end of the range.
+    private static func brightnessContracts(_ suite: TestSuite) {
+        typealias Moments = NotchOfficeMoments
+        let bands: [(Int, NotchOfficeBrightnessBand)] = [(0, .dark), (5, .dark), (10, .dark), (11, .lit), (50, .lit),
+                                                         (99, .lit), (100, .full)]
+        suite.expect(bands.allSatisfy { Moments.brightnessBand(percent: $0.0) == $0.1 },
+                     "ten percent or below is dark, a hundred is full, and the rest is lit")
+        suite.expect(Moments.caption(for: NotchOfficeBrightnessBand.dark) == "Lights out. Go home."
+                     && Moments.caption(for: NotchOfficeBrightnessBand.full) == "Fluorescent. As intended."
+                     && Moments.caption(for: NotchOfficeBrightnessBand.lit) == nil,
+                     "only the ends of the range earn a caption")
+        let dim = Moments.brightnessCue(level: 0.05, language: .enUS)
+        let middle = Moments.brightnessCue(level: 0.5, language: .enUS)
+        let full = Moments.brightnessCue(level: 1, language: .enUS)
+        suite.expect(dim.kind == .brightness && dim.isLevel && dim.caption == "Lights out. Go home."
+                     && middle.caption == nil && full.caption == "Fluorescent. As intended."
+                     && Set([dim, middle, full].map(\.widestCaption)) == ["Fluorescent. As intended."],
+                     "the middle has no caption but keeps room for the widest")
+        let german = Moments.brightnessCue(level: 0.05, language: .de)
+        suite.expect(german.caption == nil && german.widestCaption == nil,
+                     "other languages keep the blinds and drop the joke")
+        suite.expect([dim, full].compactMap(\.caption).allSatisfy { $0.count <= 28 },
+                     "every brightness caption is at most 28 characters")
+    }
+
+    /// The VU meter and the boombox's cones.
+    private static func meterContracts(_ suite: TestSuite) {
+        typealias Moments = NotchOfficeMoments
+        let heights = (0..<Moments.vuSegments).map(Moments.vuHeight)
+        suite.expect(Moments.vuSegments == 9 && heights.first == 6 && heights.last == 18
+                     && zip(heights, heights.dropFirst()).allSatisfy { $1 > $0 }
+                     && Moments.vuWidth == 9 * 3 + 8 * 2,
+                     "nine bars three points wide, two apart, stepping from 6 to 18 points tall")
+        suite.expect(Moments.vuLit(0) == 0 && Moments.vuLit(0.01) == 1 && Moments.vuLit(0.5) == 5
+                     && Moments.vuLit(0.85) == 8 && Moments.vuLit(1) == 9 && Moments.vuLit(1.4) == 9
+                     && Moments.vuLit(.nan) == 0 && Moments.vuLit(-0.2) == 0,
+                     "any sound lights the first segment and all the way up lights the ninth")
+        let lit = (0...100).map { Moments.vuLit(Double($0) / 100) }
+        suite.expect(zip(lit, lit.dropFirst()).allSatisfy { $1 >= $0 && $1 - $0 <= 1 },
+                     "turning it up lights the segments one at a time, in order")
+        suite.expect(!Moments.vuIsHot(6) && Moments.vuIsHot(7) && Moments.vuIsHot(8), "the top two are the hot ones")
+
+        func rgb(_ color: NSColor) -> [Int] {
+            let color = color.usingColorSpace(.sRGB) ?? color
+            return [color.redComponent, color.greenComponent, color.blueComponent].map { Int(($0 * 255).rounded()) }
+        }
+        let pink = NSColor(srgbRed: 0.96, green: 0.33, blue: 0.47, alpha: 1)
+        let indigo = NSColor(srgbRed: 0.36, green: 0.42, blue: 0.98, alpha: 1)
+        let teal = NSColor(srgbRed: 0.18, green: 0.85, blue: 0.75, alpha: 1)
+        let song = Moments.vuColors([pink, indigo])
+        suite.expect(song.count == 9 && rgb(song[0]) == rgb(pink) && rgb(song[6]) == rgb(indigo)
+                     && rgb(song[7]) == [0xC0, 0x39, 0x2B] && rgb(song[8]) == [0xC0, 0x39, 0x2B],
+                     "the song's colours run low to high across the cool segments, and the top two are beet")
+        let middle = rgb(song[3])
+        suite.expect(middle != rgb(pink) && middle != rgb(indigo)
+                     && zip(middle, zip(rgb(pink), rgb(indigo))).allSatisfy { $0 >= min($1.0, $1.1) && $0 <= max($1.0, $1.1) },
+                     "the segments between blend from one colour to the next")
+        let three = Moments.vuColors([teal, pink, indigo])
+        suite.expect(rgb(three[0]) == rgb(teal) && rgb(three[3]) == rgb(pink) && rgb(three[6]) == rgb(indigo),
+                     "a palette of three passes through each colour in its order")
+        suite.expect(Moments.vuColors([teal]).prefix(7).allSatisfy { rgb($0) == rgb(teal) }
+                     && Moments.vuColors([]).prefix(7).allSatisfy { rgb($0) == [255, 255, 255] }
+                     && rgb(Moments.vuColors([])[8]) == [0xC0, 0x39, 0x2B],
+                     "one colour fills the cool segments, none leaves them white, and the hot ones stay beet")
+
+        suite.expect(Moments.coneScale(0) == 1 && abs(Moments.coneScale(1) - 1.35) < 0.0001
+                     && abs(Moments.coneScale(0.5) - 1.175) < 0.0001 && Moments.coneScale(3) == Moments.coneScale(1)
+                     && Moments.coneScale(.nan) == 1 && abs(Moments.coneKick - 1.12) < 0.0001,
+                     "the cones swell from 1 to 1.35 with the level and kick 12% on a press")
+        suite.expect(Moments.coneKicks(at: 10, lastKick: nil) && !Moments.coneKicks(at: 10.1, lastKick: 10)
+                     && Moments.coneKicks(at: 10 + Moments.coneKickDuration, lastKick: 10)
+                     && Moments.coneKicks(at: 5, lastKick: 10),
+                     "a press kicks once the last kick has played out, and a clock that went back never blocks one")
+        // A key held for a second, stepping every 60 ms: the steps inside a
+        // kick are absorbed, so the cones pump in time rather than restart.
+        var last: TimeInterval?
+        var kicks = 0
+        for step in 0..<17 {
+            let now = Double(step) * 0.06
+            if Moments.coneKicks(at: now, lastKick: last) { last = now; kicks += 1 }
+        }
+        suite.expect(kicks == 5, "a held key's seventeen steps kick the cones five times, not seventeen")
+    }
+
+    /// The island holds still under a held key and is exactly as upstream with the moments off.
+    private static func levelMeasureContracts(_ suite: TestSuite) {
+        let geometry = NotchGeometry(screen: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32, cameraWidth: 185)
+        func volume(_ percent: Int, _ language: AppLanguage? = .enUS) -> NotchNotice {
+            let level = Double(percent) / 100
+            return NotchNotice(event: .volume, title: "Volume", detail: "\(percent)%", symbol: "speaker.wave.2.fill",
+                               level: level,
+                               office: language.map { NotchOfficeMoments.volumeCue(level: level, language: $0) })
+        }
+        func brightness(_ percent: Int, _ language: AppLanguage? = .enUS) -> NotchNotice {
+            let level = Double(percent) / 100
+            return NotchNotice(event: .brightness, title: "Brightness", detail: "\(percent)%", symbol: "sun.max.fill",
+                               level: level,
+                               office: language.map { NotchOfficeMoments.brightnessCue(level: level, language: $0) })
+        }
+        let volumes = (0...100).map { volume($0).wings(in: geometry) }
+        let brightnesses = (0...100).map { brightness($0).wings(in: geometry) }
+        suite.expect(volumes.allSatisfy { $0 == volumes[0] } && brightnesses.allSatisfy { $0 == brightnesses[0] },
+                     "a held key never resizes the island: every reading and band takes the same sides")
+
+        let plain = volume(56, nil).wings(in: geometry)
+        let plainWing = ceil(NotchNotice.levelInset + 18 + 8
+                             + ("100%" as NSString).size(withAttributes: [
+                                 .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)]).width)
+        suite.expect(plain == NotchNoticeWings(leading: plainWing, trailing: plainWing)
+                     && brightness(56, nil).wings(in: geometry) == plain,
+                     "with the moments off, a level measures exactly as upstream")
+
+        let cafe = volume(56).wings(in: geometry)
+        let widest = NotchOfficeMoments.captionWidth(NotchOfficeMoments.volumeCue(level: 0.5, language: .enUS)
+                                                        .widestCaption ?? "")
+        suite.expect(cafe.leading >= NotchNotice.levelInset + NotchOfficeMoments.miniBoombox.width
+                        + NotchOfficeMoments.levelMarkGap + widest
+                     && cafe.trailing >= NotchNotice.levelInset + NotchOfficeMoments.vuWidth
+                     && cafe.trailing >= plain.trailing && cafe.leading > plain.leading,
+                     "the boombox and the widest caption fit one side, the VU meter the other")
+        let german = volume(56, .de).wings(in: geometry)
+        suite.expect(german.leading < cafe.leading && german.leading >= NotchNotice.levelInset
+                        + NotchOfficeMoments.miniBoombox.width + NotchOfficeMoments.levelReadingWidth()
+                     && german.trailing == cafe.trailing,
+                     "without the joke the reading's side is only as wide as the boombox and the reading")
+        let short = NotchGeometry(screen: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 24, cameraWidth: 185)
+        suite.expect(volume(56).wings(in: short) == volume(56, .de).wings(in: short),
+                     "a strip too short for the caption keeps no room for it")
+
+        let blinds = brightness(50).wings(in: geometry)
+        let dark = NotchOfficeMoments.captionWidth("Fluorescent. As intended.")
+        suite.expect(blinds.leading == brightness(50, .de).wings(in: geometry).leading
+                     && blinds.trailing >= NotchNotice.levelInset + dark && blinds.trailing > plain.trailing,
+                     "brightness keeps a narrow reading side and reads its caption under the meter")
+        suite.expect(NotchOfficeMoments.captionUnderReading(NotchOfficeMoments.volumeCue(level: 0, language: .enUS))
+                     && !NotchOfficeMoments.captionUnderReading(NotchOfficeMoments.brightnessCue(level: 0, language: .enUS)),
+                     "volume's caption reads under its reading, brightness's under its meter")
+        suite.expect(volume(56).accessibilityText == "Volume, 56%" && volume(56).previewContentHeight(width: 400) == 0,
+                     "VoiceOver reads only the volume, and the moment never opens a card")
     }
 }

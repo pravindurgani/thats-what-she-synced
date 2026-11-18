@@ -18,6 +18,17 @@ enum NotchOfficeChannel: Equatable {
     case message, call
 }
 
+/// Where a volume reading sits, read from the percentage the notice shows:
+/// silent, quiet, middling, loud, or all the way up.
+enum NotchOfficeVolumeBand: Equatable, CaseIterable {
+    case mute, low, mid, high, full
+}
+
+/// Where a brightness reading sits: only its two ends earn a caption.
+enum NotchOfficeBrightnessBand: Equatable, CaseIterable {
+    case dark, lit, full
+}
+
 /// The Office treatment one notice carries. It is attached where the notice
 /// is raised, and only while the Office moments are on, so a notice without
 /// one draws exactly as it always has.
@@ -31,6 +42,10 @@ struct NotchOfficeCue: Equatable {
         /// An event starting in five minutes, where no countdown strip
         /// carries the caption: a notice in the strip, never a card.
         case meetingSoon
+        /// "Cafe Disco": the volume keys, with a boombox and a VU meter.
+        case volume
+        /// The display's brightness, with a window's blinds.
+        case brightness
     }
 
     let kind: Kind
@@ -43,9 +58,16 @@ struct NotchOfficeCue: Equatable {
     var accent: NotchCalendarColor?
     /// Where a meeting starting is held, when its event says.
     var place: String?
+    /// The longest caption a level moment can show as its reading moves, so
+    /// its side is as wide as it will ever need and holds still while a key
+    /// is held. Nil where the app is not in English.
+    var widestCaption: String?
 
     /// A call and a meeting starting open the island into a card of their own.
     var opensCard: Bool { kind == .call || kind == .meeting }
+
+    /// The volume and brightness moments, drawn in a level notice's layout.
+    var isLevel: Bool { kind == .volume || kind == .brightness }
 
     /// The battery moments draw the mug beside the percentage.
     var showsMug: Bool {
@@ -508,7 +530,9 @@ extension NotchOfficeMoments {
     /// room the menu bar leaves.
     static func capsuleCaption(_ cue: NotchOfficeCue?, content: CGFloat, maximum: CGFloat,
                                geometry: NotchGeometry) -> String? {
-        guard let caption = cue?.caption else { return nil }
+        // A level's capsule keeps its meter and reading as they always were:
+        // a caption changing with the band would resize it under a held key.
+        guard let caption = cue?.caption, cue?.isLevel != true else { return nil }
         let layout = NotchCapsuleLayout.self
         let side = layout.side(geometry)
         let wanted = content + layout.groupSpacing + captionWidth(caption, font: capsuleCaptionFont(geometry))
@@ -525,6 +549,191 @@ extension NotchOfficeMoments {
             return content
         }
         return content + NotchCapsuleLayout.groupSpacing + captionWidth(caption, font: capsuleCaptionFont(geometry))
+    }
+}
+
+// MARK: - Volume and brightness
+
+/// "Cafe Disco": the volume keys play a mini boombox whose cones swell with
+/// the level and kick with each press, a nine-segment VU meter in the song's
+/// colours with two beet segments at the top, and a caption for each band.
+/// Brightness opens a window's blinds and earns a caption only at its ends.
+/// The caption changes only when the band does, and the sides are sized for
+/// the widest caption, so a held key moves neither.
+extension NotchOfficeMoments {
+    /// The whole percentage a level notice shows, as its reading is written.
+    static func percent(_ level: Double) -> Int {
+        guard level.isFinite else { return 0 }
+        return Int((min(1, max(0, level)) * 100).rounded())
+    }
+
+    // MARK: Bands and captions
+
+    static func volumeBand(percent: Int) -> NotchOfficeVolumeBand {
+        switch percent {
+        case ...0: return .mute
+        case 1...33: return .low
+        case 34...66: return .mid
+        case 67...99: return .high
+        default: return .full
+        }
+    }
+
+    static func caption(for band: NotchOfficeVolumeBand) -> String {
+        switch band {
+        case .mute: return "Jinx."
+        case .low: return "Inside voices."
+        case .mid: return "Threat level: mid-tempo."
+        case .high: return "Corporate can hear this."
+        case .full: return "That's what she synced."
+        }
+    }
+
+    static func brightnessBand(percent: Int) -> NotchOfficeBrightnessBand {
+        percent <= 10 ? .dark : percent >= 100 ? .full : .lit
+    }
+
+    static func caption(for band: NotchOfficeBrightnessBand) -> String? {
+        switch band {
+        case .dark: return "Lights out. Go home."
+        case .lit: return nil
+        case .full: return "Fluorescent. As intended."
+        }
+    }
+
+    /// The caption that takes the most room, which a level's side is sized for.
+    static func widest(_ captions: [String]) -> String? {
+        captions.max { captionWidth($0) < captionWidth($1) }
+    }
+
+    /// `level` is what the notice shows, 0 to 1, a muted output reading 0.
+    static func volumeCue(level: Double, language: AppLanguage) -> NotchOfficeCue {
+        let captions = showsCaptions(in: language)
+        return NotchOfficeCue(kind: .volume,
+                              caption: captions ? caption(for: volumeBand(percent: percent(level))) : nil,
+                              level: min(1, max(0, level.isFinite ? level : 0)),
+                              widestCaption: captions ? widest(NotchOfficeVolumeBand.allCases.map(caption(for:))) : nil)
+    }
+
+    static func brightnessCue(level: Double, language: AppLanguage) -> NotchOfficeCue {
+        let captions = showsCaptions(in: language)
+        return NotchOfficeCue(kind: .brightness,
+                              caption: captions ? caption(for: brightnessBand(percent: percent(level))) : nil,
+                              level: min(1, max(0, level.isFinite ? level : 0)),
+                              widestCaption: captions ? widest(NotchOfficeBrightnessBand.allCases.compactMap(caption(for:)))
+                                  : nil)
+    }
+
+    // MARK: The boombox's cones
+
+    /// The cones at silence and all the way up; each press kicks them 12%.
+    static let coneRange = (rest: CGFloat(1), loud: CGFloat(1.35))
+    static let coneKick: CGFloat = 1.12
+    /// One kick, out and back. A held key's steps arriving inside it are
+    /// absorbed, so the cones pump in time instead of restarting each step.
+    static let coneKickDuration: TimeInterval = 0.22
+
+    static func coneScale(_ level: Double) -> CGFloat {
+        let level = level.isFinite ? CGFloat(min(1, max(0, level))) : 0
+        return coneRange.rest + (coneRange.loud - coneRange.rest) * level
+    }
+
+    /// Whether a step at `now` kicks the cones, given when they last kicked:
+    /// only once the last kick has played out.
+    static func coneKicks(at now: TimeInterval, lastKick: TimeInterval?) -> Bool {
+        guard let lastKick else { return true }
+        return now - lastKick >= coneKickDuration || now < lastKick
+    }
+
+    // MARK: The VU meter
+
+    static let vuSegments = 9
+    /// The top segments, lit in beet, whatever the song.
+    static let vuHotSegments = 2
+    static let vuBar: CGFloat = 3
+    static let vuGap: CGFloat = 2
+    static let vuHeights = (lowest: CGFloat(6), highest: CGFloat(18))
+    static let vuHot = NSColor(srgbRed: 0xC0 / 255, green: 0x39 / 255, blue: 0x2B / 255, alpha: 1)
+
+    static var vuWidth: CGFloat { CGFloat(vuSegments) * vuBar + CGFloat(vuSegments - 1) * vuGap }
+
+    /// Each segment a step taller than the last, from the lowest to the highest.
+    static func vuHeight(_ segment: Int) -> CGFloat {
+        let step = (vuHeights.highest - vuHeights.lowest) / CGFloat(vuSegments - 1)
+        return vuHeights.lowest + step * CGFloat(min(vuSegments - 1, max(0, segment)))
+    }
+
+    /// How many segments a level lights: any sound lights the first, and only
+    /// the top ninth lights them all.
+    static func vuLit(_ level: Double) -> Int {
+        guard level.isFinite, level > 0 else { return 0 }
+        let lit = Int((min(1, level) * Double(vuSegments) - 1e-9).rounded(.up))
+        return min(vuSegments, max(1, lit))
+    }
+
+    static func vuIsHot(_ segment: Int) -> Bool { segment >= vuSegments - vuHotSegments }
+
+    /// The segments' colours, low to high: the moment's palette spread across
+    /// the cool ones in its own order, then beet for the hot ones.
+    static func vuColors(_ palette: [NSColor]) -> [NSColor] {
+        let marks = palette.compactMap { $0.usingColorSpace(.sRGB) }
+        let cool = vuSegments - vuHotSegments
+        return (0..<vuSegments).map { segment in
+            guard !vuIsHot(segment) else { return vuHot }
+            guard let first = marks.first else { return .white }
+            guard marks.count > 1, cool > 1 else { return first }
+            let position = Double(segment) / Double(cool - 1) * Double(marks.count - 1)
+            let lower = min(marks.count - 2, Int(position))
+            let fraction = CGFloat(position - Double(lower))
+            let (from, to) = (marks[lower], marks[lower + 1])
+            func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * fraction }
+            return NSColor(srgbRed: mix(from.redComponent, to.redComponent),
+                           green: mix(from.greenComponent, to.greenComponent),
+                           blue: mix(from.blueComponent, to.blueComponent),
+                           alpha: mix(from.alphaComponent, to.alphaComponent))
+        }
+    }
+
+    // MARK: Measures
+
+    /// The boombox beside the volume reading: the connect card's, scaled.
+    static let miniBoombox = CGSize(width: 22, height: 13)
+    /// The window beside the brightness reading.
+    static let blindsSide: CGFloat = 18
+    /// The reading, large: the real information comes first.
+    static let levelReadingFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    static let levelMarkGap: CGFloat = 7
+    /// Air between a level moment's content and the camera.
+    static let levelAir: CGFloat = 8
+
+    static func levelMarkWidth(_ cue: NotchOfficeCue) -> CGFloat {
+        cue.kind == .volume ? miniBoombox.width : blindsSide
+    }
+
+    static func levelReadingWidth(_ reading: String = "100%") -> CGFloat {
+        ceil((reading as NSString).size(withAttributes: [.font: levelReadingFont]).width)
+    }
+
+    /// Whether a level moment's caption reads under its reading, beside the
+    /// mark. Volume's does: it has one in every band. Brightness's only
+    /// comes at the ends, so it reads under the meter, and the reading's
+    /// side stays as narrow as the reading through the middle of the range.
+    static func captionUnderReading(_ cue: NotchOfficeCue) -> Bool { cue.kind == .volume }
+
+    /// A level moment's sides beside the camera, never narrower than the
+    /// plain notice's `plain`: the mark and the widest reading on one, the
+    /// VU meter or the plain meter on the other, and the widest caption on
+    /// the side it reads on. `inset` is the room kept inside the island's
+    /// curved ends.
+    static func levelWings(_ cue: NotchOfficeCue, plain: NotchNoticeWings, inset: CGFloat) -> NotchNoticeWings {
+        guard cue.isLevel else { return plain }
+        let caption = cue.widestCaption.map { captionWidth($0) } ?? 0
+        let under = captionUnderReading(cue)
+        let leading = ceil(inset + levelMarkWidth(cue) + levelMarkGap + max(levelReadingWidth(), under ? caption : 0)
+                           + levelAir)
+        let meter = cue.kind == .volume ? vuWidth : 0
+        let trailing = ceil(inset + max(meter, under ? 0 : caption) + levelAir)
+        return NotchNoticeWings(leading: max(plain.leading, leading), trailing: max(plain.trailing, trailing))
     }
 }
 
