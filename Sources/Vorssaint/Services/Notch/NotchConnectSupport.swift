@@ -9,9 +9,10 @@ import Foundation
 /// island's (NotchConnectFlourish.swift).
 enum NotchConnectFlourish {
     /// Whether a notice is an audio device connecting, as opposed to a mouse,
-    /// a keyboard, or a battery warning.
+    /// a keyboard, or a battery warning. With the Office edition off none
+    /// is: the device keeps upstream's plain accessory notice.
     static func applies(to notice: NotchNotice) -> Bool {
-        guard notice.event == .accessory, notice.level == nil else { return false }
+        guard notice.event == .accessory, notice.level == nil, NotchOfficeEdition.connectCard() else { return false }
         let symbol = notice.symbol.lowercased()
         return ["airpods", "headphones", "beats", "earbuds", "hifispeaker", "homepod", "speaker", "airplay"]
             .contains { symbol.contains($0) }

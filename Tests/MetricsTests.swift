@@ -128,6 +128,7 @@ struct MetricsTests {
             ("notch-music", { NotchMusicExtrasTests.run(suite) }),
             ("notch-dancers", { NotchDancerTests.run(suite) }),
             ("notch-office", { NotchOfficeMomentsTests.run(suite) }),
+            ("notch-office-edition", { NotchOfficeEditionTests.run(suite) }),
             ("notch", {
                 NotchTests.run(suite)
                 NotchCompactTests.run(suite)

@@ -51,7 +51,8 @@ struct NotchNotice: Equatable {
     /// `captions` makes room for an Office caption under the title, which a
     /// strip too short for two lines leaves out.
     func preferredWings(wrapsMessage: Bool, captions: Bool = true) -> NotchNoticeWings {
-        let office = captions ? self.office : self.office.map { NotchOfficeCue(kind: $0.kind, level: $0.level, copy: $0.copy) }
+        let office = captions ? self.office
+            : self.office.map { NotchOfficeCue(kind: $0.kind, level: $0.level, copy: $0.copy, widestDetail: $0.widestDetail) }
         if let notification {
             let fitted = NotchOfficeMoments.bannerWings(
                 office, fitted: NotchNotificationBannerLayout.wings(for: notification, wrapsMessage: wrapsMessage))
@@ -91,6 +92,12 @@ struct NotchNotice: Equatable {
         // after another never resizes the island.
         if let office, office.kind == .copy {
             return NotchOfficeMoments.copyWings(office, title: title, detail: detail, inset: Self.levelInset)
+        }
+        // The Office edition's mug and title, with the caption under them,
+        // and the state across the camera, each at its widest.
+        if let office, office.edition != nil {
+            return NotchNoticeWings(leading: fitted(NotchOfficeMoments.editionLeading(office, title: title)),
+                                    trailing: fitted(NotchOfficeMoments.editionTrailing(office, detail: detail)))
         }
         // An empty title leaves the mark alone, without the space after it.
         let mark = fitted(leading > 0 ? leading + 18 + 8 : 18)
@@ -390,6 +397,9 @@ final class NotchService: ObservableObject {
     private var mascotFrequencyAtSync: NotchMascotVisitFrequency?
     /// Whether the companion was on at the last preference sync, nil before the first.
     private var mascotWasEnabled: Bool?
+    /// The Office edition as the last preference sync saw it, so turning it
+    /// on or off eases the closed island to its new wings, as the companion does.
+    private var officeEditionWasEnabled: Bool?
     /// The side it rested on at the last preference sync, nil before the first.
     private var mascotSideAtSync: NotchMascotSide?
     /// Whether it hid in the island when idle at the last preference sync,
@@ -589,6 +599,8 @@ final class NotchService: ObservableObject {
     var hasAgentActivity: Bool {
         guard NotchAgentSupport.showsLiveActivity() else { return false }
         let live = AgentUsageService.shared.snapshot.live
+        // Upstream's strip, with the Office edition off, leaves with its last agent.
+        guard NotchOfficeEdition.agentWings() else { return !live.isEmpty }
         return !live.isEmpty || !NotchAgentFinishes.shared.finished(live: live).isEmpty
     }
 
@@ -871,10 +883,36 @@ final class NotchService: ObservableObject {
             ]).width.rounded(.up)
     }
 
-    /// One agent's strip, or two agents' wider wings, each a side.
+    /// One agent's strip, or two agents' wider wings, each a side; with the
+    /// Office edition off, upstream's strip.
     private func agentStripGeometry(in geometry: NotchGeometry) -> NotchGeometry {
+        guard NotchOfficeEdition.agentWings() else { return geometry.compactAgentGeometry(wing: plainAgentStripWing(in: geometry)) }
         let model = NotchAgentFinishes.shared.model(live: AgentUsageService.shared.snapshot.live)
         return geometry.compactAgentGeometry(wing: agentStripWing(model, in: geometry), twoSided: model.twoSided)
+    }
+
+    /// Upstream's measure, kept for the Office edition off: the wider of the
+    /// two sides, the reading or the working agents' marks, with the
+    /// clearance from the silhouette's curve that the strip keeps and air
+    /// beside the camera.
+    private func plainAgentStripWing(in geometry: NotchGeometry) -> CGFloat {
+        let provisional = geometry.compactAgentGeometry(wing: NotchAgentSupport.stripWingRange.lowerBound)
+        let size = NotchAgentSupport.stripTextSize(height: provisional.compactActivityContentHeight)
+        let shape = NotchAgentSupport.readingShape(NotchAgentSupport.stripReading(
+            AgentUsageService.shared.snapshot, readout: NotchAgentSupport.readout(),
+            display: NotchAgentSupport.limitDisplay(), focus: NotchAgentSupport.limitFocus(), now: Date()))
+        let width = (shape as NSString).size(withAttributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .medium)
+        ]).width
+        let reading = width.rounded(.up) + provisional.compactActivityEdgeInset(boxHeight: size * 0.72, radius: 0)
+        // The marks on the other side, drawn as the strip draws them: two
+        // working agents share a smaller size, each in a frame wider than it.
+        let working = Set(AgentUsageService.shared.snapshot.live.map(\.provider)).count
+        let mark = CGFloat(working > 1 ? 11 : 14)
+        let frame = mark * 1.45 + 1
+        let marks = CGFloat(max(1, working)) * frame + CGFloat(max(0, working - 1))
+            + provisional.compactActivityEdgeInset(boxHeight: mark + 4, radius: (mark + 4) / 2)
+        return max(reading, marks) + NotchAgentSupport.stripCameraGap
     }
 
     /// The width each wing needs, drawn as the strip draws it, with the
@@ -1182,6 +1220,14 @@ final class NotchService: ObservableObject {
             return layout.downloadSurface(name: download?.name ?? FeatureStrings.notchFiles(language).downloadsTitle,
                                           hasProgress: download?.fraction != nil, geometry: geometry, language: language)
         case .agents:
+            guard NotchOfficeEdition.agentWings() else {
+                // Upstream's capsule: the working agents' marks and one reading.
+                let reading = NotchAgentSupport.stripReading(AgentUsageService.shared.snapshot,
+                                                             readout: NotchAgentSupport.readout(),
+                                                             display: NotchAgentSupport.limitDisplay(),
+                                                             focus: NotchAgentSupport.limitFocus(), now: Date())
+                return layout.plainAgentSurface(reading: reading, working: working, geometry: geometry)
+            }
             // Each wing's own reading, as the capsule draws it: one agent's
             // chosen reading, or two agents' each beside its ring.
             let snapshot = AgentUsageService.shared.snapshot
@@ -1330,7 +1376,12 @@ final class NotchService: ObservableObject {
         mascotWasEnabled = mascotEnabled
         let hidingToggled = syncMascotHiding(switchedOn: mascotToggled && mascotEnabled)
         if mascotToggled, !expanded { stageMascotEntrance(arriving: mascotEnabled) }
-        refreshPresentation(animated: (mascotToggled || hidingToggled) && !expanded)
+        // The Office edition changes the music's wings (bars or dancers), the
+        // agents' (rings or marks) and the companion's look all at once.
+        let edition = NotchOfficeEdition.isEnabled()
+        let editionToggled = officeEditionWasEnabled.map { $0 != edition } ?? false
+        officeEditionWasEnabled = edition
+        refreshPresentation(animated: (mascotToggled || hidingToggled || editionToggled) && !expanded)
         syncMascotVisits()
         syncMascotSide()
         // Pages read their preferences as they draw, and a change that keeps
@@ -2015,6 +2066,7 @@ final class NotchService: ObservableObject {
         case .explore: toggleSections()
         case .settings: openSettings()
         case .pin: pinned.toggle()
+        case .officeEdition: toggleOfficeEdition()
         case .module(let module): select(module)
         case .control(let item):
             switch item {
@@ -2483,6 +2535,8 @@ final class NotchService: ObservableObject {
     /// or holding something the person is doing, keeps it to the strip.
     @discardableResult
     func showConnect(_ incoming: NotchNotice) -> Bool {
+        // The card is the Office edition's: off, the device keeps upstream's notice.
+        guard NotchConnectFlourish.applies(to: incoming) else { return show(incoming) }
         // With the Office moments on, the card brings the boombox.
         var incoming = incoming
         if incoming.office == nil, NotchOfficeMoments.isEnabled(), NotchConnectFlourish.applies(to: incoming) {
@@ -2864,7 +2918,7 @@ final class NotchService: ObservableObject {
             removeScreenEdgeClickMonitors()
             return
         }
-        let access = NotchQuickAccessConfiguration.current()
+        let access = NotchQuickAccessConfiguration.island()
         let size = surfaceSize
         let contentTransition = compactMusicTransition(transitionContent, animated: animated)
         if captureControls == nil {
@@ -3781,7 +3835,7 @@ final class NotchService: ObservableObject {
         var next = baseGeometry(for: screen)
         let sameMenuBar = next.hasSameMenuBar(as: geometry)
         if sameMenuBar { next.compactSideRoom = geometry.compactSideRoom }
-        let access = NotchQuickAccessConfiguration.current()
+        let access = NotchQuickAccessConfiguration.island()
         next.quickAccessBottomInset = access.hasBottom ? NotchQuickAccessLayout.gutter : 0
         // Read with the floating buttons rather than on every layout pass,
         // which would decode them each time.
@@ -4817,6 +4871,21 @@ extension NotchService {
         guard NotchCalendarService.shared.countdown == nil,
               let event = NotchOfficeMoments.meetingSoonArrived(from: saw, to: meeting, at: now) else { return }
         show(notice(event, NotchOfficeMoments.meetingSoonCue(event, language: language)))
+    }
+
+    /// The island's mug: every extra of this fork on or off at once, live.
+    /// The caches that read the master are dropped as it is written
+    /// (NotchOfficeEdition.set), and the change's notification syncs the
+    /// island on the next turn as any preference does: it measures its
+    /// wings again, redraws and the companion takes its look again. The
+    /// notice says which way it went, in the Office's words both ways.
+    fileprivate func toggleOfficeEdition() {
+        let on = !NotchOfficeEdition.isEnabled()
+        NotchOfficeEdition.set(on)
+        let language = L10n.shared.language
+        let text = FeatureStrings.notchOfficeEdition(language)
+        show(NotchNotice(event: .officeEdition, title: text.title, detail: text.state(on), symbol: "mug.fill",
+                         office: NotchOfficeMoments.editionCue(on: on, states: (text.on, text.off), language: language)))
     }
 }
 

@@ -86,13 +86,14 @@ struct NotchQuickAccessView: View {
 
     /// While the open island wears the song, its bubbles wear it too, and
     /// keep it as they slide back into a closed island still glowing with it.
-    private var songColors: [NSColor]? {
+    private var songPalette: NotchArtworkPalette? {
         guard NotchSongMode.wearsSong(service, music) || NotchSongMode.glowsClosed(service, music) else { return nil }
-        return NotchArtworkPalette.song(music.artwork)?.glow
+        return NotchArtworkPalette.song(music.artwork)
     }
 
     var body: some View {
-        let song = songColors
+        let palette = songPalette
+        let song = palette?.glow
         // The drops joining each bubble to the island take the island's edge
         // colour while it wears the song, so the bubbles melt into it.
         let drops = NotchQuickAccessDrops(placements: motion.placements, progress: motion.progress,
@@ -101,7 +102,14 @@ struct NotchQuickAccessView: View {
         let buttons = ZStack(alignment: .topLeading) {
             ForEach(motion.placements) { placement in
                 // Neighbours start at different points of the turn, so they never spin in step.
-                bubble(placement.button, song: song, playing: playing, phase: Double(placement.index) * 0.29)
+                Group {
+                    if placement.button.action == .officeEdition {
+                        NotchOfficeEditionBubble(service: service, song: palette, playing: playing,
+                                                 phase: Double(placement.index) * 0.29, glass: followsGlass)
+                    } else {
+                        bubble(placement.button, song: song, playing: playing, phase: Double(placement.index) * 0.29)
+                    }
+                }
                     .scaleEffect(0.4 + 0.6 * motion.progress)
                     .opacity(Double(motion.progress))
                     .position(placement.center(progress: motion.progress))
@@ -297,6 +305,7 @@ extension NotchQuickAction {
         case .pin: return "pin"
         case .module(let module): return module.symbol
         case .control(let item): return item.symbol
+        case .officeEdition: return "mug.fill"
         }
     }
 
@@ -307,6 +316,7 @@ extension NotchQuickAction {
         case .pin: return FeatureStrings.notch(l10n.language).pin
         case .module(let module): return module.title(l10n.language)
         case .control(let item): return item.title(l10n)
+        case .officeEdition: return FeatureStrings.notchOfficeEdition(l10n.language).title
         }
     }
 }

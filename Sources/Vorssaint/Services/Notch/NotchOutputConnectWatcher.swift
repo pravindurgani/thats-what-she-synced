@@ -39,7 +39,10 @@ final class NotchOutputConnectWatcher {
     private init() {}
 
     func syncWithPreferences() {
-        guard NotchAccessorySupport.isEnabled(), AppFeature.mixer.isAvailable else { stop(); return }
+        // Upstream announces no output route, so the Office edition off stops it.
+        guard NotchAccessorySupport.isEnabled(), AppFeature.mixer.isAvailable, NotchOfficeEdition.connectCard() else {
+            stop(); return
+        }
         guard subscription == nil else { return }
         baselineTaken = false
         present = [:]

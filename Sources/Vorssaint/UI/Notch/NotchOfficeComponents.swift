@@ -112,6 +112,63 @@ struct NotchLowerThird: View {
     }
 }
 
+// MARK: - The steam puff
+
+/// One puff of steam off a fresh cup: two wisps curl up out of the brim and
+/// fade, once, in half a second, on the song's arrival curve. It never
+/// loops: a new trigger plays it again from the start rather than adding
+/// another. Reduce Motion and Low Power Mode leave it out. The Office
+/// edition's mug puffs it in the island's bottom row and in its notice.
+struct NotchOfficeSteamPuff: View {
+    var color: Color = .white.opacity(0.85)
+    /// Changes once per puff; nil keeps it still and unseen.
+    let trigger: String?
+    /// How long after the trigger the wisps leave the brim.
+    var delay: Double = 0.08
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
+    @State private var risen = false
+    @State private var shown = false
+
+    var body: some View {
+        NotchOfficeWisps()
+            .stroke(color, style: StrokeStyle(lineWidth: 1.1, lineCap: .round))
+            .scaleEffect(x: risen ? 1.2 : 0.7, y: 1, anchor: .bottom)
+            .offset(y: risen ? -3 : 1)
+            .opacity(shown ? 1 : 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task(id: trigger) {
+                var reset = Transaction(animation: nil)
+                reset.disablesAnimations = true
+                withTransaction(reset) { risen = false; shown = false }
+                guard trigger != nil, !reduceMotion, !lowPower.isOn else { return }
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                withAnimation(NotchSongMotion.arrive) { risen = true; shown = true }
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(NotchSongMotion.fade) { shown = false }
+            }
+    }
+}
+
+/// Two S-shaped wisps side by side, curling up from the bottom edge.
+struct NotchOfficeWisps: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let width = rect.width / 2
+        for index in 0..<2 {
+            let x = rect.minX + width * (CGFloat(index) + 0.5)
+            path.move(to: CGPoint(x: x, y: rect.maxY - 0.5))
+            path.addCurve(to: CGPoint(x: x, y: rect.minY + 0.5),
+                          control1: CGPoint(x: x + width * 0.45, y: rect.maxY - rect.height * 0.33),
+                          control2: CGPoint(x: x - width * 0.45, y: rect.maxY - rect.height * 0.66))
+        }
+        return path
+    }
+}
+
 // MARK: - The blinds
 
 /// The talking-head window: faint horizontal slats, two points of light
