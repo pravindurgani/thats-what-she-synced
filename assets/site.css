@@ -100,12 +100,31 @@ a:hover { color: var(--beet); }
 .lower.wipe .bar + .bar { animation-delay: .06s; }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 
-.controls { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; margin-top: 14px; }
+/* the playground bar: Pause and the scenes on the left, the app's moments to try on the right. Joined keys, one outline per group. */
+.controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px; margin-top: 14px; }
+.cgrp { display: flex; align-items: center; gap: 8px; }
+.seg { display: flex; border: 1.5px solid var(--navy); border-radius: var(--radius-md); }
+.tryl { font: 700 13px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .ctl { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 14px; border-radius: var(--radius-md); border: 1.5px solid var(--navy); background: transparent; color: var(--navy);
        font: 700 15px/1 var(--mono); cursor: pointer; transition: background-color .15s ease, color .15s ease; }
 .ctl:hover { background: var(--manila); }
 .ctl.on, .ctl[aria-pressed="true"] { background: var(--navy); color: var(--paper); }
 .ctl svg { display: block; flex: none; }
+.seg .ctl { position: relative; justify-content: center; border: 0; border-radius: 0; }
+.seg .ctl + .ctl { border-left: 1.5px solid var(--navy); }
+.seg .ctl:first-child { border-top-left-radius: 6.5px; border-bottom-left-radius: 6.5px; }
+.seg .ctl:last-child { border-top-right-radius: 6.5px; border-bottom-right-radius: 6.5px; }
+.seg .ctl:focus-visible { z-index: 2; }
+.ic { width: 44px; padding: 0; }
+.ic svg { transition: transform .14s var(--expo); }
+.ic:active svg { transform: scale(.84); }
+/* each key's name, on hover or keyboard focus: the accessible name, so the two never disagree */
+.ic::after { content: attr(aria-label); position: absolute; z-index: 3; left: 50%; bottom: calc(100% + 9px); padding: 7px 9px 6px; border-radius: var(--radius-sm); background: var(--navy); color: var(--paper);
+             font: 700 13px/1 var(--mono); white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(var(--tx, -50%), 4px); transition: opacity .15s ease, transform .2s var(--expo); }
+.ic:focus-visible::after { opacity: 1; transform: translate(var(--tx, -50%), 0); }
+@media (hover: hover) { .ic:hover::after { opacity: 1; transform: translate(var(--tx, -50%), 0); } }
+.cgrp:first-child .ic::after { --tx: 0; left: -1.5px; }
+.try .ic:last-child::after { --tx: 0; left: auto; right: -1.5px; }
 .ctl .i-play, html.paused .ctl .i-pause { display: none; }
 html.paused .ctl .i-play { display: block; }
 html:not(.ready) .js-only { visibility: hidden; }
@@ -121,6 +140,13 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
    light .78, mid .55, deep .40, a slate suit .35, trousers .30; the tie is the second colour toned deep. */
 .pal-teal  { --c1: #0E9F96; --c2: #22D3C5; --c3: #9AF5EA; --song1: #22D3C5; --song2: #F4D03F;
              --t-light: #29FFEE; --t-mid: #23DACC; --t-deep: #1FBDB1; --t-suit: #44AFB4; --t-trousers: #3FA3A8; --t-tie: #AF9320; }
+/* the playground's other albums, toned by the same rules from their covers' two colours */
+.pal-ochre { --c1: #A4751D; --c2: #DDA032; --c3: #FFDBA6; --song1: #DDA032; --song2: #D24B3C;
+             --t-light: #FFE1AB; --t-mid: #FDB739; --t-deep: #DB9F32; --t-suit: #B59D6B; --t-trousers: #A99264; --t-tie: #E04230; }
+.pal-pink  { --c1: #BC407A; --c2: #FF5FA8; --c3: #FFD4E3; --song1: #FF5FA8; --song2: #8B7BFF;
+             --t-light: #FFDBEB; --t-mid: #FFABD1; --t-deep: #FF6CAF; --t-suit: #DC82C0; --t-trousers: #CD79B3; --t-tie: #7966FF; }
+.pal-blue  { --c1: #3064BA; --c2: #4D90FF; --c3: #D1E2FF; --song1: #4D90FF; --song2: #FFB38A;
+             --t-light: #D6E6FF; --t-mid: #A2C5FF; --t-deep: #669FFF; --t-suit: #6AA0F6; --t-trousers: #6396E5; --t-tie: #D38154; }
 .pal-claude { --c1: #D97757; --c2: #EB9F7F; --c3: #FFD0B5; }
 .pal-codex  { --c1: #3941FF; --c2: #7A9DFF; --c3: #B1A7FF; }
 
@@ -446,6 +472,12 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 .g-gold { --g1: #B98418; --g2: #8E6212; --g3: #5E400B; }
 .g-claude { --g1: #B5602F; --g2: #93491F; --g3: #6A3215; }
 .g-codex { --g1: #4248E0; --g2: #3236B0; --g3: #23256E; }
+.g-ochre { --g1: #BB8234; --g2: #8E6123; --g3: #614218; }
+.g-rust { --g1: #D96959; --g2: #A64D41; --g3: #71342C; }
+.g-pink { --g1: #DB5B94; --g2: #A8426F; --g3: #732D4B; }
+.g-violet { --g1: #887EE9; --g2: #665EB3; --g3: #45407A; }
+.g-blue { --g1: #578EE8; --g2: #3F6AB2; --g3: #2A487A; }
+.g-peach { --g1: #BD7D66; --g2: #905D4B; --g3: #623F32; }
 .strip::before, .strip::after, .ccard::before, .ccard::after { content: ""; position: absolute; top: 0; width: 6px; height: 6px; }
 .strip::before, .ccard::before { left: -6px; background: radial-gradient(circle at 0 100%, transparent 5.5px, #000 6px); }
 .strip::after, .ccard::after { right: -6px; background: radial-gradient(circle at 100% 100%, transparent 5.5px, #000 6px); }
@@ -516,6 +548,23 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 .ccard .t2 { margin-top: 3px; font-size: 13.5px; font-weight: 500; line-height: 1.2; color: rgba(255, 255, 255, .82); }
 .ccard .cap { margin-top: 9px; gap: 5px; font-size: 10px; }
 .ccard .cap::before { width: 2px; height: 10px; }
+
+/* the playground: these strips, cloned into the hero's island at its zoom. Each is centred over the camera and sized
+   for its widest reading, so a held key never resizes it; site.js sets --fit so the widest fits the screen. */
+.onair { position: absolute; left: 0; right: 0; top: 0; height: 32px; pointer-events: none; transform: scale(var(--fit, 1)); transform-origin: 50% 0; }
+.onair .strip { --hc: 64px; position: absolute; top: 0; left: calc(50% - (var(--wl) + var(--hc) + var(--wr)) / 2); zoom: 1; margin: 0; visibility: hidden; transform-origin: 50% 0; }
+.onair .strip.on { visibility: visible; }
+.onair .s-charge { --wl: 134px; --wr: 48px; }
+.onair .s-vol { --wl: 168px; --wr: 62px; }
+.onair .s-copy { --wl: 100px; --wr: 46px; }
+.onair .s-finish { --wl: 150px; --wr: 116px; }
+.onair .lvl, .onair .stream { fill: color-mix(in srgb, var(--song1) 62%, #FFFFFF); }
+.onair .minibox .cone { animation: none; }
+.onair .mute { opacity: 0; fill: none; stroke-linecap: round; }
+.onair .mute path { stroke: #0B0B0D; stroke-width: 3.4; }
+.onair .mute path + path { stroke: #E5484D; stroke-width: 1.6; }
+.onair .muted .mute { opacity: 1; }
+.onair .muted .minibox > :not(.mute) { opacity: .5; }
 
 /* install */
 .navy { background: var(--navy); color: var(--paper); }
@@ -638,6 +687,7 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
   .card .cn { font-size: clamp(13px, 7.6cqw, 24px); }
   .notices { --zn: 1.2; }
   .strip { --hc: 80px; }
+  .onair .strip { --hc: 40px; }
   .notice figcaption { font-size: 16px; }
   .calm { font-size: 14px; }
   .step { grid-template-columns: 36px minmax(0, 1fr); gap: 6px 12px; }
@@ -648,6 +698,7 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 }
 @media (max-width: 639px) {
   .stage { --cam: 150px; }
+  .onair .strip { --hc: 24px; }
 }
 /* phones: a narrower camera housing so the cast and the notices read larger; every wing keeps an inset from the bezel */
 @media (max-width: 560px) {
@@ -657,6 +708,13 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
   .strip { --hc: 28px; }
   .ccard { --cw: 300px; --hc: 120px; }
   .step > .code { grid-column: 1 / -1; }
+  /* the playground bar: two full-width rows, scenes over moments */
+  .cgrp { flex: 1 1 100%; }
+  .seg.wide { flex: 1 1 auto; }
+  .seg.wide .ctl { flex: 1 1 0; min-width: 44px; padding: 0 6px; }
+}
+@media (max-width: 374px) {
+  .tryl { display: none; }
 }
 @media (max-width: 449px) {
   .stage { --z: 1.45; height: 152px; }
