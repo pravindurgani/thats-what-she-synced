@@ -111,7 +111,7 @@ a:hover { color: var(--beet); }
 html.paused .ctl .i-play { display: block; }
 .controls .note { margin-left: auto; font-family: var(--mono); font-size: 15px; color: var(--muted); }
 html:not(.ready) .js-only { visibility: hidden; }
-html:not(.js) :is(.js-only, .pickhint), html.static :is(.js-only, .pickhint) { display: none; }
+html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhint, .copy) { display: none; }
 
 /* ---------- palettes: c1..c3 drive glows; song* recolour accents only ---------- */
 .pal-scarn { --c1: #2A5FC4; --c2: #D2343F; --c3: #8FB4F2; }
@@ -211,7 +211,7 @@ html:not(.js) :is(.js-only, .pickhint), html.static :is(.js-only, .pickhint) { d
 .mem .hop, .mem .sq, .mem .tilt { transform-origin: 12px 22px; }
 .mem .ink { fill: #141413; }
 .mem .eyes { transform-origin: 12px 9px; animation: blink 5.2s linear infinite; }
-.m-jelly .eyes { transform-origin: 12px 11px; }
+.m-jelly .eyes { transform-origin: 10.5px 12px; }
 .m-mug .eyes { transform-origin: 12px 12.2px; }
 .m-beet .eyes { transform-origin: 12px 14.6px; }
 @keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }

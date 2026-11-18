@@ -245,7 +245,7 @@ function setupMoment({ createTimeline, utils, spring, stagger }) {
 
 // ---------- code blocks join the tab order only when they scroll sideways ----------
 function markScrollers() {
-  for (const el of $$('[data-label]')) {
+  for (const el of $$(':is(pre, code)[data-label]')) {
     const scrolls = el.scrollWidth > el.clientWidth + 1;
     el.toggleAttribute('tabindex', scrolls);
     el.toggleAttribute('role', scrolls);
