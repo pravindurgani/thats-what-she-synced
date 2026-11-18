@@ -88,6 +88,10 @@ struct NotchCapsuleNoticeView: View {
                 // Cafe Disco, or the blinds, at the capsule's size.
                 NotchOfficeCapsuleLevel(cue: cue, level: level, reading: notice.detail, geometry: geometry,
                                         caption: officeCaption, trigger: officeKey)
+            } else if let cue = notice.office, cue.kind == .copy, notice.level == nil {
+                // The copier at the capsule's size.
+                NotchOfficeCapsuleCopy(cue: cue, title: notice.title, detail: notice.detail, geometry: geometry,
+                                       caption: officeCaption, trigger: officeKey)
             } else if let level = notice.level {
                 levelRow(level)
             } else {
