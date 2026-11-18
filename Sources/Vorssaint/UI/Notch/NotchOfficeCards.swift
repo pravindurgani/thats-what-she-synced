@@ -7,13 +7,16 @@ import SwiftUI
 /// icon, which punches in where its tape deck would be, and its two cones
 /// pump the sound-wave rings out in turn, left and right, as the card's
 /// rings did from the icon. Its colours are the moment's. Every move plays
-/// once and settles; Reduce Motion keeps the fades.
+/// once and settles; Reduce Motion and Low Power Mode keep the fades.
 struct NotchOfficeBoombox: View {
     let symbol: String
     let colors: [Color]
     let trigger: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @State private var arrived = false
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
 
     static let size = CGSize(width: 112, height: 72)
     /// The body and its carrying handle, centred on the drawing's middle; the
@@ -32,8 +35,11 @@ struct NotchOfficeBoombox: View {
     static let coneSide: CGFloat = 28
     /// Where the cones, the deck and the rings sit, below the handle.
     static let deckY: CGFloat = 10
-    /// When each cone's first ring leaves; the second pair follows 1.3 s later.
-    private static let firstBeat = (left: 0.12, right: 0.34)
+    /// A cone pushes as each of its rings leaves: its two rings a ring's gap
+    /// apart either side of the other cone's, then again as the rings repeat.
+    private static let pushBeat = NotchSongMotion.push.out + NotchSongMotion.push.back
+    private static let betweenPushes = NotchSongMotion.ringGap * 2 - pushBeat
+    private static let untilRepeat = NotchSongMotion.ringSpread.card - NotchSongMotion.ringGap * 2 - pushBeat
 
     var body: some View {
         ZStack {
@@ -42,13 +48,13 @@ struct NotchOfficeBoombox: View {
                                      center: .center, startRadius: 2, endRadius: 62))
                 .frame(width: 124, height: 124)
                 .offset(y: Self.deckY)
-                .scaleEffect(arrived ? 1 : 0.4)
+                .scaleEffect(arrived || calm ? 1 : 0.4)
                 .opacity(arrived ? 1 : 0)
-                .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.glow, value: arrived)
+                .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.glow, value: arrived)
             boombox
-            .offset(y: arrived || reduceMotion ? 0 : 22)
+            .offset(y: arrived || calm ? 0 : 22)
             .opacity(arrived ? 1 : 0)
-            .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring, value: arrived)
+            .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.spring, value: arrived)
             deck
         }
         .frame(width: Self.size.width, height: Self.size.height)
@@ -57,7 +63,7 @@ struct NotchOfficeBoombox: View {
             var reset = Transaction(animation: nil)
             reset.disablesAnimations = true
             withTransaction(reset) { arrived = false }
-            try? await Task.sleep(nanoseconds: 16_000_000)
+            try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
             arrived = true
         }
     }
@@ -70,7 +76,8 @@ struct NotchOfficeBoombox: View {
             Circle()
                 .strokeBorder(colors[ring % colors.count].opacity(0.8), lineWidth: 1.5)
                 .frame(width: Self.coneSide, height: Self.coneSide)
-                .animation(NotchSongMotion.ripple(1.1).delay(Self.firstBeat.left + Double(ring) * 0.22)
+                .animation(NotchSongMotion.ripple(NotchSongMotion.ringSpread.card)
+                            .delay(NotchSongMotion.ringLead + Double(ring) * NotchSongMotion.ringGap)
                             .repeatCount(2, autoreverses: false)) { content in
                     content
                         .scaleEffect(arrived ? 2.7 : 1)
@@ -105,7 +112,7 @@ struct NotchOfficeBoombox: View {
             }
             .offset(x: -26, y: -11)
             Capsule().fill(Color(white: 0.12)).frame(width: 22, height: 2.5).offset(x: 30, y: -11)
-            if !reduceMotion { rings }
+            if !calm { rings }
             cone(left: true)
             cone(left: false)
         }
@@ -125,23 +132,23 @@ struct NotchOfficeBoombox: View {
                 }
         }
         .frame(width: Self.coneSide, height: Self.coneSide)
-        .keyframeAnimator(initialValue: CGFloat(1), trigger: reduceMotion ? false : arrived) { content, pump in
+        .keyframeAnimator(initialValue: CGFloat(1), trigger: calm ? false : arrived) { content, pump in
             content.scaleEffect(pump)
         } keyframes: { _ in
-            // A push as each of its rings leaves, then a rest until the next pair.
+            // A push as each of its rings leaves, then a rest until the pair repeats.
             KeyframeTrack {
-                LinearKeyframe(1, duration: left ? Self.firstBeat.left : Self.firstBeat.right)
-                CubicKeyframe(1.16, duration: 0.07)
-                CubicKeyframe(1, duration: 0.15)
-                LinearKeyframe(1, duration: 0.22)
-                CubicKeyframe(1.16, duration: 0.07)
-                CubicKeyframe(1, duration: 0.15)
-                LinearKeyframe(1, duration: 0.64)
-                CubicKeyframe(1.16, duration: 0.07)
-                CubicKeyframe(1, duration: 0.15)
-                LinearKeyframe(1, duration: 0.22)
-                CubicKeyframe(1.16, duration: 0.07)
-                CubicKeyframe(1, duration: 0.15)
+                LinearKeyframe(1, duration: NotchSongMotion.ringLead + (left ? 0 : NotchSongMotion.ringGap))
+                CubicKeyframe(1.16, duration: NotchSongMotion.push.out)
+                CubicKeyframe(1, duration: NotchSongMotion.push.back)
+                LinearKeyframe(1, duration: Self.betweenPushes)
+                CubicKeyframe(1.16, duration: NotchSongMotion.push.out)
+                CubicKeyframe(1, duration: NotchSongMotion.push.back)
+                LinearKeyframe(1, duration: Self.untilRepeat)
+                CubicKeyframe(1.16, duration: NotchSongMotion.push.out)
+                CubicKeyframe(1, duration: NotchSongMotion.push.back)
+                LinearKeyframe(1, duration: Self.betweenPushes)
+                CubicKeyframe(1.16, duration: NotchSongMotion.push.out)
+                CubicKeyframe(1, duration: NotchSongMotion.push.back)
             }
         }
         .offset(x: left ? -Self.coneOffset : Self.coneOffset, y: Self.deckY)
@@ -155,12 +162,12 @@ struct NotchOfficeBoombox: View {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !reduceMotion)
+                .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !calm)
         }
         .frame(width: 30, height: 30)
-        .scaleEffect(arrived || reduceMotion ? 1 : 0.3)
+        .scaleEffect(arrived || calm ? 1 : 0.3)
         .opacity(arrived ? 1 : 0)
-        .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring.delay(0.08), value: arrived)
+        .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.spring.delay(NotchSongMotion.blink), value: arrived)
         .offset(y: Self.deckY)
     }
 }
@@ -174,18 +181,18 @@ struct NotchOfficeConnectText: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(notice.detail)
-                .font(.system(size: 16, weight: .semibold))
+                .font(Font(NotchOfficeMoments.cardTitleFont as CTFont))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(notice.title)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.85))
             if let caption = notice.office?.caption {
-                NotchLowerThird(caption: caption, size: .card, trigger: trigger, delay: 0.4)
+                NotchLowerThird(caption: caption, size: .card, trigger: trigger)
                     .padding(.top, 4)
             }
         }
-        .notchPunchIn(trigger, delay: 0.1)
+        .notchPunchIn(trigger, delay: NotchOfficeMoments.cardWordsBeat)
     }
 }
 
@@ -239,7 +246,7 @@ struct NotchOfficeCallCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 // A long name shrinks rather than losing its end.
                 Text(content.compactTitle)
-                    .font(.system(size: 19, weight: .bold))
+                    .font(Font(NotchOfficeMoments.cardTitleFont as CTFont))
                     .lineLimit(2)
                     .minimumScaleFactor(0.65)
                 if !detail.isEmpty {
@@ -249,11 +256,11 @@ struct NotchOfficeCallCard: View {
                         .lineLimit(2)
                 }
                 if let caption = notice.office?.caption {
-                    NotchLowerThird(caption: caption, size: .card, trigger: key, delay: 0.35)
+                    NotchLowerThird(caption: caption, size: .card, trigger: key)
                         .padding(.top, 4)
                 }
             }
-            .notchPunchIn(key, delay: 0.06)
+            .notchPunchIn(key, delay: NotchOfficeMoments.cardWordsBeat)
             Spacer(minLength: 0)
         }
         .foregroundStyle(.white)
@@ -292,7 +299,7 @@ struct NotchOfficeMeetingCard: View {
             .notchPunchIn(key)
             VStack(alignment: .leading, spacing: 3) {
                 Text(notice.title)
-                    .font(.system(size: 19, weight: .bold))
+                    .font(Font(NotchOfficeMoments.cardTitleFont as CTFont))
                     .lineLimit(2)
                     .minimumScaleFactor(0.65)
                 Text(detail)
@@ -300,11 +307,11 @@ struct NotchOfficeMeetingCard: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(2)
                 if let caption = notice.office?.caption {
-                    NotchLowerThird(caption: caption, size: .card, trigger: key, delay: 0.35)
+                    NotchLowerThird(caption: caption, size: .card, trigger: key)
                         .padding(.top, 4)
                 }
             }
-            .notchPunchIn(key, delay: 0.06)
+            .notchPunchIn(key, delay: NotchOfficeMoments.cardWordsBeat)
             Spacer(minLength: 0)
         }
         .foregroundStyle(.white)

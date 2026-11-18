@@ -4,33 +4,94 @@
 import QuartzCore
 import SwiftUI
 
-/// One motion vocabulary for everything the song paints, in SwiftUI and
-/// Core Animation alike: the same curve, and a few durations by role.
+/// One motion vocabulary for everything the song and the Office moments
+/// paint, in SwiftUI and Core Animation alike: two curves, and a few
+/// durations by role. Nothing on the island times a move of its own.
 enum NotchSongMotion {
-    /// Quick to start, long gentle settle: arrivals, fades and colour.
+    // MARK: Curves
+
+    /// Quick to start, long gentle settle: arrivals, fills and colour.
     static let settleCurve = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
-    /// A surface wearing the song arriving or leaving: an even, standard
-    /// curve, since a front-loaded one makes a fade read as a cut.
-    static let fade = Animation.timingCurve(0.4, 0, 0.2, 1, duration: 0.35)
-    /// The same fade's curve, for Core Animation.
+    /// The same fade's curve, for Core Animation: even and standard, since a
+    /// front-loaded one makes a fade read as a cut.
     static let fadeCurve = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.2, 1)
+
+    /// The settle curve over `duration`, for SwiftUI.
+    static func settle(_ duration: Double) -> Animation { .timingCurve(0.16, 1, 0.3, 1, duration: duration) }
+    /// The fade curve over `duration`, for SwiftUI.
+    static func even(_ duration: Double) -> Animation { .timingCurve(0.4, 0, 0.2, 1, duration: duration) }
+
+    // MARK: Durations by role
+
+    /// One frame, in nanoseconds: what an entrance waits after resetting, so
+    /// the reset lands before its move starts.
+    static let oneFrame: UInt64 = 16_000_000
+    /// A blink: words leaving before the next arrive, a jiggle's swing.
+    static let blink: Double = 0.08
+    /// A reading stepping on: digits rolling, a meter, slats or segments
+    /// easing to the next level, a mug's hop.
+    static let step: Double = 0.14
+    /// A punch-in's fade up under its spring, and a pour starting.
+    static let punch: Double = 0.16
+    /// Words, a state or a caption replacing the last in place; a stream stopping.
+    static let swap: Double = 0.2
+    /// A surface arriving or leaving.
+    static let fadeDuration: Double = 0.35
+    /// Words out of a blur; something falling.
+    static let arriveDuration: Double = 0.45
+    /// A glow opening behind something arriving; a mug filling.
+    static let glowDuration: Double = 0.8
+    /// One pass of light across a surface.
+    static let sweepDuration: Double = 0.95
+
+    // MARK: Moves
+
+    /// A surface wearing the song arriving or leaving.
+    static let fade = even(fadeDuration)
     /// Words arriving out of a blur.
-    static let arrive = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.45)
+    static let arrive = settle(arriveDuration)
     /// A glow opening behind something arriving.
-    static let glow = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.8)
+    static let glow = settle(glowDuration)
     /// An icon or a cover springing in.
     static let spring = Animation.spring(response: 0.5, dampingFraction: 0.6)
-    /// Reduce Motion: a plain short fade in place of any of these.
-    static let reduced = Animation.easeOut(duration: 0.2)
+    /// A level's marks following the level: a quicker, tighter spring.
+    static let follow = Animation.spring(response: 0.28, dampingFraction: 0.62)
+    /// Reduce Motion and Low Power Mode: a plain short fade in place of any of these.
+    static let reduced = Animation.easeOut(duration: swap)
+    /// The punch-in's fade, under its spring.
+    static let punchFade = Animation.easeOut(duration: punch)
+    /// A reading stepping on.
+    static let stepEase = Animation.easeOut(duration: step)
+    /// Words or a state replacing the last.
+    static let swapEase = Animation.easeOut(duration: swap)
+    /// Words leaving, in a blink.
+    static let blinkOut = Animation.easeOut(duration: blink)
+    /// One swing of a shake.
+    static let jiggle = Animation.easeInOut(duration: blink)
+    /// Something dropping: gravity's ease in.
+    static let fall = Animation.easeIn(duration: arriveDuration)
+    /// A stream or a light running out: the fade's curve, at a swap's length.
+    static let runOut = even(swap)
     /// A cover's colours replacing the last's.
     static let colorChange: CFTimeInterval = 0.9
-    static let colour = Animation.timingCurve(0.16, 1, 0.3, 1, duration: colorChange)
+    static let colour = settle(colorChange)
     /// A beat's push falling away.
     static let beatReturn: CFTimeInterval = 0.5
-    /// Sound-wave rings spreading out and fading, as sound decays.
+    /// Sound-wave rings spreading out and fading, as sound decays: an ease
+    /// out, in SwiftUI and Core Animation alike.
     static func ripple(_ duration: Double) -> Animation { .easeOut(duration: duration) }
+    static let rippleCurve = CAMediaTimingFunction(name: .easeOut)
+    /// The first ring leaves this long after the moment lands, and each next
+    /// one a ring's gap later: from one icon, or alternating cones.
+    static let ringLead: Double = 0.12
+    static let ringGap: Double = 0.22
+    /// One ring spreading out and fading: a strip's or a phone's quicker
+    /// than a card's.
+    static let ringSpread = (strip: 1.0, card: 1.2)
+    /// A cone's push as its ring leaves: out in a blink, back in a step.
+    static let push = (out: blink, back: step)
     /// One pass of light across a surface.
-    static let sweep = Animation.easeInOut(duration: 0.95)
+    static let sweep = Animation.easeInOut(duration: sweepDuration)
 }
 
 /// Text in the cover's hue. The levels match the island's own hierarchy, a

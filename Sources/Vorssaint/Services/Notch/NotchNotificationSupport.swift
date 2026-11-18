@@ -292,7 +292,10 @@ enum NotchNotificationBannerLayout {
     /// The sender and the message each take a side as wide as they need. A
     /// message that wraps takes the width its lines need once wrapped at the
     /// widest side, not the whole side.
-    static func wings(for content: NotchNotificationContent, wrapsMessage: Bool = false) -> NotchNoticeWings {
+    /// `titleFont` and `messageFont` are the fonts the banner draws with: its
+    /// own, or the Office moment's (NotchOfficeMoments.bannerFonts).
+    static func wings(for content: NotchNotificationContent, wrapsMessage: Bool = false,
+                      titleFont: NSFont = Self.titleFont, messageFont: NSFont = Self.messageFont) -> NotchNoticeWings {
         func width(_ text: String, _ font: NSFont) -> CGFloat {
             // A line or two is all the banner shows, and the widest wing is
             // reached long before this much text.

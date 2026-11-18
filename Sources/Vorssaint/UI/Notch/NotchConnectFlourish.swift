@@ -6,7 +6,8 @@ import SwiftUI
 /// The moment headphones or a speaker join: sound-wave rings pulse out from
 /// the device's icon as from a speaker cone, the icon springs in, and one
 /// sweep of light crosses the island. It wears the island's colours: the
-/// loaded song's palette, else the companion's. Reduce Motion keeps a fade.
+/// playing song's palette, else the companion's. Reduce Motion and Low Power
+/// Mode keep a fade.
 extension NotchConnectFlourish {
     /// The island's colours for the flourish, never fewer than two.
     static func colors() -> [Color] {
@@ -23,7 +24,10 @@ extension NotchConnectFlourish {
 struct NotchConnectCard: View {
     let notice: NotchNotice
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @State private var arrived = false
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
 
     var body: some View {
         if notice.office != nil { office } else { plain }
@@ -71,41 +75,43 @@ struct NotchConnectCard: View {
                         .fill(RadialGradient(colors: [colors[0].opacity(0.45), colors[1].opacity(0.14), .clear],
                                              center: .center, startRadius: 2, endRadius: 52))
                         .frame(width: 104, height: 104)
-                        .scaleEffect(arrived ? 1 : 0.4)
+                        .scaleEffect(arrived || calm ? 1 : 0.4)
                         .opacity(arrived ? 1 : 0)
-                        .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.glow, value: arrived)
-                    if !reduceMotion {
+                        .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.glow, value: arrived)
+                    if !calm {
                         ForEach(0..<4, id: \.self) { ring in
                             Circle()
                                 .strokeBorder(colors[ring % colors.count].opacity(0.7), lineWidth: 1.5)
                                 .frame(width: 46, height: 46)
                                 .scaleEffect(arrived ? 3.4 : 0.7)
                                 .opacity(arrived ? 0 : 0.8)
-                                .animation(NotchSongMotion.ripple(1.3).delay(0.12 + Double(ring) * 0.22)
+                                .animation(NotchSongMotion.ripple(NotchSongMotion.ringSpread.card)
+                                            .delay(NotchSongMotion.ringLead + Double(ring) * NotchSongMotion.ringGap)
                                             .repeatCount(2, autoreverses: false), value: arrived)
                         }
                     }
                     Image(systemName: notice.symbol)
                         .font(.system(size: 34, weight: .medium))
                         .foregroundStyle(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .scaleEffect(arrived || reduceMotion ? 1 : 0.3)
-                        .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring, value: arrived)
-                        .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !reduceMotion)
+                        .scaleEffect(arrived || calm ? 1 : 0.3)
+                        .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.spring, value: arrived)
+                        .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !calm)
                 }
                 .frame(width: 54, height: 54)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(notice.detail)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(Font(NotchOfficeMoments.cardTitleFont as CTFont))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(notice.title)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
                 }
-                .offset(x: arrived || reduceMotion ? 0 : 14)
-                .blur(radius: arrived || reduceMotion ? 0 : 6)
+                .offset(x: arrived || calm ? 0 : 14)
+                .blur(radius: arrived || calm ? 0 : 6)
                 .opacity(arrived ? 1 : 0)
-                .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.arrive.delay(0.12), value: arrived)
+                .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.arrive.delay(NotchSongMotion.ringLead),
+                           value: arrived)
             }
             .foregroundStyle(.white)
             NotchConnectSweep(colors: colors, trigger: key)
@@ -118,24 +124,28 @@ struct NotchConnectCard: View {
             var reset = Transaction(animation: nil)
             reset.disablesAnimations = true
             withTransaction(reset) { arrived = false }
-            try? await Task.sleep(nanoseconds: 16_000_000)
+            try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
             arrived = true
         }
     }
 }
 
-/// The device's icon with its sound-wave rings.
+/// The device's icon with its sound-wave rings. Reduce Motion and Low Power
+/// Mode fade it in, ringless.
 struct NotchConnectIcon: View {
     let symbol: String
     let colors: [Color]
     /// Changes once per connection, so a second device in a row plays again.
     let trigger: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @State private var arrived = false
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
 
     var body: some View {
         ZStack {
-            if !reduceMotion {
+            if !calm {
                 ForEach(0..<3, id: \.self) { ring in
                     Circle()
                         .strokeBorder(colors[ring % colors.count], lineWidth: 1.5)
@@ -144,25 +154,27 @@ struct NotchConnectIcon: View {
                         .opacity(arrived ? 0 : 0.9)
                         // Each ring leaves a beat after the last, twice over,
                         // as sound leaves a cone.
-                        .animation(NotchSongMotion.ripple(1.0).delay(0.12 + Double(ring) * 0.18).repeatCount(2, autoreverses: false),
+                        .animation(NotchSongMotion.ripple(NotchSongMotion.ringSpread.strip)
+                                    .delay(NotchSongMotion.ringLead + Double(ring) * NotchSongMotion.ringGap)
+                                    .repeatCount(2, autoreverses: false),
                                    value: arrived)
                 }
             }
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                .scaleEffect(arrived || reduceMotion ? 1 : 0.35)
-                .opacity(arrived || reduceMotion ? 1 : 0)
-                .animation(reduceMotion ? NotchSongMotion.reduced : NotchSongMotion.spring,
+                .scaleEffect(arrived || calm ? 1 : 0.35)
+                .opacity(arrived ? 1 : 0)
+                .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.spring,
                            value: arrived)
-                .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !reduceMotion)
+                .symbolEffect(.bounce, options: .nonRepeating, value: arrived && !calm)
         }
         .frame(width: 18, height: 18)
         .task(id: trigger) {
             var reset = Transaction(animation: nil)
             reset.disablesAnimations = true
             withTransaction(reset) { arrived = false }
-            try? await Task.sleep(nanoseconds: 16_000_000)
+            try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
             arrived = true
         }
     }
@@ -173,7 +185,7 @@ struct NotchConnectIcon: View {
 /// Power Mode keep the fade alone, as the punch-in does.
 struct NotchArrival: ViewModifier {
     let trigger: String
-    var delay: Double = 0.1
+    var delay: Double = NotchOfficeMoments.titleBeat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @State private var arrived = false
@@ -191,17 +203,19 @@ struct NotchArrival: ViewModifier {
                 var reset = Transaction(animation: nil)
                 reset.disablesAnimations = true
                 withTransaction(reset) { arrived = false }
-                try? await Task.sleep(nanoseconds: 16_000_000)
+                try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
                 arrived = true
             }
     }
 }
 
 /// One sweep of the island's colours across the strip, left to right.
+/// Reduce Motion and Low Power Mode leave it out.
 struct NotchConnectSweep: View {
     let colors: [Color]
     let trigger: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @State private var crossed = false
 
     var body: some View {
@@ -212,16 +226,16 @@ struct NotchConnectSweep: View {
                 .frame(width: band)
                 .offset(x: crossed ? proxy.size.width : -band)
                 .blendMode(.plusLighter)
-                .animation(NotchSongMotion.sweep.delay(0.15), value: crossed)
+                .animation(NotchSongMotion.sweep.delay(NotchSongMotion.punch), value: crossed)
         }
-        .opacity(reduceMotion ? 0 : 1)
+        .opacity(reduceMotion || lowPower.isOn ? 0 : 1)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .task(id: trigger) {
             var reset = Transaction(animation: nil)
             reset.disablesAnimations = true
             withTransaction(reset) { crossed = false }
-            try? await Task.sleep(nanoseconds: 16_000_000)
+            try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
             crossed = true
         }
     }
@@ -230,7 +244,7 @@ struct NotchConnectSweep: View {
 extension View {
     /// The arrival, on connect and song notices only; every other notice's
     /// words are left exactly as they were.
-    @ViewBuilder func notchArrival(_ trigger: String?, delay: Double = 0.1) -> some View {
+    @ViewBuilder func notchArrival(_ trigger: String?, delay: Double = NotchOfficeMoments.titleBeat) -> some View {
         if let trigger {
             modifier(NotchArrival(trigger: trigger, delay: delay)).id(trigger)
         } else {

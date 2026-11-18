@@ -353,15 +353,20 @@ enum NotchOfficeMomentsTests {
                      "a notice without a moment measures as it always has")
         let wide = office.wings(in: geometry)
         let narrow = plain.wings(in: geometry)
+        let prop = NotchOfficeMoments.mugSide + NotchOfficeMoments.levelMarkGap
         suite.expect(wide.leading > narrow.leading
-                     && wide.leading >= ceil(NotchOfficeMoments.captionWidth("Refilling the mug.")) + 18 + 8 + 16,
-                     "the title's side widens for the caption under it, and only as far as it needs")
-        suite.expect(wide.trailing == narrow.trailing + NotchOfficeMoments.mugSide + NotchOfficeMoments.mugGap,
-                     "the reading's side makes room for the mug")
+                     && wide.leading == ceil(prop + max(NotchOfficeMoments.titleWidth("Charging"),
+                                                        NotchOfficeMoments.captionWidth("Refilling the mug.")))
+                        + NotchNotice.levelInset + office.cameraGap,
+                     "the title's side holds the mug in the prop's place and the caption under the title, and no more")
+        suite.expect(wide.trailing == ceil(NotchOfficeMoments.detailWidth("64%")) + NotchNotice.levelInset + office.cameraGap
+                     && office.inset(wing: wide.leading) == NotchNotice.levelInset,
+                     "the charge reads alone across the camera, and the mug stands where the boombox does")
         let short = NotchGeometry(screen: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 24, cameraWidth: 185)
         suite.expect(!NotchOfficeMoments.stripFitsCaption(short.stripHeight)
-                     && office.wings(in: short).leading == plain.wings(in: short).leading,
-                     "a strip too short for two lines keeps its width and drops the caption")
+                     && office.wings(in: short).leading
+                        == ceil(prop + NotchOfficeMoments.titleWidth("Charging")) + NotchNotice.levelInset + office.cameraGap,
+                     "a strip too short for two lines drops the caption's room and keeps the mug and title")
 
         let message = content("Messages", "Jane", "See you at four")
         var banner = NotchNotice(event: .systemNotification, title: "Jane", detail: "See you at four", symbol: "bell.fill",
@@ -369,9 +374,11 @@ enum NotchOfficeMomentsTests {
         let bare = banner.wings(in: geometry)
         banner.office = NotchOfficeMoments.communicationCue(for: message, language: .enUS)
         let roled = banner.wings(in: geometry)
+        let fonts = NotchOfficeMoments.bannerFonts(banner.office)
+        let family = NotchNotificationBannerLayout.wings(for: message, titleFont: fonts.title, messageFont: fonts.message)
         suite.expect(roled.leading >= bare.leading && roled.leading <= NotchOfficeMoments.bannerWingLimit
-                     && roled.trailing == bare.trailing,
-                     "the role widens the sender's side, never past its limit, and the message keeps its side")
+                     && banner.preferredWings.trailing == family.trailing && roled.trailing >= bare.trailing,
+                     "the role widens the sender's side, never past its limit, and the message keeps its side in the family's reading")
         let width = geometry.notificationPreviewContentWidth
         suite.expect(banner.previewContentHeight(width: width)
                      == NotchNotificationPreviewLayout.contentHeight(for: message, width: width)
@@ -412,8 +419,9 @@ enum NotchOfficeMomentsTests {
                      "and only English gets the joke")
     }
 
-    /// A capsule's single row takes the mug and the caption after the real
-    /// information, sized to its body, and only where it can grow to hold them.
+    /// A capsule's single row takes the mug in its symbol's slot and the
+    /// caption after the real information, sized to its body, and only where
+    /// it can grow to hold them.
     private static func capsuleContracts(_ suite: TestSuite) {
         func capsule(bar: CGFloat, room: CGFloat? = 600) -> NotchGeometry {
             NotchGeometry(screen: CGRect(x: 0, y: 0, width: 1920, height: 1080), safeAreaTop: 0, cameraWidth: 0,
@@ -424,10 +432,11 @@ enum NotchOfficeMomentsTests {
         let cue = NotchOfficeMoments.batteryCue(.charging, percent: 64, language: .enUS)
         let base = Layout.noticeContent(title: "Charging", detail: "64%", level: false)
         let mug = NotchOfficeMoments.capsuleMugWidth(cue, geometry: standard)
-        suite.expect(mug > 0 && NotchOfficeMoments.mugHeight * NotchOfficeMoments.capsuleMugScale(standard)
+        suite.expect(mug >= 0 && NotchOfficeMoments.mugHeight * NotchOfficeMoments.capsuleMugScale(standard)
                         <= standard.stripBodyHeight
+                     && mug == NotchOfficeMoments.capsuleEditionMarkWidth(standard) - Layout.symbolWidth
                      && NotchOfficeMoments.capsuleMugWidth(nil, geometry: standard) == 0,
-                     "the mug fits the capsule's body, and only a battery moment brings it")
+                     "the mug fits the capsule's body in the symbol's slot, adding only what it needs past a symbol")
         suite.expect(NotchOfficeMoments.capsuleCaption(cue, content: base + mug, maximum: Layout.Maximum.notice,
                                                        geometry: standard) == "Refilling the mug."
                      && NotchOfficeMoments.capsuleContent(cue, base: base, maximum: Layout.Maximum.notice,

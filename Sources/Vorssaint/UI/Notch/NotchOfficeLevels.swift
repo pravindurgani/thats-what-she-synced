@@ -34,14 +34,16 @@ struct NotchOfficeLevelReading: View {
                     .lineLimit(1)
                     .fixedSize()
                     .contentTransition(calm ? .identity : .numericText())
+                    // The reading is the moment's title: it arrives as every title does.
+                    .notchArrival(trigger)
                 if let caption { NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm) }
             }
-            .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
+            .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.swapEase, value: caption)
         }
         .notchPunchIn(trigger)
         .frame(maxWidth: .infinity, alignment: .leading)
         // The digits roll to a new reading; calm, they change in place.
-        .animation(calm ? nil : .easeOut(duration: 0.14), value: reading)
+        .animation(calm ? nil : NotchSongMotion.stepEase, value: reading)
     }
 }
 
@@ -70,14 +72,15 @@ struct NotchOfficeLevelMeter: View {
             } else {
                 VStack(alignment: .leading, spacing: 3) {
                     NotchMeter(value: level, height: 5, colors: Self.daylight)
-                        .animation(calm ? nil : .easeOut(duration: 0.14), value: level)
+                        .animation(calm ? nil : NotchSongMotion.stepEase, value: level)
                     if let caption { NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm) }
                 }
                 .padding(.leading, NotchOfficeMoments.levelAir)
-                .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
+                .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.swapEase, value: caption)
             }
         }
-        .notchPunchIn(trigger, delay: 0.05)
+        // It arrives as every moment's far-side reading does.
+        .notchArrival(trigger, delay: NotchOfficeMoments.readingBeat)
         .transaction { $0.disablesAnimations = false }
     }
 }
@@ -125,8 +128,8 @@ struct NotchOfficeCapsuleLevel: View {
                     .padding(.leading, layout.groupSpacing - layout.spacing)
             }
         }
-        .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
-        .animation(calm ? nil : .easeOut(duration: 0.14), value: reading)
+        .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.swapEase, value: caption)
+        .animation(calm ? nil : NotchSongMotion.stepEase, value: reading)
         .notchPunchIn(trigger)
         .transaction { $0.disablesAnimations = false }
     }
@@ -138,7 +141,7 @@ struct NotchOfficeCapsuleLevel: View {
         } else {
             NotchMeter(value: level, height: NotchCapsuleLayout.meterHeight, colors: NotchOfficeLevelMeter.daylight)
                 .frame(width: NotchCapsuleLayout.meterWidth)
-                .animation(calm ? nil : .easeOut(duration: 0.14), value: level)
+                .animation(calm ? nil : NotchSongMotion.stepEase, value: level)
         }
     }
 }
@@ -173,7 +176,7 @@ struct NotchOfficeExpandedLevel: View {
             } else {
                 NotchMeter(value: level, height: 5, colors: NotchOfficeLevelMeter.daylight)
                     .frame(maxWidth: 96)
-                    .animation(calm ? nil : .easeOut(duration: 0.14), value: level)
+                    .animation(calm ? nil : NotchSongMotion.stepEase, value: level)
             }
             if showsReading {
                 VStack(alignment: .leading, spacing: 0) {
@@ -186,10 +189,10 @@ struct NotchOfficeExpandedLevel: View {
                     if let caption { NotchOfficeBandCaption(kind: cue.kind, caption: caption, calm: calm) }
                 }
                 .frame(width: NotchOfficeMoments.expandedReadingColumn(cue, caption: captionFits), alignment: .leading)
-                .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.2), value: caption)
+                .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.swapEase, value: caption)
             }
         }
-        .animation(calm ? nil : .easeOut(duration: 0.14), value: reading)
+        .animation(calm ? nil : NotchSongMotion.stepEase, value: reading)
         .notchPunchIn(trigger)
         .transaction { $0.disablesAnimations = false }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -214,26 +217,25 @@ private struct NotchOfficeLevelMark: View {
 /// A lower third whose words change while its moment shows: a level's band,
 /// or a copy's turn. Its words are its identity, so it arrives again only
 /// when they change, never on a step inside a band: the last words are gone
-/// in a blink, before the next come in out of their blur, so the two never
-/// overlap. Calm, the next ones fade in.
+/// in a blink, and the next come in out of their blur on the caption's beat,
+/// as every lower third does, so the two never overlap. Calm, the next ones
+/// fade in once the last have gone.
 struct NotchOfficeBandCaption: View {
     let kind: NotchOfficeCue.Kind
     let caption: String
     let calm: Bool
     /// A capsule in a taller bar reads it at the card's size.
     var size: NotchLowerThird.Size = .strip
-    /// How long after its words change they arrive: a level's follow the
-    /// key at once, a copy's land after its title, as the sheet comes out.
-    var delay: Double = 0.1
 
     var body: some View {
         ZStack(alignment: .leading) {
-            NotchLowerThird(caption: caption, size: size, trigger: calm ? nil : "\(kind)|\(caption)", delay: delay)
+            NotchLowerThird(caption: caption, size: size, trigger: calm ? nil : "\(kind)|\(caption)")
                 .id(caption)
                 // Calm, the next words wait for the last to go, so the two
                 // never show over each other.
-                .transition(.asymmetric(insertion: calm ? .opacity.animation(NotchSongMotion.reduced.delay(0.08)) : .opacity,
-                                        removal: .opacity.animation(.easeOut(duration: 0.08))))
+                .transition(.asymmetric(insertion: calm ? .opacity.animation(NotchSongMotion.reduced
+                                                                                .delay(NotchSongMotion.blink)) : .opacity,
+                                        removal: .opacity.animation(NotchSongMotion.blinkOut)))
         }
         .transition(.opacity)
     }
@@ -298,17 +300,18 @@ struct NotchOfficeMiniBoombox: View {
         .accessibilityHidden(true)
         .onChange(of: level) { kick() }
         .task {
-            // One kick as the moment lands, with the punch-in.
-            try? await Task.sleep(nanoseconds: 120_000_000)
+            // One kick as the moment lands, as the punch-in's fade ends.
+            try? await Task.sleep(nanoseconds: UInt64(NotchSongMotion.punch * 1_000_000_000))
             kick()
         }
         .task(id: muted) {
             guard muted, !calm, !slashed else {
-                withAnimation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.16)) { slashed = muted }
+                withAnimation(calm ? NotchSongMotion.reduced : NotchSongMotion.punchFade) { slashed = muted }
                 return
             }
-            try? await Task.sleep(nanoseconds: 60_000_000)
-            withAnimation(.easeOut(duration: 0.22)) { slashed = true }
+            // The slash draws across once the cones have gone flat.
+            try? await Task.sleep(nanoseconds: UInt64(NotchSongMotion.blink * 1_000_000_000))
+            withAnimation(NotchSongMotion.swapEase) { slashed = true }
         }
     }
 
@@ -320,9 +323,10 @@ struct NotchOfficeMiniBoombox: View {
         .keyframeAnimator(initialValue: CGFloat(1), trigger: kicks) { content, kick in
             content.scaleEffect(kick)
         } keyframes: { _ in
+            // Out in a blink and back in a step, as the connect card's cones push.
             KeyframeTrack {
-                CubicKeyframe(NotchOfficeMoments.coneKick, duration: 0.07)
-                CubicKeyframe(1, duration: NotchOfficeMoments.coneKickDuration - 0.07)
+                CubicKeyframe(NotchOfficeMoments.coneKick, duration: NotchSongMotion.push.out)
+                CubicKeyframe(1, duration: NotchOfficeMoments.coneKickDuration - NotchSongMotion.push.out)
             }
         }
     }
@@ -350,7 +354,7 @@ struct NotchOfficeMiniBoombox: View {
         .opacity(muted ? 0.42 : 1)
         .scaleEffect(x: muted ? 0.92 : NotchOfficeMoments.coneScale(level),
                      y: muted ? 0.92 : NotchOfficeMoments.coneScale(level))
-        .animation(calm ? nil : .spring(response: 0.28, dampingFraction: 0.62), value: level)
+        .animation(calm ? nil : NotchSongMotion.follow, value: level)
         .offset(x: (left ? -Big.coneOffset : Big.coneOffset) * s, y: Big.deckY * s)
     }
 
@@ -414,7 +418,7 @@ struct NotchOfficeWindowBlinds: View {
                 .frame(width: side, height: side)
         }
         .frame(width: side, height: side)
-        .animation(calm ? nil : .easeOut(duration: 0.18), value: open)
+        .animation(calm ? nil : NotchSongMotion.stepEase, value: open)
         .accessibilityHidden(true)
     }
 }
@@ -444,7 +448,7 @@ struct NotchOfficeVUMeter: View {
             }
         }
         .frame(height: NotchOfficeMoments.vuHeights.highest * scale, alignment: .bottom)
-        .animation(reduceMotion || lowPower.isOn ? nil : .easeOut(duration: 0.12), value: lit)
+        .animation(reduceMotion || lowPower.isOn ? nil : NotchSongMotion.stepEase, value: lit)
         .accessibilityHidden(true)
     }
 }

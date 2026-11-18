@@ -28,7 +28,7 @@ enum NotchIslandGlow: Equatable {
     /// rests beside the camera. The glows that are not the song's, the
     /// agents' and the companion's, share one switch (`idleAllowed`: on,
     /// and not in Low Power Mode); a notice's glow is resolved under it
-    /// (`notice(office:agent:songWorn:idleAllowed:)`).
+    /// (`notice(office:agent:colours:idleAllowed:)`).
     static func closed(agentStrip: Bool, songGlows: Bool, companionRests: Bool, idleAllowed: Bool,
                        notice: NotchNoticeGlow? = nil) -> NotchIslandGlow {
         if let notice, !songGlows { return .notice(notice) }
@@ -41,11 +41,16 @@ enum NotchIslandGlow: Equatable {
     /// notice: without its Office moment (`office`, which the notice carries
     /// only while the Office moments are on), or with the glow switched off
     /// or in Low Power Mode. An agent's notice wears that agent's colours;
-    /// any other wears the song's while one plays, else the companion's.
-    static func notice(office: Bool, agent: AgentProvider?, songWorn: Bool, idleAllowed: Bool) -> NotchNoticeGlow? {
+    /// any other wears the moment's (NotchMomentColours), as its props do.
+    static func notice(office: Bool, agent: AgentProvider?, colours: NotchMomentColours,
+                       idleAllowed: Bool) -> NotchNoticeGlow? {
         guard office, idleAllowed else { return nil }
         if let agent { return .agent(agent) }
-        return songWorn ? .song : .companion
+        switch colours {
+        case .song: return .song
+        case .companion: return .companion
+        case .office: return .office
+        }
     }
 
     /// The open island: the song's colours while it wears one, otherwise
@@ -137,6 +142,69 @@ enum NotchNoticeGlow: Equatable {
     case agent(AgentProvider)
     /// The companion's (the cast member's own, or grown from its body).
     case companion
+    /// The Office's own accents, with no song and no companion.
+    case office
+}
+
+/// Whose colours an Office moment wears, its props and its glow alike, so a
+/// prop never wears one colour over a glow of another: the song's while one
+/// is worn, else the companion's while it is out, else the Office's own
+/// accents. Every prop, the edition's bubble and every notice glow read it
+/// through one resolver (NotchMomentPaint).
+enum NotchMomentColours: Equatable {
+    case song, companion, office
+
+    /// A song is worn while it plays, with the song mode on. A paused song
+    /// lends the island nothing, as the closed island's own song glow does
+    /// not (NotchSongMode.glowsClosed): a volume change over a paused song
+    /// wears the companion's colours, props and glow alike.
+    static func songWorn(songMode: Bool, playing: Bool) -> Bool { songMode && playing }
+
+    static func of(songWorn: Bool, companionOn: Bool) -> NotchMomentColours {
+        songWorn ? .song : companionOn ? .companion : .office
+    }
+
+    /// The Office's own accents: jelly, mustard and the statuette's pale
+    /// gold. Toned as a cover's are, the props take them bright and the
+    /// glow deep, both the same yellows.
+    static let officeSeeds = [NotchRGB(hex: 0xF4D03F), NotchRGB(hex: 0xC9A227), NotchRGB(hex: 0xFFF0A0)]
+}
+
+/// What an Office moment means, which leans its glow toward the edition's
+/// own signal colours: beet for danger (a battery running out, a budget
+/// spent), gold for success (an agent's turn done). Subtle: the moment's
+/// colours stay, a share of the accent mixed in, and every colour stays as
+/// deep as a song's glow, so the strip's words keep AA over it.
+enum NotchMomentMood: Equatable {
+    case danger, success
+
+    static let beet = NotchRGB(hex: 0xC0392B)
+    static let gold = NotchRGB(hex: 0xE3B23C)
+    /// How far the glow leans toward the accent.
+    static let lean = 0.35
+    /// The glow's colours stay inside the song's glow's band, whose top keeps
+    /// white words AA under the strip's veil (NotchAuroraVeil.strip).
+    static let glowLuminance: ClosedRange<Double> = 0.07...0.18
+
+    var accent: NotchRGB { self == .danger ? Self.beet : Self.gold }
+
+    /// The mood of a moment: its battery state or its agent's beat.
+    static func of(_ kind: NotchOfficeCue.Kind?) -> NotchMomentMood? {
+        switch kind {
+        case .battery(.low)?: return .danger
+        case .agent(.budgetReached)?: return .danger
+        case .agent(.finished)?: return .success
+        default: return nil
+        }
+    }
+
+    /// `colors` leaned toward the accent, toned back into the glow's band.
+    func leaned(_ colors: [NotchRGB]) -> [NotchRGB] {
+        colors.map {
+            $0.mixed(with: accent, by: Self.lean)
+                .toned(maxLuminance: Self.glowLuminance.upperBound, minLuminance: Self.glowLuminance.lowerBound)
+        }
+    }
 }
 
 /// One resize of the island, as its window plans it when the shape starts
@@ -179,7 +247,7 @@ struct NotchGlowPresence: Equatable {
     }
 
     /// The song's fade (NotchSongMotion.fade).
-    static let fade: Double = 0.35
+    static let fade = NotchSongMotion.fadeDuration
     /// A resize already this far along is too nearly done to follow.
     static let followable: Double = 0.7
 

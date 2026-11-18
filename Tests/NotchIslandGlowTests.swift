@@ -218,15 +218,17 @@ enum NotchIslandGlowTests {
     /// An Office notice glows in its own colours, under the same switch as
     /// the companion's, and never over the song's own strip.
     private static func noticePrecedence(_ suite: TestSuite) {
-        let companion = NotchIslandGlow.notice(office: true, agent: nil, songWorn: false, idleAllowed: true)
+        let companion = NotchIslandGlow.notice(office: true, agent: nil, colours: .companion, idleAllowed: true)
         suite.expect(companion == .companion, "an Office notice with no song wears the companion's colours")
-        suite.expect(NotchIslandGlow.notice(office: true, agent: nil, songWorn: true, idleAllowed: true) == .song,
+        suite.expect(NotchIslandGlow.notice(office: true, agent: nil, colours: .song, idleAllowed: true) == .song,
                      "an Office notice wears the playing song's colours")
-        suite.expect(NotchIslandGlow.notice(office: true, agent: .codex, songWorn: true, idleAllowed: true) == .agent(.codex),
+        suite.expect(NotchIslandGlow.notice(office: true, agent: nil, colours: .office, idleAllowed: true) == .office,
+                     "with no song and no companion an Office notice glows in the Office's own accents")
+        suite.expect(NotchIslandGlow.notice(office: true, agent: .codex, colours: .song, idleAllowed: true) == .agent(.codex),
                      "an agent's notice wears that agent's colours, song or not")
-        suite.expect(NotchIslandGlow.notice(office: false, agent: .claude, songWorn: true, idleAllowed: true) == nil,
+        suite.expect(NotchIslandGlow.notice(office: false, agent: .claude, colours: .song, idleAllowed: true) == nil,
                      "without its Office moment a notice stays exactly the plain black notice")
-        suite.expect(NotchIslandGlow.notice(office: true, agent: nil, songWorn: true, idleAllowed: false) == nil,
+        suite.expect(NotchIslandGlow.notice(office: true, agent: nil, colours: .song, idleAllowed: false) == nil,
                      "the glow switch and Low Power Mode keep a notice black too")
         for agentStrip in [false, true] {
             for companionRests in [false, true] {
