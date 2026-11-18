@@ -68,3 +68,68 @@ extension Optional where Wrapped == NotchSongText {
     /// while a song is worn, otherwise white at the given opacity.
     func strong(_ opacity: Double) -> Color { self?.primary ?? .white.opacity(opacity) }
 }
+
+/// How strongly the aurora is veiled for what sits over it.
+enum NotchAuroraVeil {
+    /// `vivid` is every other page by default: the colour well up and the
+    /// island's text in the song's own tints, primary far above AA. Coloured
+    /// status text and thin graphics can fall below AA and 3:1 there.
+    /// `page` is the same pages under Increase Contrast, where all of it keeps AA.
+    /// `strip` is the closed island's strip: a cover, a few bright words in
+    /// the song's primary tint over colour no lighter than 0.18 luminance,
+    /// and the dancers, so the colour shows nearly in full (about 0.88 to
+    /// 0.91) at the wings' outer ends. Its words keep 4.5:1 even at the
+    /// veil's faintest, at a new song's bloom; the camera between the wings
+    /// stays the hardware's own black.
+    case open, calm, vivid, page, strip
+
+    /// The colour's strength under the veil.
+    var strength: Float {
+        switch self {
+        case .open, .strip: return 1
+        case .calm: return 0.55
+        case .vivid: return 0.7
+        // Measured on the busiest pages: their grey and orange text keeps
+        // 4.5:1 and their larger bold status text 3:1 over the colour.
+        case .page: return 0.45
+        }
+    }
+
+    /// The veil's stops, from the bottom up: darker under the controls and
+    /// the head row, lighter in the middle where the colour shows.
+    var stops: [CGFloat] {
+        switch self {
+        case .open: return [0.26, 0.12, 0.22]
+        case .strip: return [0.12, 0.09, 0.1]
+        case .calm: return [0.49, 0.23, 0.42]
+        case .vivid: return [0.42, 0.18, 0.36]
+        case .page: return [0.49, 0.26, 0.42]
+        }
+    }
+
+    /// How far a beat may thin the veil, as a share of itself.
+    var thinnest: Double {
+        switch self {
+        case .page: return 0.92
+        case .vivid: return 0.86
+        default: return 0.8
+        }
+    }
+
+    /// How far a new song's bloom lifts the veil. The strip's is shallow:
+    /// its veil is thin already, and a deeper lift would take its words
+    /// under 4.5:1.
+    var bloomDepth: Double {
+        switch self {
+        case .open: return 0.5
+        case .strip: return 0.75
+        case .calm: return 0.7
+        case .vivid: return 0.65
+        case .page: return 0.8
+        }
+    }
+
+    /// The least the veil ever lays over the colour: its lightest stop,
+    /// thinned as far as a beat or a new song's bloom takes it.
+    var faintest: Double { Double(stops.min() ?? 0) * min(thinnest, bloomDepth) }
+}

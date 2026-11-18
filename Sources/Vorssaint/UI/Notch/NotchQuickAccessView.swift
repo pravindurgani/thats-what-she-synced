@@ -70,6 +70,8 @@ struct NotchQuickAccessView: View {
     @ObservedObject private var microphone = MicMuteService.shared
     @ObservedObject private var recorder = ScreenRecorderService.shared
     @ObservedObject private var music = NotchMusicService.shared
+    /// A black-and-white song's colours follow the companion it borrows them from.
+    @ObservedObject private var colourless = NotchColourlessCompanion.shared
     @AppStorage(DefaultsKey.notchLiquidGlassEnabled) private var glass = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast

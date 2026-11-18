@@ -11,6 +11,8 @@ struct NotchMusicView: View {
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var features = FeatureRuntime.shared
     @ObservedObject private var shuffle = NotchShuffleService.shared
+    /// A black-and-white song's colours follow the companion it borrows them from.
+    @ObservedObject private var colourless = NotchColourlessCompanion.shared
     @AppStorage(DefaultsKey.notchLyricsEnabled) private var lyricsEnabled = true
     @AppStorage(DefaultsKey.notchQueueEnabled) private var queueEnabled = true
     @AppStorage(DefaultsKey.notchMusicShowVolume) private var showVolume = false
@@ -23,8 +25,10 @@ struct NotchMusicView: View {
     /// The cover's own colour, used for the moving parts that belong to this
     /// track. Neutral covers keep them white.
     private var accent: Color { service.artworkTint?.color ?? .white }
-    /// The cover's palette, which colours the page while a song is loaded.
-    /// Neutral covers have none, and the player keeps its plain look for them.
+    /// The song's palette, which colours the player while a song is loaded,
+    /// whether or not the island wears the song: the cover's own, or, for a
+    /// black-and-white cover or none, the companion's (NotchColourlessSong),
+    /// so a colourless song's player is coloured as a colourful one's is.
     private var palette: NotchArtworkPalette? { preview ? nil : NotchArtworkPalette.song(service.artwork) }
     private var showsLyrics: Bool { lyricsEnabled && AppFeature.notchLyrics.isAvailable }
     private var showsQueue: Bool { queueEnabled && AppFeature.notchQueue.isAvailable }
@@ -530,6 +534,8 @@ private struct NotchMusicTransport: View {
     // track stays the same, so this row must observe the service itself.
     @ObservedObject private var service = NotchMusicService.shared
     @ObservedObject private var l10n = L10n.shared
+    /// A black-and-white song's plate follows the companion it borrows its colours from.
+    @ObservedObject private var colourless = NotchColourlessCompanion.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.notchSettingsPreview) private var preview
     /// What a tap on play or pause asked for, shown at once while the player
@@ -538,8 +544,9 @@ private struct NotchMusicTransport: View {
     private var text: RadialMenuFeatureStrings { FeatureStrings.radialMenu(l10n.language) }
     private var height: CGFloat { compact ? 36 : 44 }
     private var showsPlaying: Bool { requestedPlaying ?? playback.isPlaying }
-    /// The main action takes the cover's lead colour as a plate, deep enough
-    /// that the white glyph keeps its contrast; neutral covers keep no plate.
+    /// The main action takes the song's lead colour as a plate, deep enough
+    /// that the white glyph keeps its contrast, song mode on or off: a
+    /// black-and-white cover's plate is in the companion's colours.
     private var plate: Color? {
         guard !preview, let palette = NotchArtworkPalette.song(service.artwork) else { return nil }
         return Color(nsColor: palette.plate)
