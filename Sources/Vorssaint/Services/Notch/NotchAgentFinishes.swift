@@ -55,6 +55,15 @@ final class NotchAgentFinishes: ObservableObject {
         apply(next, live: AgentUsageService.shared.snapshot.live)
     }
 
+    /// The finish notice played the agent's moment (the Office moments'
+    /// "Employee of the Month"), so its wing goes without a check after it.
+    func celebrate(_ provider: AgentProvider) {
+        var next = log
+        next.celebrate(provider)
+        guard next != log else { return }
+        apply(next, live: AgentUsageService.shared.snapshot.live)
+    }
+
     private func ended(_ end: AgentTurnEnd) {
         // A turn the island never showed at work, too short for a reading
         // to land, has no ring to close.

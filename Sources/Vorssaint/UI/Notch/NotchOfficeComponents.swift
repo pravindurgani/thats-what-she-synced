@@ -151,6 +151,126 @@ struct NotchBlindsShape: Shape {
     }
 }
 
+// MARK: - The confetti
+
+/// A short burst of confetti from the middle of its frame, or from a ring
+/// `origin` points out from it: each piece flies out on the arrival curve,
+/// turning, then drifts down as it fades. It plays once per `trigger` and is
+/// gone in under a second; a new trigger starts it over rather than adding a
+/// second burst. Reduce Motion and Low Power Mode leave it out. The layout is
+/// NotchOfficeConfettiBurst's.
+struct NotchOfficeConfetti: View {
+    let colors: [Color]
+    let trigger: String
+    var reach: CGFloat = NotchOfficeMoments.confettiReach
+    /// Where the pieces start from the middle: the edge of what they burst from.
+    var origin: CGFloat = 0
+    var count = NotchOfficeConfettiBurst.defaultCount
+    var delay: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
+    @State private var burst = false
+    @State private var settled = false
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
+
+    var body: some View {
+        let paint = colors.isEmpty ? [NotchOfficeInk.gold] : colors
+        ZStack {
+            if !calm {
+                ForEach(Array(NotchOfficeConfettiBurst.bits(count: count, reach: reach, colors: paint.count).enumerated()),
+                        id: \.offset) { _, bit in
+                    RoundedRectangle(cornerRadius: min(bit.width, bit.height) / 2.5, style: .continuous)
+                        .fill(paint[bit.color])
+                        .frame(width: bit.width, height: bit.height)
+                        .rotationEffect(.degrees(burst ? bit.spin : 0))
+                        .offset(x: burst ? bit.x : start(bit).x,
+                                y: burst ? bit.y + (settled ? bit.fall : 0) : start(bit).y)
+                        .opacity(burst && !settled ? 1 : 0)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task(id: trigger) {
+            var reset = Transaction(animation: nil)
+            reset.disablesAnimations = true
+            withTransaction(reset) { burst = false; settled = false }
+            guard !calm else { return }
+            try? await Task.sleep(nanoseconds: UInt64(max(0.016, delay) * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            withAnimation(NotchSongMotion.arrive) { burst = true }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(NotchSongMotion.fade) { settled = true }
+        }
+    }
+
+    /// Where a piece starts: on the origin's ring, along its own way out.
+    private func start(_ bit: NotchOfficeConfettiBit) -> CGPoint {
+        let distance = (bit.x * bit.x + bit.y * bit.y).squareRoot()
+        guard origin > 0, distance > origin else { return .zero }
+        return CGPoint(x: bit.x * origin / distance, y: bit.y * origin / distance)
+    }
+}
+
+// MARK: - The glint
+
+/// One pass of light across whatever it is applied to, cut to that
+/// thing's own shape: a statuette catching the light once as it lands. It
+/// plays once per trigger; Reduce Motion and Low Power Mode leave it out.
+struct NotchOfficeGlint: ViewModifier {
+    let trigger: String
+    var tone: Color = NotchOfficeInk.goldLight
+    var delay: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
+    @State private var pass: CGFloat = -1
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if !calm {
+                    GeometryReader { proxy in
+                        let band = max(3, proxy.size.width * 0.55)
+                        // A tilted band's corners reach past its edges: it
+                        // starts and ends that much further out, so nothing
+                        // of it is left on the shape before or after its pass.
+                        let lean = proxy.size.height * 0.9 * sin(22 * Double.pi / 180) + 1
+                        LinearGradient(colors: [.clear, tone.opacity(0.95), .white.opacity(0.9), tone.opacity(0.95), .clear],
+                                       startPoint: .leading, endPoint: .trailing)
+                            .frame(width: band, height: proxy.size.height * 1.8)
+                            .rotationEffect(.degrees(22))
+                            // From just off the leading edge to just past the trailing one.
+                            .offset(x: (pass + 1) / 2 * (proxy.size.width + band + lean * 2) - band - lean,
+                                    y: -proxy.size.height * 0.4)
+                            .blendMode(.plusLighter)
+                    }
+                    .mask(content)
+                    .allowsHitTesting(false)
+                }
+            }
+            .task(id: trigger) {
+                var reset = Transaction(animation: nil)
+                reset.disablesAnimations = true
+                withTransaction(reset) { pass = -1 }
+                guard !calm else { return }
+                try? await Task.sleep(nanoseconds: UInt64(max(0.016, delay) * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                withAnimation(NotchSongMotion.sweep) { pass = 1 }
+            }
+    }
+}
+
+extension View {
+    /// One gold glint across this view's own shape, once per trigger.
+    func notchGlint(_ trigger: String, tone: Color = NotchOfficeInk.goldLight, delay: Double = 0) -> some View {
+        modifier(NotchOfficeGlint(trigger: trigger, tone: tone, delay: delay))
+    }
+}
+
 // MARK: - The loops
 
 /// A view whose Core Animation loop runs only while its window is on screen
