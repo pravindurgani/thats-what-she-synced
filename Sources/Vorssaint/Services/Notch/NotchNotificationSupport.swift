@@ -219,12 +219,18 @@ enum NotchNotificationSupport {
     }
 
     /// Whether a banner must stay in sight because the island cannot do what
-    /// its buttons do. A call answers with two of its own, Accept and
-    /// Decline in whatever language, or reads as a call; a lone Reply, which
-    /// nearly every message offers, does not hold its banner back, so hiding
-    /// the originals still works for messages as it always has.
+    /// its buttons do: a button that picks up or turns down a call (Accept,
+    /// Answer, Decline, Join, in the languages the moments read), a banner
+    /// that reads as a call, or two buttons of FaceTime's or Phone's own in
+    /// any language. A message's Reply or Mark as Read does not hold its
+    /// banner back, so hiding the originals works for messages and mail as
+    /// it always has.
     static func keepsOwnBanner(controls: [String], content: NotchNotificationContent) -> Bool {
-        controls.count >= 2 || NotchOfficeMoments.channel(for: content) == .call
+        if controls.map(NotchOfficeMoments.folded).contains(where: NotchOfficeMoments.answers) { return true }
+        if NotchOfficeMoments.channel(for: content, controls: controls) == .call { return true }
+        // Whole words, so iPhone Mirroring is not the Phone app.
+        let app = Set(content.app.lowercased().split { !$0.isLetter }.map(String.init))
+        return controls.count >= 2 && NotchOfficeMoments.callApps.contains(where: app.contains)
     }
 
     static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {

@@ -292,7 +292,7 @@ enum NotchOfficeMoments {
     }
 
     /// A button that picks up or turns down a ringing call.
-    private static func answers(_ label: String) -> Bool {
+    static func answers(_ label: String) -> Bool {
         let parts = Set(words(label))
         return !parts.isDisjoint(with: ["accept", "answer", "decline", "join", "aceptar", "contestar", "rechazar",
                                         "accepter", "decrocher", "refuser", "annehmen", "ablehnen", "accetta",

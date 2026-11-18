@@ -737,7 +737,7 @@ enum NotchNotificationReaderTests {
             banner.children.append(contentsOf: [answer, decline])
             suite.expect(reader.read()?.items.first?.controls == ["Contestar", "Rechazar"]
                             && reader.hideNative([id]).isEmpty && window.frame == home,
-                         "a call's two labelled buttons keep its banner in sight, in any language")
+                         "a call's labelled Answer and Decline keep its banner in sight, in other languages too")
             answer.strings["AXTitle"] = nil
             answer.strings["AXDescription"] = "Close"
             suite.expect(reader.read()?.items.first?.controls == ["Rechazar", "Contestar"],
@@ -752,8 +752,22 @@ enum NotchNotificationReaderTests {
             suite.expect(reader.read()?.items.first?.controls == ["Reply"]
                             && reader.hideNative([id]).isEmpty && !window.frame.intersects(screens),
                          "a message's lone Reply does not hold its banner back, so hiding works as before")
+            banner.actions = ["AXPress", custom("Close"), custom("Reply"), custom("Mark as Read")]
+            suite.expect(reader.read()?.items.first?.controls.isEmpty == false
+                            && reader.hideNative([id]).isEmpty && !window.frame.intersects(screens),
+                         "nor do a mail's or a chat's Reply and Mark as Read")
         } else {
             suite.expect(false, "the hiding fixture has a live banner")
+        }
+        do {
+            func content(_ app: String) -> NotchNotificationContent {
+                NotchNotificationContent(app: app, title: "Jane", subtitle: "", body: "Hello")
+            }
+            suite.expect(!NotchNotificationSupport.keepsOwnBanner(controls: ["Reply", "Mark as Read"], content: content("Mail"))
+                            && NotchNotificationSupport.keepsOwnBanner(controls: ["Aceptar", "Rechazar"], content: content("Chat"))
+                            && NotchNotificationSupport.keepsOwnBanner(controls: ["Ja", "Nee"], content: content("FaceTime"))
+                            && !NotchNotificationSupport.keepsOwnBanner(controls: ["Ja", "Nee"], content: content("iPhone Mirroring")),
+                         "a banner is held for a call's own buttons, not for any two")
         }
 
         if let (access, reader, window, banner, id) = hiddenFixture() {

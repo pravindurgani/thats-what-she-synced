@@ -13,7 +13,7 @@ enum NotchOfficeInk {
     static let mustard = Color(red: 0xC9 / 255, green: 0xA2 / 255, blue: 0x27 / 255)
     static let paper = Color(red: 0xF4 / 255, green: 0xF1 / 255, blue: 0xE8 / 255)
     static let beet = Color(red: 0xC0 / 255, green: 0x39 / 255, blue: 0x2B / 255)
-    static let jellO = Color(red: 0xF4 / 255, green: 0xD0 / 255, blue: 0x3F / 255)
+    static let jelly = Color(red: 0xF4 / 255, green: 0xD0 / 255, blue: 0x3F / 255)
     static let gold = Color(red: 0xE3 / 255, green: 0xB2 / 255, blue: 0x3C / 255)
     static let goldLight = Color(red: 0xF7 / 255, green: 0xD7 / 255, blue: 0x74 / 255)
     static let mug = Color(red: 0xF7 / 255, green: 0xF5 / 255, blue: 0xF0 / 255)
@@ -23,10 +23,10 @@ enum NotchOfficeInk {
     static let latte = Color(red: 0xC8 / 255, green: 0x91 / 255, blue: 0x5A / 255)
 
     /// The moment's colours: the loaded song's, else the companion's, else
-    /// the Office's own Jell-O and mustard, never fewer than two. The island
+    /// the Office's own jelly yellow and mustard, never fewer than two. The island
     /// is never left grey for want of a song.
     static func colors() -> [Color] {
-        guard let paint = NotchLevelPaint.volume(), !paint.isEmpty else { return [jellO, mustard] }
+        guard let paint = NotchLevelPaint.volume(), !paint.isEmpty else { return [jelly, mustard] }
         return paint.count > 1 ? paint : paint + paint
     }
 
@@ -462,12 +462,14 @@ struct NotchOfficeRing: NSViewRepresentable {
     let side: CGFloat
     var glyphSize: CGFloat = 16
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Rests in Low Power Mode, as every other loop on the island does.
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
 
     func makeNSView(context: Context) -> NotchOfficeRingView { NotchOfficeRingView() }
 
     func updateNSView(_ view: NotchOfficeRingView, context: Context) {
         view.configure(colors: colors.map { NSColor($0) }, symbol: symbol, side: side, glyphSize: glyphSize,
-                       animates: !reduceMotion)
+                       animates: !reduceMotion && !lowPower.isOn)
     }
 
     static func dismantleNSView(_ view: NotchOfficeRingView, coordinator: ()) { view.stop() }
@@ -478,11 +480,12 @@ struct NotchOfficeSteam: NSViewRepresentable {
     var color: Color = .white.opacity(0.8)
     var animates = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
 
     func makeNSView(context: Context) -> NotchOfficeSteamView { NotchOfficeSteamView() }
 
     func updateNSView(_ view: NotchOfficeSteamView, context: Context) {
-        view.configure(color: NSColor(color), animates: animates && !reduceMotion)
+        view.configure(color: NSColor(color), animates: animates && !reduceMotion && !lowPower.isOn)
     }
 
     static func dismantleNSView(_ view: NotchOfficeSteamView, coordinator: ()) { view.stop() }

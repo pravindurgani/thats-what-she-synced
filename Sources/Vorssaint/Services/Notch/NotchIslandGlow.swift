@@ -20,9 +20,11 @@ enum NotchIslandGlow: Equatable {
     /// The closed island. The agents' glow wins while their strip is what
     /// shows: it is the island's news. Otherwise a song's glow, while its
     /// strip shows, and, with nothing else there, the companion's colours
-    /// around it as it rests beside the camera.
+    /// around it as it rests beside the camera. The glows that are not the
+    /// song's, the agents' and the companion's, share one switch
+    /// (`idleAllowed`: on, and not in Low Power Mode).
     static func closed(agentStrip: Bool, songGlows: Bool, companionRests: Bool, idleAllowed: Bool) -> NotchIslandGlow {
-        if agentStrip { return .agents }
+        if agentStrip { return idleAllowed ? .agents : .none }
         if songGlows { return .song }
         return companionRests && idleAllowed ? .idle : .none
     }

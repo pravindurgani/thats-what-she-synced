@@ -21,7 +21,7 @@ enum NotchIslandGlowTests {
                     for idleAllowed in [false, true] {
                         let glow = NotchIslandGlow.closed(agentStrip: agentStrip, songGlows: songGlows,
                                                           companionRests: companionRests, idleAllowed: idleAllowed)
-                        let expected: NotchIslandGlow = agentStrip ? .agents : songGlows ? .song
+                        let expected: NotchIslandGlow = agentStrip ? (idleAllowed ? .agents : .none) : songGlows ? .song
                             : companionRests && idleAllowed ? .idle : .none
                         suite.expect(glow == expected,
                                      "closed glow: agents \(agentStrip), song \(songGlows), companion \(companionRests), allowed \(idleAllowed)")
@@ -31,6 +31,8 @@ enum NotchIslandGlowTests {
         }
         suite.expect(NotchIslandGlow.closed(agentStrip: true, songGlows: true, companionRests: true, idleAllowed: true) == .agents,
                      "the agents' glow wins while their strip is what shows")
+        suite.expect(NotchIslandGlow.closed(agentStrip: true, songGlows: false, companionRests: true, idleAllowed: false) == .none,
+                     "with the glow switched off or in Low Power Mode, the agents' wings stay black too")
         suite.expect(NotchIslandGlow.open(wearsSong: true, plainPage: false, companionOn: true, idleAllowed: true) == .song
                         && NotchIslandGlow.open(wearsSong: false, plainPage: false, companionOn: true, idleAllowed: true) == .idle,
                      "the open island wears the song, or else the companion's colours")
