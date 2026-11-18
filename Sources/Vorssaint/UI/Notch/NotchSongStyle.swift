@@ -97,14 +97,22 @@ enum NotchSongMotion {
 
     // Every frame a layer moves is a frame WindowServer composites, and on a
     // ProMotion display Core Animation runs an animation at up to 120 a
-    // second unless it is asked for fewer. The song's motion asks for what
-    // it needs to look the same, as the comet rings and the cast's idle
-    // loops already do.
+    // second unless it is asked for fewer. Measured on the resting island,
+    // its cost follows the frames asked for: the cast's idle bursts at 15
+    // frames a second cost WindowServer less than half what they did at 30. The
+    // island's motion asks for what it needs to look the same: the gentlest
+    // moves 15, slow drifts, quicker sways and the comet's turn 30, beats 60,
+    // and only short one-offs more. Rates that divide one another (15, 30,
+    // 60) share their frames; 20 beside 30 would add frames of its own.
 
-    /// Slow drifts, breaths and turns that take seconds: 30 frames a second
-    /// moves a soft glow less than a point a frame.
+    /// Slow drifts, turns and quicker sways that take seconds: 30 frames a
+    /// second moves a soft glow less than a point a frame.
     static let slowFrames = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
-    /// A beat's quick moves: smooth at 60, as the comet's head is.
+    /// The gentlest moves: a glow's breath, a sway of a few degrees, a wisp
+    /// rising. 15 frames a second, every other one of a slow motion's, steps
+    /// each of them well under a pixel.
+    static let gentleFrames = CAFrameRateRange(minimum: 10, maximum: 15, preferred: 15)
+    /// A beat's quick moves: smooth at 60.
     static let beatFrames = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
 
     /// Moves `layer`'s `key` to `value` from where it shows now, over

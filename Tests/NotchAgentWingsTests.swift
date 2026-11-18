@@ -287,14 +287,21 @@ enum NotchAgentCometViewTests {
         suite.expect(orbit?.duration == NotchAgentWings.orbit && orbit?.repeatCount == .infinity
                         && orbit?.timingFunction == CAMediaTimingFunction(name: .linear)
                         && (orbit?.toValue as? Double).map { abs(abs($0) - 2 * .pi) < 0.0001 } == true,
-                     "the comet turns once every 1.4 seconds, linearly, without end")
-        suite.expect((orbit?.preferredFrameRateRange.maximum ?? 0) <= 60,
-                     "the comet never asks a ProMotion display for 120 frames a second")
+                     "the comet turns once every \(NotchAgentWings.orbit) seconds, linearly, without end")
+        suite.expect(NotchAgentWings.orbit == 2.8, "the comet turns calmly, once every 2.8 seconds")
+        suite.expect((orbit?.preferredFrameRateRange.maximum ?? 0) == 30
+                        && (orbit?.preferredFrameRateRange.preferred ?? 0) == 30,
+                     "the comet asks for 30 frames a second, about 4 degrees a frame, never a ProMotion display's 120")
         let breath = view.breathAnimation
         suite.expect(breath?.duration == NotchAgentWings.breath && breath?.autoreverses == true
                         && breath?.timingFunction == CAMediaTimingFunction(name: .easeInEaseOut)
                         && (breath?.fromValue as? Float) == 0.25 && (breath?.toValue as? Float) == 0.6,
                      "the halo breathes over 1.6 seconds, eased, between 0.25 and 0.6")
+        let breathRate = breath?.preferredFrameRateRange.maximum ?? 0
+        suite.expect(breathRate > 0 && breathRate <= 15 && (orbit?.preferredFrameRateRange.preferred ?? 0)
+                        .truncatingRemainder(dividingBy: breath?.preferredFrameRateRange.preferred ?? 1) == 0,
+                     "the halo breathes at 15 frames a second, on every other one of the orbit's")
+        suite.expect(view.drawsCometOnce, "the turning comet is drawn once and moved as a bitmap")
         view.configure(stops: stops, diameter: 20, finished: false, moves: true)
         suite.expect(view.orbitAnimation === orbit, "an update keeps the orbit's phase")
 

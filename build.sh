@@ -356,6 +356,7 @@ if (( TEST )); then
         Sources/Vorssaint/UI/Notch/NotchScrollEdgeFade.swift
         Sources/Vorssaint/UI/Notch/NotchAgentAnimationView.swift
         Sources/Vorssaint/UI/Notch/NotchAgentCometView.swift
+        Sources/Vorssaint/UI/Notch/NotchWingGlowView.swift
         Sources/Vorssaint/UI/Notch/NotchMascotCastParts.swift
         Sources/Vorssaint/UI/WindowVisibilityReader.swift
         Sources/Vorssaint/Services/Notch/NotchMusicAutomationSupport.swift

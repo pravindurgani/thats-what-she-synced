@@ -249,10 +249,12 @@ struct NotchMusicAurora: View {
     var presence: Double = 1
     var fades = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Low Power Mode settles it as Reduce Motion does: the colours stay, the drift and the beat rest.
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
 
     var body: some View {
         NotchMusicAuroraBridge(colors: palette.glow, energy: palette.energy, playing: isPlaying,
-                               moves: !reduceMotion && !still,
+                               moves: !reduceMotion && !still && !lowPower.isOn,
                                mood: mood, veil: veil, quiet: quiet, shown: shown, camera: camera, inkShown: inkShown,
                                presence: presence, fades: fades)
             .allowsHitTesting(false)
@@ -337,6 +339,11 @@ final class NotchMusicAuroraView: NSView {
     private var unseenSong = false
     private var entered = false
     private var motionInstalled = false
+    /// When, on the clock, the pools' drift was made from rest. The drift is
+    /// on the pools only while it runs; held, it comes off and each pool
+    /// keeps the pose it stood in, and it goes back on from this same start,
+    /// so the clock's held time picks it up where it stopped.
+    private var motionBegin: CFTimeInterval?
     private var occlusionObserver: NSObjectProtocol?
 
     // Listening: a quick envelope for the beat, a slow one for the song's
@@ -472,11 +479,7 @@ final class NotchMusicAuroraView: NSView {
             } else {
                 settleResponse()
                 reinstall?.cancel(); reinstall = nil
-                for blob in blobs {
-                    blob.removeAnimation(forKey: "drift")
-                    blob.removeAnimation(forKey: "breath")
-                }
-                motionInstalled = false
+                restPools()
             }
             syncClock()
         }
@@ -607,6 +610,8 @@ final class NotchMusicAuroraView: NSView {
 
     /// The drift runs only while a song plays, the island shows, and motion
     /// is welcome. Stopping it freezes the pools in their current pose.
+    /// Held, the drift comes off the pools altogether, so a paused or covered
+    /// island asks the compositor for nothing.
     private func syncClock() {
         let visible = shown && (window.map { $0.occlusionState.contains(.visible) } ?? false)
         let run = playing && visible && moves
@@ -619,11 +624,94 @@ final class NotchMusicAuroraView: NSView {
             clock.beginTime = stageTime()
             clock.speed = rate
         } else if !run, running {
+            // The pose first, read while the clock still runs, then the hold.
+            detachDrift()
             let local = clock.convertTime(CACurrentMediaTime(), from: nil)
             clock.speed = 0
             clock.timeOffset = local
+        } else if !run {
+            detachDrift()
         }
+        if run { attachDrift() }
         listen(playing && visible && moves)
+    }
+
+    /// Whether the pools carry their drift now.
+    var isDrifting: Bool { blobs.contains { $0.animation(forKey: "drift") != nil } }
+    /// Whether anything on the aurora is set to move: its pools' drift and breath.
+    var hasRunningMotion: Bool { blobs.contains { !($0.animationKeys() ?? []).isEmpty } }
+
+    /// Puts the drift made at `motionBegin` back on the pools, on the clock's
+    /// time, where it carries on from the held pose.
+    private func attachDrift() {
+        guard let begin = motionBegin, !isDrifting else { return }
+        let unit = Self.unit
+        let reachX = unit * 0.14, reachY = unit * 0.26
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, blob) in blobs.enumerated() {
+            let pool = Self.pools[index]
+            // A slow loop round the rest point; each pool turns the other way
+            // to its neighbour, so the light swirls rather than slides.
+            let turn: CGFloat = index.isMultiple(of: 2) ? 1 : -1
+            let loop: [CGSize] = [
+                CGSize(width: 0, height: 0),
+                CGSize(width: reachX * turn, height: -reachY * 0.6),
+                CGSize(width: reachX * 0.4 * turn, height: reachY),
+                CGSize(width: -reachX * turn, height: reachY * 0.3),
+                CGSize(width: 0, height: 0),
+            ]
+            let drift = CAKeyframeAnimation(keyPath: "transform.translation")
+            drift.values = loop.map { NSValue(size: $0) }
+            // Paced, so the loop keeps one speed through its seam.
+            drift.calculationMode = .cubicPaced
+            drift.duration = pool.drift
+            drift.repeatCount = .infinity
+            drift.beginTime = begin
+            drift.preferredFrameRateRange = NotchSongMotion.slowFrames
+            blob.add(drift, forKey: "drift")
+
+            let breath = CABasicAnimation(keyPath: "transform.scale")
+            breath.fromValue = 0.86
+            breath.toValue = 1.2
+            breath.duration = pool.breath
+            breath.autoreverses = true
+            breath.repeatCount = .infinity
+            breath.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            // Each pool starts part-way into its breath, so they never pulse together.
+            breath.timeOffset = pool.breath * Double(index) / 3
+            breath.beginTime = begin
+            breath.preferredFrameRateRange = NotchSongMotion.slowFrames
+            blob.add(breath, forKey: "breath")
+        }
+        CATransaction.commit()
+    }
+
+    /// Takes the drift off the pools, each keeping the pose it stands in.
+    private func detachDrift() {
+        guard isDrifting else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for blob in blobs {
+            blob.transform = blob.presentation()?.transform ?? blob.transform
+            blob.removeAnimation(forKey: "drift")
+            blob.removeAnimation(forKey: "breath")
+        }
+        CATransaction.commit()
+    }
+
+    /// No drift made, and every pool at its rest.
+    private func restPools() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for blob in blobs {
+            blob.removeAnimation(forKey: "drift")
+            blob.removeAnimation(forKey: "breath")
+            blob.transform = CATransform3DIdentity
+        }
+        CATransaction.commit()
+        motionBegin = nil
+        motionInstalled = false
     }
 
     /// Changes the drift speed without a jump in the pools' positions.
@@ -815,58 +903,18 @@ final class NotchMusicAuroraView: NSView {
 
     // MARK: Motion
 
-    /// Adds the pools' drift and breath, from rest, once the island settles
-    /// after it first shows, and when Reduce Motion changes. A resize only
-    /// stretches it (see layout), so it is never re-made mid-flight.
+    /// Makes the pools' drift and breath, from rest, once the island settles
+    /// after it first shows, and when Reduce Motion or Low Power Mode changes.
+    /// A resize only stretches it (see layout), so it is never re-made
+    /// mid-flight. It is on the pools only while it runs (see syncClock).
     private func installMotion() {
         let size = bounds.size
-        for blob in blobs {
-            blob.removeAnimation(forKey: "drift")
-            blob.removeAnimation(forKey: "breath")
-        }
-        motionInstalled = false
+        restPools()
         guard moves, shown, window != nil, size.width > 1, size.height > 1 else { syncClock(); return }
         motionInstalled = true
         // In the clock's proportional space (see layout), so the island
         // resizing stretches the drift with it rather than re-making it.
-        let unit = Self.unit
-        let reachX = unit * 0.14, reachY = unit * 0.26
-        let now = clock.convertTime(CACurrentMediaTime(), from: nil)
-        for (index, blob) in blobs.enumerated() {
-            let pool = Self.pools[index]
-            // A slow loop round the rest point; each pool turns the other way
-            // to its neighbour, so the light swirls rather than slides.
-            let turn: CGFloat = index.isMultiple(of: 2) ? 1 : -1
-            let loop: [CGSize] = [
-                CGSize(width: 0, height: 0),
-                CGSize(width: reachX * turn, height: -reachY * 0.6),
-                CGSize(width: reachX * 0.4 * turn, height: reachY),
-                CGSize(width: -reachX * turn, height: reachY * 0.3),
-                CGSize(width: 0, height: 0),
-            ]
-            let drift = CAKeyframeAnimation(keyPath: "transform.translation")
-            drift.values = loop.map { NSValue(size: $0) }
-            // Paced, so the loop keeps one speed through its seam.
-            drift.calculationMode = .cubicPaced
-            drift.duration = pool.drift
-            drift.repeatCount = .infinity
-            drift.beginTime = now
-            drift.preferredFrameRateRange = NotchSongMotion.slowFrames
-            blob.add(drift, forKey: "drift")
-
-            let breath = CABasicAnimation(keyPath: "transform.scale")
-            breath.fromValue = 0.86
-            breath.toValue = 1.2
-            breath.duration = pool.breath
-            breath.autoreverses = true
-            breath.repeatCount = .infinity
-            breath.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            // Each pool starts part-way into its breath, so they never pulse together.
-            breath.timeOffset = pool.breath * Double(index) / 3
-            breath.beginTime = now
-            breath.preferredFrameRateRange = NotchSongMotion.slowFrames
-            blob.add(breath, forKey: "breath")
-        }
+        motionBegin = clock.convertTime(CACurrentMediaTime(), from: nil)
         syncClock()
     }
 
@@ -921,8 +969,7 @@ final class NotchMusicAuroraView: NSView {
         guard let window else {
             levelsSubscription = nil
             volumeSubscription = nil
-            blobs.forEach { $0.removeAllAnimations() }
-            motionInstalled = false
+            restPools()
             reinstall?.cancel(); reinstall = nil
             return
         }
@@ -965,9 +1012,10 @@ struct NotchAuroraBubble: View {
     /// Where in the turn this bubble starts, so neighbours never spin in step.
     let phase: Double
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
 
     var body: some View {
-        NotchAuroraBubbleBridge(colors: colors, playing: playing, moves: !reduceMotion, phase: phase)
+        NotchAuroraBubbleBridge(colors: colors, playing: playing, moves: !reduceMotion && !lowPower.isOn, phase: phase)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -1000,6 +1048,8 @@ final class NotchAuroraBubbleView: NSView {
     private let shine = CAGradientLayer()
     private let veil = CALayer()
     private let phase: Double
+    /// Where the colour's turn stands while it is held, in radians.
+    private var angle: Double
     private var colors: [NSColor] = []
     private var playing = false
     private var moves = true
@@ -1009,6 +1059,8 @@ final class NotchAuroraBubbleView: NSView {
 
     init(phase: Double) {
         self.phase = phase
+        // Where in the turn it starts, so neighbours never spin in step.
+        angle = -2 * Double.pi * phase
         super.init(frame: .zero)
         layer = CALayer()
         wantsLayer = true
@@ -1019,6 +1071,7 @@ final class NotchAuroraBubbleView: NSView {
         swirl.type = .conic
         swirl.startPoint = CGPoint(x: 0.5, y: 0.5)
         swirl.endPoint = CGPoint(x: 0.5, y: 0)
+        swirl.transform = CATransform3DMakeRotation(CGFloat(angle), 0, 0, 1)
         canvas.addSublayer(swirl)
         // Light from above, as on the island.
         shine.type = .radial
@@ -1070,31 +1123,33 @@ final class NotchAuroraBubbleView: NSView {
         occlusionObserver = nil
     }
 
+    /// Whether the colour is turning now.
+    var isTurning: Bool { swirl.animation(forKey: "turn") != nil }
+
+    /// The turn runs only while the song plays, motion is welcome and the
+    /// bubble shows. Held, it comes off and the colour keeps the angle it
+    /// stood at, so a paused or hidden bubble asks the compositor for
+    /// nothing; it goes on again from that angle, so it never jumps.
     private func sync() {
         // A withdrawn bubble is hidden, not removed: it rests too.
         let visible = !isHiddenOrHasHiddenAncestor && (window.map { $0.occlusionState.contains(.visible) } ?? false)
         let run = playing && moves && visible
-        if moves, window != nil, swirl.animation(forKey: "turn") == nil {
+        if run, !isTurning {
             let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-            spin.fromValue = -2 * Double.pi * phase
-            spin.toValue = -2 * Double.pi * (phase + 1)
+            spin.fromValue = angle
+            spin.toValue = angle - 2 * Double.pi
             spin.duration = Self.turn
             spin.repeatCount = .infinity
             spin.preferredFrameRateRange = NotchSongMotion.slowFrames
-            swirl.speed = 0
-            swirl.timeOffset = 0
             swirl.add(spin, forKey: "turn")
-        } else if !moves {
+        } else if !run, isTurning {
+            let held = (swirl.presentation()?.value(forKeyPath: "transform.rotation.z") as? NSNumber)?.doubleValue
+            angle = held ?? angle
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            swirl.transform = CATransform3DMakeRotation(CGFloat(angle), 0, 0, 1)
             swirl.removeAnimation(forKey: "turn")
-        }
-        // Re-anchored where it stands, so the turn never jumps.
-        if run, swirl.speed == 0 {
-            swirl.beginTime = canvas.convertTime(CACurrentMediaTime(), from: nil)
-            swirl.speed = 1
-        } else if !run, swirl.speed != 0 {
-            let local = swirl.convertTime(CACurrentMediaTime(), from: nil)
-            swirl.speed = 0
-            swirl.timeOffset = local
+            CATransaction.commit()
         }
         if run, beatSubscription == nil {
             beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] bounce in self?.pulse(bounce) }

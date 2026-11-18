@@ -21,6 +21,10 @@ struct NotchWingGlowColors: Equatable {
 /// costs the compositor nothing more. A change of colours cross-fades. How
 /// strongly it shows is handed in (NotchGlowPresence) and applied to its own
 /// layer, so its fades run in Core Animation whatever transaction SwiftUI is in.
+///
+/// Shown in full, its dozen gradients are drawn once into one bitmap, so a
+/// comet turning or the companion moving over it composites that one layer
+/// on each of their frames rather than every gradient again.
 final class NotchWingGlowView: NSView {
     private let canvas = CALayer()
     private let ground = CALayer()
@@ -136,7 +140,20 @@ final class NotchWingGlowView: NSView {
         }
         if moved || recolor { needsLayout = true }
         presence.apply(shown, fades: fades, to: canvas)
+        // Drawn once while it stands in full; fading with the island's
+        // resize, it is drawn live, as each of those frames changes it.
+        let still = shown >= 1
+        if still != canvas.shouldRasterize {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            canvas.rasterizationScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+            canvas.shouldRasterize = still
+            CATransaction.commit()
+        }
     }
+
+    /// Whether the glow is drawn once and composited as one bitmap.
+    var drawsOnce: Bool { canvas.shouldRasterize }
 
     private func paint(_ colors: NotchWingGlowColors) {
         func pick(_ list: [NotchRGB], _ index: Int) -> NotchRGB {
@@ -230,6 +247,7 @@ final class NotchWingGlowView: NSView {
         CATransaction.setDisableActions(true)
         for layer in [canvas, ground, stage, base, pools.left, pools.right, accents.left, accents.right, ink, ends,
                       floor, scrim] as [CALayer] { layer.contentsScale = scale }
+        canvas.rasterizationScale = scale
         CATransaction.commit()
     }
 }
