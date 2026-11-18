@@ -111,11 +111,11 @@ enum NotchOfficeMoments {
     private static var cached: Bool?
     private static var observer: NSObjectProtocol?
 
-    /// On unless turned off with
-    /// `defaults write <bundle id> notchOfficeModeEnabled -bool false`, then a
-    /// relaunch: a change from another process is read on the next launch, as
-    /// the song mode's is. Read on every notice, so it is cached and dropped
-    /// whenever this process changes its own defaults.
+    /// On unless turned off with Office alerts in Settings, which applies at
+    /// once (NotchOfficeEditionSettings). A `defaults write` from Terminal is
+    /// read on the next launch, as the song mode's is. Read on every notice,
+    /// so it is cached and dropped whenever this process changes its own
+    /// defaults.
     static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
         guard defaults === UserDefaults.standard else { return read(defaults) }
         if let cached { return cached }
@@ -125,7 +125,7 @@ enum NotchOfficeMoments {
         return fresh
     }
 
-    /// Read again on the next ask (NotchOfficeEdition.set).
+    /// Read again on the next ask (NotchPreferenceCache.dropAll).
     static func invalidate() { cached = nil }
 
     /// Its own switch under the Office edition's master (NotchOfficeEdition).

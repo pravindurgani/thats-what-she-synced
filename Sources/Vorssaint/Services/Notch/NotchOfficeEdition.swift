@@ -38,17 +38,13 @@ enum NotchOfficeEdition {
     static func set(_ on: Bool, in defaults: UserDefaults = .standard) {
         defaults.set(on, forKey: DefaultsKey.notchOfficeEditionEnabled)
         guard defaults === UserDefaults.standard else { return }
-        NotchSongPreferences.invalidate()
-        NotchOfficeMoments.invalidate()
-        NotchIdleGlowPreferences.invalidate()
-        NotchMusicSide.invalidateCache()
+        NotchPreferenceCache.dropAll()
     }
 
     // MARK: Each extra, resolved
 
-    /// The song mode's own switch, Terminal only:
-    /// `defaults write <bundle id> notchSongModeEnabled -bool false`.
-    static let songModeKey = "notchSongModeEnabled"
+    /// The song mode's own switch, set in Settings (NotchOfficeEditionSettings).
+    static let songModeKey = DefaultsKey.notchSongModeEnabled
 
     /// The island wearing the song: its colours, glow, tinted text and the
     /// companion's song colours.
@@ -82,12 +78,100 @@ enum NotchOfficeEdition {
 /// it; one made on another thread drops it on the next turn of the main
 /// queue, without that thread waiting for the main thread, as an observer on
 /// the main queue would make it wait.
+///
+/// Only this process's own writes post that notification. A `defaults write`
+/// from Terminal changes the stored value without one, so these caches keep
+/// what they read until the app next launches.
 enum NotchPreferenceCache {
     static func observeDefaults(_ drop: @escaping () -> Void) -> NSObjectProtocol {
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil,
                                                queue: nil) { _ in
             if Thread.isMainThread { drop() } else { DispatchQueue.main.async(execute: drop) }
         }
+    }
+
+    /// Every cache that resolves one of the fork's switches, dropped at once:
+    /// the song mode's (its look included), the Office moments', the
+    /// companion glow's and the music side's. The mug and Settings call it
+    /// straight after a write, before the change's notification arrives.
+    /// Main thread only.
+    static func dropAll() {
+        NotchSongPreferences.invalidate()
+        NotchOfficeMoments.invalidate()
+        NotchIdleGlowPreferences.invalidate()
+        NotchMusicSide.invalidateCache()
+    }
+}
+
+/// The fork's switches as Settings shows them, in the island's "That's What
+/// She Synced" card: the master (NotchOfficeEdition), each extra's own switch
+/// under it and the song's look.
+///
+/// Each reads the person's own stored choice, never its resolution under the
+/// master, so a switch the master holds off still shows what comes back with
+/// it. A write here applies at once, with no relaunch: every cache that
+/// resolves it is dropped straight away, and the change's notification starts
+/// the island's own preference sync, which measures and redraws it. A
+/// `defaults write` from Terminal posts no notification here, so the island
+/// reads it on the next launch.
+enum NotchOfficeEditionSettings {
+    /// The on or off extras under the master.
+    enum Extra: String, CaseIterable, Identifiable {
+        /// The island wearing the song's colours (NotchSongMode).
+        case songColours
+        /// The Office moments on the island's notices (NotchOfficeMoments).
+        case officeAlerts
+        /// The companion's colours while nothing plays (NotchIdleGlowPreferences).
+        case idleGlow
+
+        var id: String { rawValue }
+
+        var key: String {
+            switch self {
+            case .songColours: return DefaultsKey.notchSongModeEnabled
+            case .officeAlerts: return DefaultsKey.notchOfficeModeEnabled
+            case .idleGlow: return DefaultsKey.notchIdleGlowEnabled
+            }
+        }
+    }
+
+    /// Every key the card writes, the master first. All are registered and
+    /// carried by a settings backup.
+    static let keys = [DefaultsKey.notchOfficeEditionEnabled] + Extra.allCases.map(\.key) + [DefaultsKey.notchSongLook]
+
+    /// The person's own choice for an extra: on unless turned off.
+    static func isOn(_ extra: Extra, in defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: extra.key) as? Bool ?? true
+    }
+
+    /// Main thread only, as every cache it drops is.
+    static func set(_ extra: Extra, _ on: Bool, in defaults: UserDefaults = .standard) {
+        defaults.set(on, forKey: extra.key)
+        applied(in: defaults)
+    }
+
+    /// The look chosen: vivid unless one colour is, a value this version
+    /// does not know included.
+    static func look(in defaults: UserDefaults = .standard) -> NotchSongLook {
+        NotchSongLook(rawValue: defaults.string(forKey: DefaultsKey.notchSongLook) ?? "") ?? .vivid
+    }
+
+    /// Main thread only, as every cache it drops is.
+    static func setLook(_ look: NotchSongLook, in defaults: UserDefaults = .standard) {
+        defaults.set(look.rawValue, forKey: DefaultsKey.notchSongLook)
+        applied(in: defaults)
+    }
+
+    /// The extras and the look change only while the master is on. Off, they
+    /// show their stored choices, greyed, for when it is back on.
+    static func isEditable(in defaults: UserDefaults = .standard) -> Bool {
+        NotchOfficeEdition.isEnabled(in: defaults)
+    }
+
+    /// Only this process's own defaults back the caches.
+    private static func applied(in defaults: UserDefaults) {
+        guard defaults === UserDefaults.standard else { return }
+        NotchPreferenceCache.dropAll()
     }
 }
 

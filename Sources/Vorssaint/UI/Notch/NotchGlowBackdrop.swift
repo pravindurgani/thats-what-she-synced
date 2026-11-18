@@ -67,10 +67,9 @@ final class NotchIdlePaint: ObservableObject {
 
 extension NotchSongMode {
     /// The companion's colours in the island while no song wears it (see
-    /// NotchIslandGlow): on unless turned off with
-    /// `defaults write <bundle id> notchIdleGlowEnabled -bool false`, then
-    /// relaunch (a change from another process is read on the next launch).
-    /// Low Power Mode turns it off as well.
+    /// NotchIslandGlow): on unless Glow when nothing plays is turned off in
+    /// Settings, which applies at once (NotchOfficeEditionSettings); Terminal's
+    /// `defaults write` waits for a relaunch. Low Power Mode turns it off as well.
     static var idleGlowEnabled: Bool { NotchIdleGlowPreferences.enabled }
 
     /// The closed island showing the agents' strip, where it is on screen.

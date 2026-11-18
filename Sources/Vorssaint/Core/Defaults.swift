@@ -902,6 +902,10 @@ enum DefaultsKey {
     /// island (NotchOfficeEdition). Off, the island is plain Vorssaint and
     /// each extra's own switch and choices stay stored for when it is on.
     static let notchOfficeEditionEnabled = "notchOfficeEditionEnabled"
+    /// The island wearing the song's colours (NotchSongMode), under the master.
+    static let notchSongModeEnabled = "notchSongModeEnabled"
+    /// How much of a cover's colour the island wears: NotchSongLook.rawValue.
+    static let notchSongLook = "notchSongLook"
     static let notchLyricsEnabled = "notchLyricsEnabled"
     static let notchLyricsOnline = "notchLyricsOnline"
     static let notchBrowserCovers = "notchBrowserCovers"
@@ -938,8 +942,8 @@ enum DefaultsKey {
     static let notchAgentsLimitFocus = "notchAgentsLimitFocus"
     static let notchAgentsLiveActivity = "notchAgentsLiveActivity"
     /// The companion's colours glowing in the island while no song does
-    /// (NotchIdleGlowPreferences). On unless set false; Terminal only, like
-    /// the song mode's switch, and read again on the next launch.
+    /// (NotchIdleGlowPreferences), under the master. Set in Settings with the
+    /// fork's other switches (NotchOfficeEditionSettings).
     static let notchIdleGlowEnabled = "notchIdleGlowEnabled"
     static let notchAgentsReadout = "notchAgentsReadout"
     static let notchAgentsFinishAlert = "notchAgentsFinishAlert"
@@ -1535,6 +1539,10 @@ enum Defaults {
         DefaultsKey.notchAccessoriesEnabled: true,
         DefaultsKey.notchOfficeModeEnabled: true,
         DefaultsKey.notchOfficeEditionEnabled: true,
+        // The fork's own switches under the master, all on, in the full look.
+        DefaultsKey.notchSongModeEnabled: true,
+        DefaultsKey.notchSongLook: NotchSongLook.vivid.rawValue,
+        DefaultsKey.notchIdleGlowEnabled: true,
         DefaultsKey.notchCalendarEnabled: true,
         DefaultsKey.notchCalendarCountdown: false,
         DefaultsKey.notchCalendarCountdownLead: NotchCalendarSupport.defaultCountdownLeadMinutes,

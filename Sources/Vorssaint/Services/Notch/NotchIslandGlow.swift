@@ -354,10 +354,11 @@ enum NotchIdleGlowPreferences {
         return fresh
     }
 
-    /// Read again on the next ask (NotchOfficeEdition.set).
+    /// Read again on the next ask (NotchPreferenceCache.dropAll).
     static func invalidate() { cached = nil }
 
-    /// Its own switch under the Office edition's master (NotchOfficeEdition).
+    /// Its own switch under the Office edition's master (NotchOfficeEdition),
+    /// set in Settings (NotchOfficeEditionSettings).
     static func enabled(in defaults: UserDefaults) -> Bool {
         NotchOfficeEdition.allows(defaults.object(forKey: DefaultsKey.notchIdleGlowEnabled) as? Bool ?? true,
                                   in: defaults)

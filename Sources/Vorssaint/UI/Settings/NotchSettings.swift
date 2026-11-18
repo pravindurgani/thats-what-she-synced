@@ -32,7 +32,6 @@ struct NotchSettings: View {
     @AppStorage(DefaultsKey.notchQueueEnabled) private var queueEnabled = true
     @AppStorage(DefaultsKey.notchLiveEqualizer) private var liveEqualizer = false
     @AppStorage(DefaultsKey.notchMusicSide) private var musicSide = NotchMusicSide.bars.rawValue
-    @AppStorage(DefaultsKey.notchOfficeEditionEnabled) private var officeEdition = true
     @AppStorage(DefaultsKey.notchEnabled) private var enabled = false
     @AppStorage(DefaultsKey.notchMascotEnabled) private var mascotEnabled = false
     @AppStorage(DefaultsKey.notchMascotHidesWhenIdle) private var mascotHidesWhenIdle = true
@@ -649,12 +648,9 @@ struct NotchSettings: View {
                 if accessoriesEnabled { Text(FeatureStrings.notchActivities(l10n.language).accessoryDescription).font(.caption).foregroundStyle(.secondary) }
                 if enabled, (volume || brightness || keyboardLight), !permissions.accessibility { PermissionRow(kind: .accessibility) }
             }
-            // The island's mug in Settings: every extra of this fork at once.
-            let edition = FeatureStrings.notchOfficeEdition(l10n.language)
-            SettingsCard {
-                switchRow("mug", edition.title, caption: edition.settingsHint,
-                          isOn: Binding(get: { officeEdition }, set: { NotchOfficeEdition.set($0) }))
-            }
+            // Every switch this fork adds, the island's mug first.
+            NotchOfficeEditionCard(openCompanion: features.isAvailable(.notchMascot) ? { tab = .companion } : nil,
+                                   openMusicSide: { showModule(.music) })
             let locked = FeatureStrings.notchLockScreen(l10n.language)
             SettingsCard(title: locked.title) {
                 switchRow("lock.display", locked.show, caption: locked.showHint, isOn: $lockScreen)
