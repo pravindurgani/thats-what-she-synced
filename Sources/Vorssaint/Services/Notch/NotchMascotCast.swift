@@ -127,7 +127,7 @@ extension NotchMascotStyle {
         case .goldenface: return [Cast.gold, Cast.amber, Cast.goldLight]
         case .jello: return [Cast.jello, Cast.jelloOrange, Cast.jelloGloss]
         case .mug: return [Cast.coffeeWarm, Cast.mustard, Cast.cream]
-        case .beet: return [Cast.beetGlow, Cast.leafGlow, Cast.stemGlow]
+        case .beet: return [Cast.leafGlow, Cast.beetGlow, Cast.stemGlow]
         case .minimal, .robot, .shuffle: return nil
         }
     }

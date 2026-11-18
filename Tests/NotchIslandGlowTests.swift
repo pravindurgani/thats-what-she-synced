@@ -114,10 +114,11 @@ enum NotchIslandGlowTests {
         suite.expect(scarn.map { near($0[0].hsb.hue, hue(NotchMascotColor(hex: 0x2A5FC4)))
                                     && near($0[1].hsb.hue, hue(NotchMascotColor(hex: 0xD2343F))) } == true,
                      "Agent Scarn glows agent blue with a tie red across the camera")
-        let beet = NotchIslandGlow.idleSeeds(look: shuffled, dealt: .beet)?.first
-        suite.expect(beet.map { $0.luminance > NotchRGB(NotchMascotCastColor.beet).luminance
-                                   && near($0.hsb.hue, hue(NotchMascotColor(hex: 0xC22E66))) } == true,
-                     "the beet glows a beet turned up, brighter than its own deep bulb")
+        let beet = NotchIslandGlow.idleSeeds(look: shuffled, dealt: .beet)
+        suite.expect(beet.map { $0.count > 1 && near($0[0].hsb.hue, hue(NotchMascotCastColor.leafGlow))
+                                   && $0[1].luminance > NotchRGB(NotchMascotCastColor.beet).luminance
+                                   && near($0[1].hsb.hue, hue(NotchMascotColor(hex: 0xC22E66))) } == true,
+                     "the beet sits on its leaves' green, so its bulb stands out, with a beet turned up beside it")
         let gold = NotchIslandGlow.idleSeeds(look: shuffled, dealt: .goldenface)?.first
         let jelly = NotchIslandGlow.idleSeeds(look: shuffled, dealt: .jello)?.first
         suite.expect(gold.map { NotchIslandGlow.isYellow($0.hsb.hue) } == true

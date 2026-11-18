@@ -141,7 +141,14 @@ final class NotchMascotShuffleService: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + max(1, hand.quietDealDue.timeIntervalSinceNow), execute: work)
     }
 
+    /// A deal can land while the island is drawing (it starts from a view
+    /// appearing), so the new member is published on the next turn of the
+    /// main queue, never from inside a view update.
     private func publish() {
-        if member != hand.member { member = hand.member }
+        let next = hand.member
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.member != next else { return }
+            self.member = next
+        }
     }
 }
