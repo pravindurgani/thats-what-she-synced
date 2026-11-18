@@ -211,23 +211,29 @@ private struct NotchOfficeLevelMark: View {
     }
 }
 
-/// A level band's lower third. Its words are its identity, so it arrives
-/// again only when the band changes, never on a step inside one: the last
-/// band's is gone in a blink, before the next one's comes in out of its
-/// blur, so the two never overlap. Calm, the next one fades in.
-private struct NotchOfficeBandCaption: View {
+/// A lower third whose words change while its moment shows: a level's band,
+/// or a copy's turn. Its words are its identity, so it arrives again only
+/// when they change, never on a step inside a band: the last words are gone
+/// in a blink, before the next come in out of their blur, so the two never
+/// overlap. Calm, the next ones fade in.
+struct NotchOfficeBandCaption: View {
     let kind: NotchOfficeCue.Kind
     let caption: String
     let calm: Bool
     /// A capsule in a taller bar reads it at the card's size.
     var size: NotchLowerThird.Size = .strip
+    /// How long after its words change they arrive: a level's follow the
+    /// key at once, a copy's land after its title, as the sheet comes out.
+    var delay: Double = 0.1
 
     var body: some View {
         ZStack(alignment: .leading) {
-            NotchLowerThird(caption: caption, size: size, trigger: calm ? nil : "\(kind)|\(caption)", delay: 0.1)
+            NotchLowerThird(caption: caption, size: size, trigger: calm ? nil : "\(kind)|\(caption)", delay: delay)
                 .id(caption)
-                .transition(.asymmetric(insertion: .opacity,
-                                        removal: .opacity.animation(.easeOut(duration: calm ? 0.2 : 0.08))))
+                // Calm, the next words wait for the last to go, so the two
+                // never show over each other.
+                .transition(.asymmetric(insertion: calm ? .opacity.animation(NotchSongMotion.reduced.delay(0.08)) : .opacity,
+                                        removal: .opacity.animation(.easeOut(duration: 0.08))))
         }
         .transition(.opacity)
     }

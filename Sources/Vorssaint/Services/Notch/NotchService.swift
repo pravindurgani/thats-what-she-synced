@@ -51,7 +51,7 @@ struct NotchNotice: Equatable {
     /// `captions` makes room for an Office caption under the title, which a
     /// strip too short for two lines leaves out.
     func preferredWings(wrapsMessage: Bool, captions: Bool = true) -> NotchNoticeWings {
-        let office = captions ? self.office : self.office.map { NotchOfficeCue(kind: $0.kind, level: $0.level) }
+        let office = captions ? self.office : self.office.map { NotchOfficeCue(kind: $0.kind, level: $0.level, copy: $0.copy) }
         if let notification {
             let fitted = NotchOfficeMoments.bannerWings(
                 office, fitted: NotchNotificationBannerLayout.wings(for: notification, wrapsMessage: wrapsMessage))
@@ -80,6 +80,11 @@ struct NotchNotice: Equatable {
         // Long accessory names still use bounded truncation.
         let maximum: CGFloat = event == .accessory && level == nil ? 160 : 240
         func fitted(_ content: CGFloat) -> CGFloat { min(maximum, max(Self.minimumWing, ceil(content) + 16 + cameraGap)) }
+        // A copy holds its sides for the widest caption and kind, so one copy
+        // after another never resizes the island.
+        if let office, office.kind == .copy {
+            return NotchOfficeMoments.copyWings(office, title: title, detail: detail, inset: Self.levelInset)
+        }
         // An empty title leaves the mark alone, without the space after it.
         let mark = fitted(leading > 0 ? leading + 18 + 8 : 18)
         guard level == nil else { return NotchNoticeWings(leading: mark, trailing: mark) }
@@ -112,9 +117,11 @@ struct NotchNotice: Equatable {
 
     /// Room a closed notice keeps inside its curved ends, which a side as
     /// narrow as its content still clears; only a display too narrow for a
-    /// side's content takes some of it.
+    /// side's content takes some of it. A copy's copier stands where a
+    /// level's boombox does.
     func inset(wing: CGFloat) -> CGFloat {
-        level != nil && event != .accessory ? Self.levelInset : min(NotchNotificationBannerLayout.inset, wing / 2)
+        level != nil && event != .accessory || office?.kind == .copy
+            ? Self.levelInset : min(NotchNotificationBannerLayout.inset, wing / 2)
     }
 
     /// Where the companion stands in this notice, as an offset of its centre
@@ -4487,11 +4494,25 @@ final class NotchService: ObservableObject {
         }
         if NotchSupport.routes(.clipboard) {
             let history = ClipboardHistoryService.shared
-            history.capturedEntry.receive(on: DispatchQueue.main).sink { [weak self] _ in
+            // Copies this launch, which deal the Office moment's captions in turn.
+            var copies = 0
+            history.capturedEntry.receive(on: DispatchQueue.main).sink { [weak self] entry in
                 guard let self else { return }
-                let text = FeatureStrings.clipboard(L10n.shared.language)
+                let language = L10n.shared.language
+                let text = FeatureStrings.clipboard(language)
+                guard NotchOfficeMoments.isEnabled() else {
+                    self.show(NotchNotice(event: .clipboard, title: text.copied,
+                                          detail: text.title, symbol: "doc.on.clipboard"))
+                    return
+                }
+                // The copier: the far side names what was copied in a word,
+                // never the copy itself, which may be a password.
+                copies &+= 1
+                let kind = NotchOfficeMoments.copyKind(entry)
                 self.show(NotchNotice(event: .clipboard, title: text.copied,
-                                      detail: text.title, symbol: "doc.on.clipboard"))
+                                      detail: NotchOfficeMoments.copySummary(kind, language: language),
+                                      symbol: "doc.on.clipboard",
+                                      office: NotchOfficeMoments.copyCue(take: copies, kind: kind, language: language)))
             }.store(in: &subscriptions)
         }
         // The companion loves being plugged in, so it listens for the charger too.

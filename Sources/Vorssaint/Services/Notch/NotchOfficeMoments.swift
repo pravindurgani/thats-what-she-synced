@@ -46,6 +46,8 @@ struct NotchOfficeCue: Equatable {
         case volume
         /// The display's brightness, with a window's blinds.
         case brightness
+        /// Something copied: the copier scans and a sheet slides out.
+        case copy
     }
 
     let kind: Kind
@@ -62,6 +64,8 @@ struct NotchOfficeCue: Equatable {
     /// its side is as wide as it will ever need and holds still while a key
     /// is held. Nil where the app is not in English.
     var widestCaption: String?
+    /// The copy a copy moment plays: which one this launch, and what it held.
+    var copy: NotchOfficeCopy?
 
     /// A call and a meeting starting open the island into a card of their own.
     var opensCard: Bool { kind == .call || kind == .meeting }
@@ -74,6 +78,10 @@ struct NotchOfficeCue: Equatable {
         if case .battery = kind { return true }
         return false
     }
+
+    /// The moments whose caption changes while they show, so their room is
+    /// kept for the widest: volume through its bands, copies in turn.
+    var holdsWidestCaption: Bool { kind == .volume || kind == .copy }
 }
 
 /// The rules behind the island's Office moments: when they are on, which
@@ -529,11 +537,11 @@ extension NotchOfficeMoments {
     /// included, or nil where the row with it would pass `maximum` or the
     /// room the menu bar leaves. A level's caption changes with its band, so
     /// it is measured at its widest: every step of a held key agrees on
-    /// whether it shows.
+    /// whether it shows. So is a copy's, which changes with each copy.
     static func capsuleCaption(_ cue: NotchOfficeCue?, content: CGFloat, maximum: CGFloat,
                                geometry: NotchGeometry) -> String? {
         guard let cue, let caption = cue.caption else { return nil }
-        let measured = cue.isLevel ? cue.widestCaption ?? caption : caption
+        let measured = cue.isLevel || cue.kind == .copy ? cue.widestCaption ?? caption : caption
         let layout = NotchCapsuleLayout.self
         let side = layout.side(geometry)
         let wanted = content + layout.groupSpacing + captionWidth(measured, font: capsuleCaptionFont(geometry))
@@ -546,8 +554,9 @@ extension NotchOfficeMoments {
     /// still through them all. Brightness has words only at its two ends,
     /// which a held key reaches once and stays at, so through the middle of
     /// the range its capsule keeps the bare row rather than an empty slot.
+    /// A copy's caption changes with each copy, so it keeps its widest too.
     static func capsuleCaptionSlot(_ cue: NotchOfficeCue, caption: String) -> String {
-        cue.kind == .volume ? cue.widestCaption ?? caption : caption
+        cue.holdsWidestCaption ? cue.widestCaption ?? caption : caption
     }
 
     /// A capsule notice's row: `base` as it always measured, then the mug
@@ -596,10 +605,12 @@ extension NotchOfficeMoments {
     }
 
     /// A capsule notice's row before its mug and caption: as the capsule has
-    /// always measured it, or a level moment's mark, meter and reading.
+    /// always measured it, a level moment's mark, meter and reading, or a
+    /// copy's copier, title and kind.
     static func capsuleRow(_ cue: NotchOfficeCue?, title: String, detail: String, level: Bool,
                            geometry: NotchGeometry) -> CGFloat {
         let layout = NotchCapsuleLayout.self
+        if let cue, cue.kind == .copy, !level { return capsuleCopyRow(cue, title: title, detail: detail, geometry: geometry) }
         guard level, let cue, cue.isLevel else { return layout.noticeContent(title: title, detail: detail, level: level) }
         return capsuleMarkWidth(cue, geometry: geometry) + layout.spacing + capsuleMeterWidth(cue) + layout.spacing
             + capsuleReadingWidth(detail)

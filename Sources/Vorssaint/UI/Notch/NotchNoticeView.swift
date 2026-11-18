@@ -108,6 +108,11 @@ struct NotchNoticeView: View {
                                     caption: NotchOfficeMoments.captionUnderReading(cue) ? officeCaption : nil,
                                     trigger: officeKey)
                 .transaction { $0.disablesAnimations = false }
+        } else if let cue = notice.office, cue.kind == .copy {
+            // The copier, "Copied" large beside it and the caption under it.
+            // Another copy replays the copier and deals the next caption.
+            NotchOfficeCopyReading(cue: cue, title: notice.title, caption: officeCaption, trigger: officeKey)
+                .transaction { $0.disablesAnimations = false }
         } else {
             HStack(spacing: 8) {
                 mark
@@ -251,6 +256,10 @@ struct NotchNoticeView: View {
         } else if let level = notice.level {
             NotchMeter(value: level, height: 5, tint: tint, colors: levelColors)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: level)
+                .transaction { $0.disablesAnimations = false }
+        } else if notice.office?.kind == .copy {
+            // What was copied, in a word, never the copy itself.
+            NotchOfficeCopySummary(summary: notice.detail, trigger: officeKey)
                 .transaction { $0.disablesAnimations = false }
         } else {
             Text(notice.detail)
