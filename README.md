@@ -1,22 +1,22 @@
-<h1 align="center">That's What She Synced</h1>
+<a href="https://pravindurgani.github.io/thats-what-she-synced/"><img src="docs/thats-what-she-synced/banner.jpg" alt="That's What She Synced: the MacBook notch, with an Office character beside the camera"></a>
 
 <p align="center"><strong>Your MacBook's notch, in sync with your music.</strong><br>
-<a href="https://pravindurgani.github.io/thats-what-she-synced/">Watch the mockumentary →</a></p>
+<a href="https://pravindurgani.github.io/thats-what-she-synced/">See it in action →</a></p>
 
-| Genesis · Vivid | Pink Floyd · Vivid | Pink Floyd · Duotone |
+| Genesis | Pink Floyd | Pink Floyd, one colour |
 |:---:|:---:|:---:|
-| <img src="docs/thats-what-she-synced/vivid-genesis.jpg" alt="The island in the warm colours of Genesis' album"> | <img src="docs/thats-what-she-synced/vivid-pinkfloyd.jpg" alt="The island in the prism colours of The Dark Side of the Moon"> | <img src="docs/thats-what-she-synced/duotone-look.jpg" alt="Duotone: one orange accent on a calm neutral"> |
+| <img src="docs/thats-what-she-synced/vivid-genesis.jpg" alt="The notch in the warm colours of a Genesis album"> | <img src="docs/thats-what-she-synced/vivid-pinkfloyd.jpg" alt="The notch in the colours of The Dark Side of the Moon"> | <img src="docs/thats-what-she-synced/duotone-look.jpg" alt="The one-colour look: a single orange from the cover"> |
 
-> **Unofficial** fork of [Vorssaint](https://github.com/vorssaint/vorssaint-utils), not affiliated with it, nor with NBCUniversal or The Office. Source only; the official app is at [vorssaint.com](https://vorssaint.com).
+> **Unofficial.** Not made by or linked to [Vorssaint](https://github.com/vorssaint/vorssaint-utils), NBCUniversal or The Office. You build it yourself from this code; the official Vorssaint app is at [vorssaint.com](https://vorssaint.com).
 
-## What it does
+## What you get
 
-- 🎨 **Album-art colours** on the island, its buttons and its text
-- 🥁 **Moves with the music:** the beat, your volume, the genre and the cover's mood
-- 🕺 **Dancers beside the camera** while a song plays: Boombox Boss, The Farewell Three or The Scarn
-- ☕ **An Office cast** at rest, over a coloured glow: Agent Scarn, Goldenface, the Jelly Stapler, the Best Boss Mug and the Schrute Beet
-- 🤖 **Claude Code and Codex** get a side each, with comet rings while they work
-- 📼 **Office moments:** charging fills a coffee mug, earphones open Cafe Disco, and calls and meetings mean *"Conference room. Now."*
+- 🎨 The notch takes the **colours of the album cover**
+- 🥁 It **moves with the beat** and your volume
+- 🕺 **Little dancers** move to the music beside the camera
+- ☕ An **Office character** keeps it company when nothing's playing
+- 🤖 **Claude Code and Codex** each get a side while they work
+- 📼 **Office-style alerts** for charging, headphones, messages, calls and meetings
 
 Works with Apple Music, Spotify, and music in Safari, Chrome or Firefox.
 
@@ -36,28 +36,43 @@ You need an Apple silicon Mac on macOS 14.4 or later, plus Apple's Command Line 
 
 Also running the official Vorssaint? Quit it, so you don't get two islands.
 
-## Options
+## Make it yours
 
-The cast and the dancers shuffle with every song; pick a favourite under **Companion** and **Music side** in Settings. The rest are switches:
+The characters and the dancers change with every song. To keep a favourite, pick it under **Companion** or **Music side** in the app's Settings.
 
+<details>
+<summary><strong>More switches</strong> (paste one line into Terminal, then reopen the app)</summary>
+
+<br>
+
+**One colour** instead of several:
 ```bash
-# Duotone: one accent colour from the cover, plus a neutral
 defaults write com.vorssaint.utils.dev notchSongLook -string duotone
-# Song colours off
+```
+
+**No song colours:**
+```bash
 defaults write com.vorssaint.utils.dev notchSongModeEnabled -bool false
-# Office moments off
+```
+
+**No Office alerts:**
+```bash
 defaults write com.vorssaint.utils.dev notchOfficeModeEnabled -bool false
-# Coloured glow at rest off
+```
+
+**No glow when nothing's playing:**
+```bash
 defaults write com.vorssaint.utils.dev notchIdleGlowEnabled -bool false
 ```
 
-Reopen the app after a change. To undo, use `vivid` or `true`.
+To undo one, run the same line with `vivid` or `true` at the end.
+</details>
 
 ## Not working?
 
 - **No beat?** Check step 2, then reopen the app.
-- **No colours?** Black-and-white covers stay neutral; try a colourful album.
-- **Firefox?** Turn on *Find covers for Firefox and Zen* in the app's music settings.
+- **No colours?** Black-and-white covers stay plain; try a colourful album.
+- **Using Firefox?** Turn on *Find covers for Firefox and Zen* in the app's music settings.
 
 ## Update
 
@@ -67,4 +82,6 @@ git pull && VORSSAINT_DEV_OPTIMIZE=1 ./build.sh --dev --install
 
 ## Credits
 
-Built on **[Vorssaint](https://github.com/vorssaint/vorssaint-utils)** by [@vorssaint](https://github.com/vorssaint). ⭐ the original. It's inspired by [Atoll](https://github.com/Ebullioscopic/Atoll) and [boring.notch](https://github.com/TheBoredTeam/boring.notch), with no code taken from either. The name and the cast are a fan nod to *The Office* (US): original drawings, no likenesses or logos. Made with [Claude Code](https://claude.com/claude-code). Licensed [GPL-3.0-or-later](LICENSE), like Vorssaint, whose name and look belong to the Vorssaint project ([TRADEMARKS.md](TRADEMARKS.md)).
+Built on **[Vorssaint](https://github.com/vorssaint/vorssaint-utils)** by [@vorssaint](https://github.com/vorssaint). Give the original a ⭐. Inspired by [Atoll](https://github.com/Ebullioscopic/Atoll) and [boring.notch](https://github.com/TheBoredTeam/boring.notch), with no code taken from either. The name and the characters are a fan nod to *The Office* (US): our own drawings, no actors' likenesses or logos. Made with [Claude Code](https://claude.com/claude-code).
+
+Licensed [GPL-3.0-or-later](LICENSE), like Vorssaint. The Vorssaint name and look belong to the Vorssaint project ([TRADEMARKS.md](TRADEMARKS.md)).
