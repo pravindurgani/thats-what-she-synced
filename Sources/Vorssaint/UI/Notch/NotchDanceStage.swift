@@ -6,7 +6,7 @@ import QuartzCore
 
 /// What the dancers wear from the song: outfits in tones of its lead colour
 /// (NotchDanceTone), ties and collars in its second, its colours at full
-/// voice for speaker cones and each figure's glow, the floor's spotlight in
+/// voice for speaker cones and each figure's halo, the floor's spotlight in
 /// its second colour, and the one paper fill every head and hand shares.
 struct NotchDancePaint: Equatable {
     var accents: [NSColor]
@@ -42,12 +42,16 @@ struct NotchDancePaint: Equatable {
     }
 }
 
-/// The dancers' layers: per figure, one shape layer per drawn part over a
-/// black keyline, the whole figure in a soft glow of its own colour; under
-/// them a dark pool that keeps them clear of a bright aurora and a flat
-/// spotlight that jumps with the beat. It holds no timers; its view says
-/// when to move, and every move is a Core Animation animation the render
-/// server plays, from wherever the figures are when it starts.
+/// The dancers' layers. Under them, a dark pool that keeps them clear of a
+/// bright aurora, a flat spotlight that jumps with the beat, and behind each
+/// figure a soft halo of its own colour. Per figure, back to front: its
+/// black keyline as one path, then a shape layer per drawn part, neighbouring
+/// filled parts in one paint as one, with one fine ring over heads and hands
+/// (NotchDancer.drawing). Nothing here asks for a pass of its own: no layer
+/// shadow, no group opacity, and the halos are gradients that never move.
+/// It holds no timers; its view says when to move, and every move is a Core
+/// Animation animation the render server plays, from wherever the figures
+/// are when it starts.
 final class NotchDanceStage {
     let layer = CALayer()
     private let scrim = CAGradientLayer()
@@ -55,14 +59,26 @@ final class NotchDanceStage {
     private(set) var routine: NotchDanceRoutine?
     private(set) var poses: [NotchDancerPose] = []
     private var dancers: [NotchDancer] = []
-    /// Per figure: the layer carrying its glow, its keyline group, its parts,
-    /// and each part's keyline, where it has one.
-    private var figures: [CALayer] = []
-    private var parts: [[CAShapeLayer]] = []
-    private var keylines: [[[CAShapeLayer]]] = []
+    private var halos: [CAGradientLayer] = []
+    private var figures: [Figure] = []
     private var floor: NotchDanceLayout?
     private var paint: NotchDancePaint?
     private var contentsScale: CGFloat = 2
+
+    /// One figure's shape layers.
+    private struct Figure {
+        let keyline: CAShapeLayer
+        let ring: CAShapeLayer?
+        /// One per group of NotchDancer.drawnParts, back to front.
+        let parts: [CAShapeLayer]
+
+        /// Every one of them, in the order `paths` lists their paths.
+        var shapes: [CAShapeLayer] { [keyline] + (ring.map { [$0] } ?? []) + parts }
+
+        func paths(_ drawing: NotchDancerDrawing) -> [CGPath] {
+            [drawing.keyline] + (ring == nil ? [] : [drawing.ring]) + drawing.parts
+        }
+    }
 
     /// The spotlight between beats and at a beat's peak.
     static let spotRest: Float = 0.3
@@ -74,14 +90,17 @@ final class NotchDanceStage {
     static let spotSize = CGSize(width: 44, height: 6)
     /// The dark pool's strength at its middle.
     static let scrimStrength: CGFloat = 0.5
-    /// The figures' glow in their own colour, and the keyline behind them.
-    static let glowRadius: CGFloat = 2.5
-    static let glowOpacity: Float = 0.6
-    static let keylineOpacity: Float = 0.6
+    /// The halo of each figure's own colour, where it stands: about 18 by
+    /// 32 points at full size, strongest behind the body, so what shows is
+    /// a soft light around it, and gone by its edge.
+    static let haloSize = CGSize(width: 18, height: 32)
+    static let haloStops: [(at: CGFloat, alpha: CGFloat)] = [(0, 0.6), (0.4, 0.42), (0.7, 0.14), (1, 0)]
+    /// The keyline behind each figure, one path, faded as one.
+    static let keylineOpacity: CGFloat = 0.6
     /// The fine ring a head or hand keeps over the body: a share of the
     /// keyline, outside its edge, and lighter.
     static let ringShare: CGFloat = 0.55
-    static let ringOpacity: Float = 0.42
+    static let ringOpacity: CGFloat = 0.42
 
     init() {
         layer.masksToBounds = false
@@ -112,7 +131,7 @@ final class NotchDanceStage {
     /// colours' change does.
     func configure(routine: NotchDanceRoutine, floor: NotchDanceLayout, poses: [NotchDancerPose],
                    contentsScale: CGFloat, fades: Bool = false) {
-        guard routine != self.routine || floor != self.floor || parts.isEmpty else { return }
+        guard routine != self.routine || floor != self.floor || figures.isEmpty else { return }
         let fade = fades && self.routine != nil && routine != self.routine
         self.routine = routine
         self.floor = floor
@@ -130,65 +149,45 @@ final class NotchDanceStage {
             transition.timingFunction = NotchSongMotion.settleCurve
             layer.add(transition, forKey: "routine")
         }
-        figures.forEach { $0.removeFromSuperlayer() }
-        figures = []
-        parts = []
-        keylines = []
+        halos.forEach { $0.removeFromSuperlayer() }
+        figures.flatMap(\.shapes).forEach { $0.removeFromSuperlayer() }
+        // Every halo under every figure, so none lies over a neighbour.
+        halos = dancers.map { dancer in
+            let halo = Self.halo(for: dancer, floor: floor, scale: contentsScale)
+            layer.addSublayer(halo)
+            return halo
+        }
         let keyline = NotchDancer.keyline(floor)
-        for dancer in dancers {
-            let figure = CALayer()
-            figure.frame = CGRect(x: 0, y: 0, width: floor.width, height: floor.height)
-            figure.masksToBounds = false
-            figure.shadowOffset = .zero
-            figure.shadowRadius = Self.glowRadius * floor.scale
-            figure.shadowOpacity = Self.glowOpacity
-            // The keyline group fades as one, so where two parts' lines
-            // cross they do not darken twice.
-            let outline = CALayer()
-            outline.frame = figure.bounds
-            outline.opacity = Self.keylineOpacity
-            outline.allowsGroupOpacity = true
-            figure.addSublayer(outline)
-            var shapes: [CAShapeLayer] = []
-            var lines: [[CAShapeLayer]] = []
-            for description in dancer.layers {
-                let width = dancer.lineWidth(description, floor: floor)
-                var partLines: [CAShapeLayer] = []
-                if description.keyline {
-                    let line = Self.shape(contentsScale)
-                    line.strokeColor = NSColor.black.cgColor
-                    line.lineWidth = (width ?? 0) + keyline * 2
-                    line.fillColor = width == nil ? NSColor.black.cgColor : nil
-                    outline.addSublayer(line)
-                    partLines.append(line)
+        figures = dancers.map { dancer in
+            let outline = Self.shape(contentsScale)
+            outline.fillColor = nil
+            outline.strokeColor = NSColor.black.withAlphaComponent(Self.keylineOpacity).cgColor
+            outline.lineWidth = keyline * 2
+            layer.addSublayer(outline)
+            var ring: CAShapeLayer?
+            var parts: [CAShapeLayer] = []
+            for (place, group) in dancer.drawnParts.enumerated() {
+                if place == dancer.ringPlace {
+                    // One ring for the head and both hands, so none doubles up.
+                    let fine = Self.shape(contentsScale)
+                    fine.fillColor = nil
+                    fine.strokeColor = NSColor.black.withAlphaComponent(Self.ringOpacity).cgColor
+                    fine.lineWidth = keyline * Self.ringShare * 2
+                    layer.addSublayer(fine)
+                    ring = fine
                 }
-                if description.keylineInFront {
-                    // A fine ring over what lies behind, faded on its own:
-                    // one ring, so nothing doubles up.
-                    let ring = Self.shape(contentsScale)
-                    ring.strokeColor = NSColor.black.cgColor
-                    ring.fillColor = nil
-                    ring.lineWidth = keyline * Self.ringShare * 2
-                    ring.opacity = Self.ringOpacity
-                    figure.addSublayer(ring)
-                    partLines.append(ring)
-                }
-                lines.append(partLines)
                 let shape = Self.shape(contentsScale)
-                if let width {
+                if let width = dancer.lineWidth(dancer.layers[group[0]], floor: floor) {
                     shape.lineWidth = width
                     shape.fillColor = nil
                 } else {
                     shape.lineWidth = 0
                     shape.strokeColor = nil
                 }
-                figure.addSublayer(shape)
-                shapes.append(shape)
+                layer.addSublayer(shape)
+                parts.append(shape)
             }
-            layer.addSublayer(figure)
-            figures.append(figure)
-            parts.append(shapes)
-            keylines.append(lines)
+            return Figure(keyline: outline, ring: ring, parts: parts)
         }
         // A dark pool behind the whole floor, and the spotlight at the feet.
         scrim.frame = CGRect(x: 0, y: 0, width: floor.width, height: floor.height)
@@ -198,6 +197,23 @@ final class NotchDanceStage {
                             width: spotWidth, height: spotHeight)
         if let paint { colour(paint, animated: false) }
         show(poses, duration: 0)
+    }
+
+    /// A soft halo behind `dancer`, centred where it stands and kept within
+    /// the floor's height. It stays put while the figure moves.
+    private static func halo(for dancer: NotchDancer, floor: NotchDanceLayout, scale: CGFloat) -> CAGradientLayer {
+        let halo = CAGradientLayer()
+        halo.type = .radial
+        halo.startPoint = CGPoint(x: 0.5, y: 0.5)
+        halo.endPoint = CGPoint(x: 1, y: 1)
+        halo.locations = haloStops.map { NSNumber(value: Double($0.at)) }
+        halo.contentsScale = scale
+        let middle = CGPoint(x: floor.width / 2 + dancer.position * floor.scale,
+                             y: floor.ground + dancer.height * floor.scale / 2)
+        let width = haloSize.width * floor.scale
+        let half = max(0, min(haloSize.height * floor.scale / 2, middle.y, floor.height - middle.y))
+        halo.frame = CGRect(x: middle.x - width / 2, y: middle.y - half, width: width, height: half * 2)
+        return halo
     }
 
     private static func shape(_ scale: CGFloat) -> CAShapeLayer {
@@ -213,8 +229,8 @@ final class NotchDanceStage {
         contentsScale = scale
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        parts.joined().forEach { $0.contentsScale = scale }
-        keylines.joined().joined().forEach { $0.contentsScale = scale }
+        figures.flatMap(\.shapes).forEach { $0.contentsScale = scale }
+        halos.forEach { $0.contentsScale = scale }
         spot.contentsScale = scale
         scrim.contentsScale = scale
         CATransaction.commit()
@@ -235,8 +251,9 @@ final class NotchDanceStage {
         CATransaction.setDisableActions(!animated)
         CATransaction.setAnimationDuration(NotchSongMotion.colorChange)
         CATransaction.setAnimationTimingFunction(NotchSongMotion.settleCurve)
-        for (index, (dancer, shapes)) in zip(dancers, parts).enumerated() {
-            for (description, shape) in zip(dancer.layers, shapes) {
+        for (index, (dancer, figure)) in zip(dancers, figures).enumerated() {
+            for (group, shape) in zip(dancer.drawnParts, figure.parts) {
+                let description = dancer.layers[group[0]]
                 let color = Self.color(description.paint, dancer: dancer, paint: paint)
                 if dancer.lineWidth(description, floor: floor) == nil {
                     shape.fillColor = color
@@ -244,7 +261,8 @@ final class NotchDanceStage {
                     shape.strokeColor = color
                 }
             }
-            figures[index].shadowColor = paint.accents[dancer.accent % paint.accents.count].cgColor
+            let own = paint.accents[dancer.accent % paint.accents.count]
+            halos[index].colors = Self.haloStops.map { own.withAlphaComponent($0.alpha).cgColor }
         }
         spot.colors = [paint.spot.cgColor, paint.spot.withAlphaComponent(0.45).cgColor,
                        paint.spot.withAlphaComponent(0).cgColor]
@@ -275,22 +293,20 @@ final class NotchDanceStage {
         guard poses.count == dancers.count, let floor else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for (index, dancer) in dancers.enumerated() {
-            let paths = dancer.paths(poses[index], floor: floor)
-            for (part, path) in paths.enumerated() {
-                for shape in [parts[index][part]] + keylines[index][part] {
-                    if duration > 0, let from = shape.presentation()?.path ?? shape.path {
-                        let move = CABasicAnimation(keyPath: "path")
-                        move.fromValue = from
-                        move.toValue = path
-                        move.duration = duration
-                        move.timingFunction = curve
-                        shape.add(move, forKey: "dance")
-                    } else {
-                        shape.removeAnimation(forKey: "dance")
-                    }
-                    shape.path = path
+        for (index, (dancer, figure)) in zip(dancers, figures).enumerated() {
+            let paths = figure.paths(dancer.drawing(poses[index], floor: floor))
+            for (shape, path) in zip(figure.shapes, paths) {
+                if duration > 0, let from = shape.presentation()?.path ?? shape.path {
+                    let move = CABasicAnimation(keyPath: "path")
+                    move.fromValue = from
+                    move.toValue = path
+                    move.duration = duration
+                    move.timingFunction = curve
+                    shape.add(move, forKey: "dance")
+                } else {
+                    shape.removeAnimation(forKey: "dance")
                 }
+                shape.path = path
             }
         }
         if duration <= 0 { spot.removeAnimation(forKey: "pulse") }
@@ -303,7 +319,8 @@ final class NotchDanceStage {
     func play(_ step: NotchDanceStep, dancer index: Int) {
         guard index < dancers.count, let floor, let last = step.frames.last, step.duration > 0 else { return }
         let dancer = dancers[index]
-        let frames = step.frames.map { dancer.paths($0.pose, floor: floor) }
+        let figure = figures[index]
+        let frames = step.frames.map { figure.paths(dancer.drawing($0.pose, floor: floor)) }
         let times = [NSNumber(value: 0)] + step.frames.map { NSNumber(value: $0.time / step.duration) }
         let curves = step.frames.map { frame -> CAMediaTimingFunction in
             switch frame.curve {
@@ -314,17 +331,15 @@ final class NotchDanceStage {
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for part in parts[index].indices {
-            for shape in [parts[index][part]] + keylines[index][part] {
-                guard let from = shape.presentation()?.path ?? shape.path else { continue }
-                let move = CAKeyframeAnimation(keyPath: "path")
-                move.values = [from] + frames.map { $0[part] }
-                move.keyTimes = times
-                move.timingFunctions = curves
-                move.duration = step.duration
-                shape.path = frames[frames.count - 1][part]
-                shape.add(move, forKey: "dance")
-            }
+        for (place, shape) in figure.shapes.enumerated() {
+            guard let from = shape.presentation()?.path ?? shape.path else { continue }
+            let move = CAKeyframeAnimation(keyPath: "path")
+            move.values = [from] + frames.map { $0[place] }
+            move.keyTimes = times
+            move.timingFunctions = curves
+            move.duration = step.duration
+            shape.path = frames[frames.count - 1][place]
+            shape.add(move, forKey: "dance")
         }
         CATransaction.commit()
         poses[index] = last.pose
@@ -346,8 +361,7 @@ final class NotchDanceStage {
     func halt() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        parts.joined().forEach { $0.removeAnimation(forKey: "dance") }
-        keylines.joined().joined().forEach { $0.removeAnimation(forKey: "dance") }
+        figures.flatMap(\.shapes).forEach { $0.removeAnimation(forKey: "dance") }
         spot.removeAnimation(forKey: "pulse")
         CATransaction.commit()
     }

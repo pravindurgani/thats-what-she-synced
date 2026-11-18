@@ -32,6 +32,8 @@ struct NotchMusicStrip: View {
     @ObservedObject private var l10n = L10n.shared
     /// Draws the strip again once a new song's shuffled dance has settled.
     @ObservedObject private var dances = NotchDanceSelection.shared
+    /// And when the companion a black-and-white song borrows its colours from changes.
+    @ObservedObject private var colourless = NotchColourlessCompanion.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private typealias Layout = NotchMusicStripLayout

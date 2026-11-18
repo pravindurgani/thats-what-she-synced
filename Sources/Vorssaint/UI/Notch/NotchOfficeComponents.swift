@@ -38,19 +38,22 @@ enum NotchOfficeInk {
 
 /// The documentary's snap-zoom: what the moment is about scales in from 0.9
 /// on the song's spring, with the slightest overshoot, as it fades up.
-/// Reduce Motion keeps the fade alone.
+/// Reduce Motion and Low Power Mode keep the fade alone.
 struct NotchPunchIn: ViewModifier {
     let trigger: String
     var delay: Double = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @State private var arrived = false
+
+    private var calm: Bool { reduceMotion || lowPower.isOn }
 
     func body(content: Content) -> some View {
         content
             .opacity(arrived ? 1 : 0)
-            .animation(reduceMotion ? NotchSongMotion.reduced : .easeOut(duration: 0.16).delay(delay), value: arrived)
-            .scaleEffect(arrived || reduceMotion ? 1 : 0.9)
-            .animation(reduceMotion ? nil : NotchSongMotion.spring.delay(delay), value: arrived)
+            .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.16).delay(delay), value: arrived)
+            .scaleEffect(arrived || calm ? 1 : 0.9)
+            .animation(calm ? nil : NotchSongMotion.spring.delay(delay), value: arrived)
             .task(id: trigger) {
                 var reset = Transaction(animation: nil)
                 reset.disablesAnimations = true

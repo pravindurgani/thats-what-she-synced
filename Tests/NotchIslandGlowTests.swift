@@ -11,6 +11,7 @@ enum NotchIslandGlowTests {
         companionColours(suite)
         castColours(suite)
         restingTone(suite)
+        stripVeil(suite)
         preferences(suite)
     }
 
@@ -157,16 +158,44 @@ enum NotchIslandGlowTests {
                         && glow[1].luminance <= NotchIslandGlow.restingYellowLuminance + 0.001,
                      "a gold companion's glow keeps enough light to read gold")
         // The companion's lit top, in any of its colours, stands out at 3:1
-        // against its glow, which lies under the veil's lightest stop, 0.12,
-        // across the middle of the strip where the companion rests.
+        // against its glow, which lies under the wing glow's veil (`open`;
+        // it neither blooms nor thins), lightest across the middle of the
+        // strip where the companion rests.
+        let veil = Double(NotchAuroraVeil.open.stops.min() ?? 0)
+        suite.expect(abs(veil - 0.12) < 0.0001, "the wing glow's veil is lightest, 0.12, in its middle")
         let lightest = [NotchRGB(red: 1, green: 0.96, blue: 0.64), NotchRGB(red: 1, green: 0.86, blue: 0.74),
                         NotchRGB(red: 0.88, green: 0.83, blue: 1), NotchRGB(red: 0.77, green: 0.9, blue: 1)]
         for top in lightest {
-            suite.expect(NotchRGB.contrast(top, glow[0].veiled(by: 0.12)) >= 3,
+            suite.expect(NotchRGB.contrast(top, glow[0].veiled(by: veil)) >= 3,
                          "the companion stands out against its resting glow")
         }
-        suite.expect(NotchRGB.contrast(lightest[0], glow[1].veiled(by: 0.12)) >= 3,
+        suite.expect(NotchRGB.contrast(lightest[0], glow[1].veiled(by: veil)) >= 3,
                      "a yellow companion stands out against its own gold glow")
+    }
+
+    /// The closed music strip's words, the song's primary tint (at least
+    /// 0.88 luminance, NotchArtworkPalette.textPrimary), keep WCAG AA over
+    /// its colour (a glow toned to at most 0.18 luminance) in the worst
+    /// case: the strip's veil at its faintest, its lightest stop thinned by
+    /// a beat or lifted by a new song's bloom. The wings stay bold: the
+    /// veil lays no more than 0.12 over the colour anywhere.
+    private static func stripVeil(_ suite: TestSuite) {
+        let strip = NotchAuroraVeil.strip
+        let text = NotchRGB(red: 0.88, green: 0.88, blue: 0.88).toned(maxLuminance: 0.88, minLuminance: 0.88)
+        var worst = Double.infinity
+        for hue in stride(from: 0.0, to: 1.0, by: 1.0 / 72) {
+            for saturation in [0.0, 0.25, 0.5, 0.75, 1] {
+                let glow = NotchRGB(hue: hue, saturation: saturation, brightness: 1).toned(maxLuminance: 0.18,
+                                                                                           minLuminance: 0.18)
+                worst = min(worst, NotchRGB.contrast(text, glow.veiled(by: strip.faintest)))
+            }
+        }
+        suite.expect(worst >= 4.5, "the strip's words keep 4.5:1 at its veil's faintest: \(worst)")
+        suite.expect(abs(strip.faintest - Double(strip.stops.min() ?? 0) * min(strip.thinnest, strip.bloomDepth)) < 0.0001
+                        && strip.faintest < Double(strip.stops.min() ?? 0),
+                     "the strip's veil is faintest at its lightest stop, thinned by a beat or a bloom")
+        suite.expect((strip.stops.max() ?? 1) <= 0.12 && strip.strength == 1,
+                     "the strip's wings stay bold: no more than 0.12 of veil over the colour")
     }
 
     private static func preferences(_ suite: TestSuite) {

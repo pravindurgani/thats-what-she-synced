@@ -1111,9 +1111,11 @@ final class NotchService: ObservableObject {
     /// A notice's own capsule, which it keeps while the island closes around it.
     func capsuleNoticeSurface(_ notice: NotchNotice) -> CGSize {
         let layout = NotchCapsuleLayout.self
-        // An Office moment adds its mug and caption where the capsule can hold them.
+        // An Office moment adds its mug and caption where the capsule can hold
+        // them; a level moment draws its own mark and meter.
         guard let content = notice.notification else {
-            let base = layout.noticeContent(title: notice.title, detail: notice.detail, level: notice.level != nil)
+            let base = NotchOfficeMoments.capsuleRow(notice.office, title: notice.title, detail: notice.detail,
+                                                     level: notice.level != nil, geometry: geometry)
             return layout.surface(content: NotchOfficeMoments.capsuleContent(
                                     notice.office, base: base, maximum: layout.Maximum.notice, geometry: geometry),
                                   maximum: layout.Maximum.notice, geometry: geometry)
