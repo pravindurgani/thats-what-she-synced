@@ -225,9 +225,11 @@ enum NotchSongMode {
 /// quiet to the full show when loud. A song change cross-fades to the new
 /// cover with a brief bloom; a pause settles and dims it.
 ///
-/// The motion is Core Animation, run by the render server; the app nudges a
-/// few layer values up to twenty times a second while a song plays and the
-/// island shows, and does nothing at all otherwise.
+/// The motion is Core Animation, run by the render server. While a song
+/// plays and the island shows, the app reads the music twenty times a
+/// second, but sets something going only when a hit lands: the hit and its
+/// whole fall, worked out at once (NotchBeatCurve), its push at 60 frames a
+/// second and its fall at 30. Otherwise it does nothing at all.
 struct NotchMusicAurora: View {
     let palette: NotchArtworkPalette
     let isPlaying: Bool
@@ -356,12 +358,24 @@ final class NotchMusicAuroraView: NSView {
     private var ticks = 0
     private var nextBurst = 0
     private var bloomUntil: CFTimeInterval = 0
-    private var appliedBounce: Double = 0
     private var reinstall: DispatchWorkItem?
     private var lastKick: CFTimeInterval = 0
     private var previousLevels: [Double] = []
     private var fluxAverage: Double = 0
+    /// The beat's push at the last reading: a hit's, then its fall.
     private var bounce: Double = 0
+    /// What each hit set going, on top of each layer's rest: the veil
+    /// thinning, the swell, the light bouncing up, and the light's level
+    /// easing after a volume change. Each is added to the layer's own
+    /// value, which stays at rest, so a resize, the volume or a new song's
+    /// bloom can change that value while a fall runs.
+    private var thinning = NotchBeatTrack()
+    private var swelling = NotchBeatTrack()
+    private var rising = NotchBeatTrack()
+    private var levelling = NotchBeatTrack()
+    /// The quick part of a burst, its bloom, at 60 frames a second; it
+    /// fades at 30.
+    private static let burstAttack: CFTimeInterval = 0.1
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -437,6 +451,11 @@ final class NotchMusicAuroraView: NSView {
                mood newMood: NotchMusicMood, veil newVeil: NotchAuroraVeil, quiet newQuiet: Bool,
                shown newShown: Bool, camera newCamera: CGSize? = nil, inkShown newInkShown: Bool = true,
                presence strength: Double = 1, fades: Bool = false) {
+        if newQuiet, !quiet {
+            // The closed island never lifts its veil: one a beat on the open
+            // page thinned settles as the island closes.
+            settle(&thinning, "opacity", on: scrim, at: CACurrentMediaTime())
+        }
         quiet = newQuiet
         if newCamera != camera {
             camera = newCamera
@@ -613,7 +632,8 @@ final class NotchMusicAuroraView: NSView {
     /// Held, the drift comes off the pools altogether, so a paused or covered
     /// island asks the compositor for nothing.
     private func syncClock() {
-        let visible = shown && (window.map { $0.occlusionState.contains(.visible) } ?? false)
+        let visible = shown && !isHiddenOrHasHiddenAncestor && window?.isVisible == true
+            && window?.occlusionState.contains(.visible) == true
         let run = playing && visible && moves
         if run, running, clock.speed != rate {
             let local = clock.convertTime(CACurrentMediaTime(), from: nil)
@@ -734,12 +754,37 @@ final class NotchMusicAuroraView: NSView {
     }
 
     /// How high the light stands in the island: the volume sets its level,
-    /// as a meter's, and each beat bounces it up from there.
-    private func riseHeight(beat push: Double) -> CGFloat {
+    /// as a meter's, and each beat bounces it up from there (beatRise).
+    private var restingRise: CGFloat {
         let height = bounds.height
         guard height > 1, moves else { return 0 }
-        let level = (loudness - 0.5) * 0.22
-        return height * CGFloat(level + 0.2 * min(1, push))
+        return height * CGFloat((loudness - 0.5) * 0.22)
+    }
+
+    /// How far a beat's full push lifts the light above its level.
+    private var beatRise: Double {
+        let height = bounds.height
+        guard height > 1, moves else { return 0 }
+        return Double(height) * 0.2
+    }
+
+    /// Puts the light at its level, eased over a settle from where it stood,
+    /// or at once.
+    private func level(eased: Bool, at now: CFTimeInterval) {
+        let target = restingRise
+        let from = lift.transform.m42 + CGFloat(levelling.value(at: now))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        lift.transform = CATransform3DMakeTranslation(0, target, 0)
+        CATransaction.commit()
+        guard eased, abs(from - target) > 0.01 else {
+            if !eased { levelling.stop(); NotchSongMotion.stop("level", on: lift) }
+            return
+        }
+        let glide = levelling.start(NotchBeatCurve(from: Double(from - target), moves: [
+            .init(target: 0, duration: NotchSongMotion.beatReturn, curve: Self.settle)]), at: now)
+        NotchSongMotion.play(glide.animation("transform.translation.y", additive: true), attack: 0, on: lift,
+                             key: "level", at: now)
     }
 
     /// How much the volume lets the music move the light: a calm glow when
@@ -764,11 +809,7 @@ final class NotchMusicAuroraView: NSView {
                     self.loudness = muted == true ? 0 : min(1, max(0, volume ?? 0.6))
                     self.retime(towards: self.targetRate(), immediately: true)
                     // A volume change moves the light at once, beats or not.
-                    CATransaction.begin()
-                    CATransaction.setAnimationDuration(0.5)
-                    CATransaction.setAnimationTimingFunction(Self.settle)
-                    self.lift.transform = CATransform3DMakeTranslation(0, self.riseHeight(beat: 0), 0)
-                    CATransaction.commit()
+                    self.level(eased: true, at: CACurrentMediaTime())
                 }
         }
     }
@@ -802,48 +843,80 @@ final class NotchMusicAuroraView: NSView {
         // three flashes in any second, the limit for flashing content.
         let onset = flux > fluxAverage * 1.5 + 0.012 && now - lastKick > 0.4 && now > bloomUntil
         fluxAverage += (flux - fluxAverage) * 0.08
+        // A quick fall after each hit, so the light jumps on the beat and
+        // drops between beats, as a meter's needle does. The fall was set
+        // going with its hit, so a reading without one only keeps count.
+        let previous = bounce
+        let falling = bounce * NotchBeatFall.keeps >= NotchBeatFall.rest ? bounce * NotchBeatFall.keeps : 0
+        bounce = falling
         if onset {
             lastKick = now
-            // A lively cover hits a little harder, a muted one a little softer.
-            bounce = max(bounce, min(1, min(1, 0.45 + flux * 6) * mood.response * intensity * (0.8 + 0.4 * coverEnergy)))
-            if mood != .calm, !quiet { kick(strength: bounce) }
-        } else {
-            // A quick fall after each hit, so the light jumps on the beat and
-            // drops between beats, as a meter's needle does.
-            bounce *= 0.72
-        }
-
-        // Nothing to move between beats once the light is at rest.
-        let resting = bounce < 0.01 && appliedBounce < 0.01
-        if resting { bounce = 0 } else { appliedBounce = bounce }
-        if !resting {
-            NotchMusicPulse.shared.beat.send(bounce)
-            let duration: CFTimeInterval = onset ? 0.06 : 0.09
-            // One commit for the three moves, as one transaction made them before.
-            CATransaction.begin()
-            defer { CATransaction.commit() }
-            // The veil never thins below its level's share, so text keeps its contrast at the loudest beat.
-            let veiled = quiet ? 1 : Float(1 - min(1 - veil.thinnest, bounce * 0.55))
-            if veiled != scrim.opacity {
-                NotchSongMotion.ease(scrim, "opacity", to: veiled, duration: duration, curve: Self.beatCurve)
+            // A lively cover hits a little harder, a muted one a little
+            // softer. A hit holds the push where it stood if it lands lower.
+            let hit = max(previous, min(1, min(1, 0.45 + flux * 6) * mood.response * intensity * (0.8 + 0.4 * coverEnergy)))
+            if mood != .calm, !quiet { kick(strength: hit) }
+            // One that lifts the push barely above its fall changes nothing to see.
+            if hit > falling + NotchBeatFall.deadBand {
+                bounce = hit
+                strike(previous: previous, at: now)
             }
-            let swell = 1 + 0.07 * bounce
-            NotchSongMotion.ease(stage, "transform", to: NSValue(caTransform3D: CATransform3DMakeScale(swell, swell, 1)),
-                                 duration: duration, curve: Self.beatCurve)
-            NotchSongMotion.ease(lift, "transform",
-                                 to: NSValue(caTransform3D: CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)),
-                                 duration: duration, curve: Self.beatCurve)
         }
-        if resting { appliedBounce = 0 }
 
         ticks += 1
         // The drift's speed follows the song's drive, gently, every two seconds.
         if ticks % 40 == 0 { retime(towards: targetRate(), immediately: false) }
     }
 
+    /// A hit of `bounce`: the veil thins, the colour swells and the light
+    /// bounces up, and all three fall away, as one move each, worked out
+    /// now for every reading until the next hit (NotchBeatCurve): each
+    /// reading's ease toward the fall, a quick ease out cut short by the
+    /// next, the same curve twenty animations a second drew. The hit plays
+    /// at 60 frames a second and the fall at 30. Each move is added to its
+    /// layer's resting value and starts from where the last stands, read
+    /// from that last move rather than from the screen.
+    private func strike(previous: Double, at now: CFTimeInterval) {
+        let pushes = NotchBeatFall.pushes(from: bounce)
+        func moves(_ value: (Double) -> Double) -> [NotchBeatCurve.Move] {
+            pushes.enumerated().map { index, push in
+                .init(target: value(push), duration: index == 0 ? 0.06 : 0.09, curve: Self.beatCurve)
+            }
+        }
+        let attack = NotchBeatFall.reading
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // The veil never thins below its level's share, so text keeps its
+        // contrast at the loudest beat; the closed island's never thins.
+        if !quiet || thinning.moves(at: now) {
+            let thinnest = 1 - veil.thinnest, closed = quiet
+            let thin = thinning.start(moves { closed ? 0 : -min(thinnest, $0 * 0.55) }, at: now)
+            NotchSongMotion.play(thin.animation("opacity", additive: true), attack: attack, on: scrim, key: "beat",
+                                 at: now)
+        }
+        let swell = swelling.start(moves { 0.07 * $0 }, at: now)
+        NotchSongMotion.play(swell.animation("transform.scale", additive: true), attack: attack, on: stage,
+                             key: "beat", at: now)
+        let reach = beatRise
+        let rise = rising.start(moves { reach * min(1, $0) }, at: now)
+        NotchSongMotion.play(rise.animation("transform.translation.y", additive: true), attack: attack, on: lift,
+                             key: "beat", at: now)
+        CATransaction.commit()
+        NotchMusicPulse.shared.beat.send(NotchMusicBeat(push: bounce, previous: previous))
+    }
+
+    /// Eases what `track` set going on `layer` back to rest over the beat's
+    /// return, from where it stands, at 30 frames a second.
+    private func settle(_ track: inout NotchBeatTrack, _ keyPath: String, on layer: CALayer, at now: CFTimeInterval) {
+        let from = track.value(at: now)
+        guard from != 0 || track.moves(at: now) else { return }
+        let back = track.start([.init(target: 0, duration: NotchSongMotion.beatReturn, curve: Self.settle)], at: now)
+        NotchSongMotion.play(back.animation(keyPath, additive: true), attack: 0, on: layer, key: "beat", at: now)
+    }
+
     /// A soft burst of one of the cover's colours, blooming from where its
     /// pool rests and fading in under half a second. Below the veil, so text
-    /// keeps its contrast through it.
+    /// keeps its contrast through it. The bloom plays at 60 frames a second
+    /// and the fade at 30.
     private func kick(strength: Double) {
         let size = bounds.size
         guard !colors.isEmpty, strength > 0.05, size.width > 1, size.height > 1 else { return }
@@ -868,22 +941,22 @@ final class NotchMusicAuroraView: NSView {
         group.animations = [grow, fade]
         group.duration = 0.45
         group.timingFunction = Self.settle
-        group.preferredFrameRateRange = NotchSongMotion.beatFrames
-        burst.add(group, forKey: "kick")
+        NotchSongMotion.play(group, attack: Self.burstAttack, on: burst, key: "kick", at: CACurrentMediaTime())
     }
 
     /// The light's rest pose, eased back to when the music stops answering.
     /// The stage runs in real time, so this settles even with the drift paused.
     private func settleResponse() {
+        let previous = bounce
         bounce = 0
-        appliedBounce = 0
-        NotchMusicPulse.shared.beat.send(0)
+        NotchMusicPulse.shared.beat.send(.settle(from: previous))
+        let now = CACurrentMediaTime()
         CATransaction.begin()
-        CATransaction.setAnimationDuration(0.5)
-        CATransaction.setAnimationTimingFunction(Self.settle)
-        scrim.opacity = 1
-        stage.transform = CATransform3DIdentity
-        lift.transform = CATransform3DMakeTranslation(0, riseHeight(beat: 0), 0)
+        CATransaction.setDisableActions(true)
+        settle(&thinning, "opacity", on: scrim, at: now)
+        settle(&swelling, "transform.scale", on: stage, at: now)
+        settle(&rising, "transform.translation.y", on: lift, at: now)
+        level(eased: true, at: now)
         CATransaction.commit()
     }
 
@@ -947,7 +1020,7 @@ final class NotchMusicAuroraView: NSView {
                                width: inkSize.width, height: inkSize.height)
         }
         // The light's resting height follows the island's height as it resizes.
-        lift.transform = CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)
+        lift.transform = CATransform3DMakeTranslation(0, restingRise, 0)
         CATransaction.commit()
         // Hidden, the island's resizes need no drift. Shown, it is made once,
         // when the island first settles, from rest.
@@ -979,6 +1052,10 @@ final class NotchMusicAuroraView: NSView {
         scheduleMotion()
     }
 
+    // Hidden, it holds still and stops listening, as when covered.
+    override func viewDidHide() { super.viewDidHide(); syncClock() }
+    override func viewDidUnhide() { super.viewDidUnhide(); syncClock() }
+
     /// The camera's pool is an image, drawn for the display's scale.
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
@@ -993,12 +1070,14 @@ final class NotchMusicAuroraView: NSView {
 
 // MARK: - The beat, shared
 
-/// The island's beat, as its aurora reads it, for the quick-access bubbles
-/// beside the island to pulse with. Main thread only. Views subscribe from
-/// their layers, not from SwiftUI, so a beat redraws nothing.
+/// The island's beat, as its aurora reads it, for the quick-access bubbles,
+/// the companion and the dancers to move with: each hit as it lands, and
+/// the beat settling (NotchMusicBeat), never the readings between. Main
+/// thread only. Views subscribe from their layers, not from SwiftUI, so a
+/// beat redraws nothing.
 final class NotchMusicPulse {
     static let shared = NotchMusicPulse()
-    let beat = PassthroughSubject<Double, Never>()
+    let beat = PassthroughSubject<NotchMusicBeat, Never>()
     private init() {}
 }
 
@@ -1042,7 +1121,6 @@ private struct NotchAuroraBubbleBridge: NSViewRepresentable {
 final class NotchAuroraBubbleView: NSView {
     private static let turn: CFTimeInterval = 14
     private static let settle = NotchSongMotion.settleCurve
-    private static let beatCurve = CAMediaTimingFunction(name: .easeOut)
     private let canvas = CALayer()
     private let swirl = CAGradientLayer()
     private let shine = CAGradientLayer()
@@ -1152,27 +1230,31 @@ final class NotchAuroraBubbleView: NSView {
             CATransaction.commit()
         }
         if run, beatSubscription == nil {
-            beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] bounce in self?.pulse(bounce) }
+            beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] beat in self?.pulse(beat) }
         } else if !run, beatSubscription != nil {
             beatSubscription = nil
-            pulse(0)
+            pulse(.settle(from: 0))
         }
     }
 
-    private func pulse(_ bounce: Double) {
-        let push = min(1, max(0, bounce))
-        let duration = push > 0.05 ? 0.08 : NotchSongMotion.beatReturn
-        let curve = push > 0.05 ? Self.beatCurve : Self.settle
-        let swell = 1 + 0.12 * push
+    /// The swell and the thinning veil a beat sets going, added to their
+    /// resting values.
+    private var swelling = NotchBeatTrack()
+    private var thinning = NotchBeatTrack()
+
+    /// A hit swells the bubble and thins its veil, and both fall away with
+    /// it, as one move each (NotchMusicBeat.moves); a settle eases them back.
+    private func pulse(_ beat: NotchMusicBeat) {
+        let now = CACurrentMediaTime()
+        guard !beat.settles || swelling.value(at: now) != 0 || thinning.value(at: now) != 0 else { return }
         CATransaction.begin()
         defer { CATransaction.commit() }
-        NotchSongMotion.ease(canvas, "sublayerTransform",
-                             to: NSValue(caTransform3D: CATransform3DMakeScale(swell, swell, 1)),
-                             duration: duration, curve: curve)
-        let thinned = Float(1 - 0.35 * push)
-        if thinned != veil.opacity {
-            NotchSongMotion.ease(veil, "opacity", to: thinned, duration: duration, curve: curve)
-        }
+        let swell = swelling.start(beat.moves { 0.12 * min(1, max(0, $0)) }, at: now)
+        NotchSongMotion.play(swell.animation("sublayerTransform.scale", additive: true), attack: beat.attack,
+                             on: canvas, key: "beat", at: now)
+        let thin = thinning.start(beat.moves { -0.35 * min(1, max(0, $0)) }, at: now)
+        NotchSongMotion.play(thin.animation("opacity", additive: true), attack: beat.attack, on: veil, key: "beat",
+                             at: now)
     }
 
     override func layout() {

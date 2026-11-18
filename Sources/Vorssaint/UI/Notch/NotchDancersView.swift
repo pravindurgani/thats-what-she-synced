@@ -283,7 +283,7 @@ final class NotchDanceConductor {
         // opens on the loop's first beat, not wherever the last one stopped.
         beat = -1
         tempo.reset()
-        beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] bounce in self?.hear(bounce) }
+        beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] beat in self?.hear(beat) }
         // The first step comes as the groove settles in, beats or not.
         scheduleStandIn(after: NotchSongMotion.beatReturn)
     }
@@ -302,8 +302,8 @@ final class NotchDanceConductor {
         standIn = nil
     }
 
-    private func hear(_ bounce: Double) {
-        guard let energy = tempo.hear(bounce, at: CACurrentMediaTime()) else { return }
+    private func hear(_ beat: NotchMusicBeat) {
+        guard let energy = tempo.hear(beat.push, after: beat.previous, at: CACurrentMediaTime()) else { return }
         advance(energy: energy, interval: tempo.interval)
         scheduleStandIn(after: NotchDanceTiming.fallbackDelay(afterBeatInterval: tempo.interval))
     }

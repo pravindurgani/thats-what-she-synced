@@ -673,12 +673,44 @@ final class NotchMascotCastParts {
     /// Plays `frames` on `layer` from where it shows now, at `times` after
     /// the start, and leaves it where it was.
     private func move(_ layer: CALayer, _ frames: [CATransform3D], times: [Double], duration: TimeInterval) {
+        let now = CACurrentMediaTime()
+        let from = layer === beatStage ? standingStage(at: now) : layer.presentation()?.transform ?? layer.transform
+        let poses = [from] + frames
         let move = CAKeyframeAnimation(keyPath: "transform")
-        move.values = ([layer.presentation()?.transform ?? layer.transform] + frames).map { NSValue(caTransform3D: $0) }
+        move.values = poses.map { NSValue(caTransform3D: $0) }
         move.keyTimes = ([0] + times).map { NSNumber(value: $0) }
-        move.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: frames.count)
+        move.timingFunctions = Array(repeating: Self.moveCurve, count: frames.count)
         move.duration = duration
         layer.add(Self.atBeatRate(move), forKey: "castBeat")
+        if layer === beatStage { stageMove = (now, [0] + times, poses, duration) }
+    }
+
+    private static let moveCurve = CAMediaTimingFunction(name: .easeInEaseOut)
+
+    /// The beat's last move on the stage: when it started, its key times as
+    /// shares of its length, its poses, and that length.
+    private var stageMove: (begin: CFTimeInterval, times: [Double], poses: [CATransform3D], duration: CFTimeInterval)?
+
+    /// Where the stage stands at `time`, worked out from the move last set
+    /// going on it rather than read from the screen: each of the
+    /// transform's numbers its eased share of the way between two poses.
+    /// The poses only move and squash, where that is how Core Animation
+    /// blends them; the Jello's slight shear blends within a hair of it.
+    private func standingStage(at time: CFTimeInterval) -> CATransform3D {
+        guard let move = stageMove, move.duration > 0, move.poses.count == move.times.count, move.times.count > 1,
+              beatStage.animation(forKey: "castBeat") != nil else { return beatStage.transform }
+        let elapsed = (time - move.begin) / move.duration
+        guard elapsed < 1 else { return beatStage.transform }
+        var span = 0
+        while span + 2 < move.times.count, move.times[span + 1] <= elapsed { span += 1 }
+        let length = move.times[span + 1] - move.times[span]
+        let share = CGFloat(Self.moveCurve.progress(at: length > 0 ? (max(0, elapsed) - move.times[span]) / length : 1))
+        let a = move.poses[span], b = move.poses[span + 1]
+        func mix(_ x: CGFloat, _ y: CGFloat) -> CGFloat { x + (y - x) * share }
+        return CATransform3D(m11: mix(a.m11, b.m11), m12: mix(a.m12, b.m12), m13: mix(a.m13, b.m13), m14: mix(a.m14, b.m14),
+                             m21: mix(a.m21, b.m21), m22: mix(a.m22, b.m22), m23: mix(a.m23, b.m23), m24: mix(a.m24, b.m24),
+                             m31: mix(a.m31, b.m31), m32: mix(a.m32, b.m32), m33: mix(a.m33, b.m33), m34: mix(a.m34, b.m34),
+                             m41: mix(a.m41, b.m41), m42: mix(a.m42, b.m42), m43: mix(a.m43, b.m43), m44: mix(a.m44, b.m44))
     }
 
     /// A beat's move, at the song's beat frame rate (NotchSongMotion.beatFrames).
