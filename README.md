@@ -40,10 +40,18 @@ Also running the official Vorssaint? Quit it, so you don't get two islands.
 
 The characters and the dancers change with every song. To keep a favourite, pick it under **Companion** or **Music side** in the app's Settings.
 
+Everything else is in **Settings › Dynamic Island › Activity › That's What She Synced**, and every change shows straight away:
+
+- **Office edition**: every extra at once. Off, the island is plain Vorssaint.
+- **Song colours**: the island wears the song's cover.
+- **Look**: Vivid, or One colour.
+- **Office alerts**: battery, calls, meetings and more, the Office way.
+- **Glow when nothing plays**: the companion's colours when no song is on.
+
 **Turn it all off:** tap the ☕ mug at the end of the island's bottom row. Tap it again to bring everything back.
 
 <details>
-<summary><strong>More switches</strong> (paste one line into Terminal, then reopen the app)</summary>
+<summary><strong>Prefer Terminal?</strong> (paste one line, then reopen the app)</summary>
 
 <br>
 
