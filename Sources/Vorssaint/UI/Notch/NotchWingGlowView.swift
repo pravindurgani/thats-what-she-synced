@@ -18,7 +18,9 @@ struct NotchWingGlowColors: Equatable {
 /// side of the camera and black over the camera itself. It is drawn as the
 /// song's closed glow is, on the same deep ground under the same veil, with
 /// pools of colour toned as a cover's are, but it never moves: once drawn it
-/// costs the compositor nothing more. A change of colours cross-fades.
+/// costs the compositor nothing more. A change of colours cross-fades. How
+/// strongly it shows is handed in (NotchGlowPresence) and applied to its own
+/// layer, so its fades run in Core Animation whatever transaction SwiftUI is in.
 final class NotchWingGlowView: NSView {
     private let canvas = CALayer()
     private let ground = CALayer()
@@ -31,9 +33,10 @@ final class NotchWingGlowView: NSView {
     private let floor = CAGradientLayer()
     private let scrim = CAGradientLayer()
     private var colors: NotchWingGlowColors?
-    private var camera: CGFloat = 0
+    /// The camera's housing, or zero with none (a floating capsule).
+    private var camera = CGSize.zero
     private var veil: NotchAuroraVeil = .open
-    private var entered = false
+    private let presence = NotchGlowPresenceLayer()
     /// The glow changed between an agents' and the resting island's, whose
     /// edges and camera ink differ: the next layout eases them across with
     /// the colours instead of cutting.
@@ -84,6 +87,8 @@ final class NotchWingGlowView: NSView {
         floor.endPoint = CGPoint(x: 0.5, y: 1)
         floor.colors = [NSColor.black.withAlphaComponent(0.45).cgColor, NSColor.black.withAlphaComponent(0).cgColor]
         floor.locations = [0, 0.45]
+        ends.colors = [NSColor.black.withAlphaComponent(0.6).cgColor, NSColor.black.withAlphaComponent(0).cgColor,
+                       NSColor.black.withAlphaComponent(0).cgColor, NSColor.black.withAlphaComponent(0.6).cgColor]
         canvas.addSublayer(ends)
         canvas.addSublayer(floor)
         // The song's veil over the colour (NotchAuroraVeil), laid out as its own.
@@ -99,7 +104,8 @@ final class NotchWingGlowView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    func apply(colors next: NotchWingGlowColors, camera nextCamera: CGFloat, veil nextVeil: NotchAuroraVeil) {
+    func apply(colors next: NotchWingGlowColors, camera nextCamera: CGSize, veil nextVeil: NotchAuroraVeil,
+               presence shown: Double, fades: Bool) {
         let recolor = next != colors
         let first = colors == nil
         if recolor, !first {
@@ -129,16 +135,7 @@ final class NotchWingGlowView: NSView {
             for edge in [ends, floor] { edge.opacity = next.fadesEdges ? 1 : 0 }
         }
         if moved || recolor { needsLayout = true }
-        if !entered {
-            entered = true
-            let arrive = CABasicAnimation(keyPath: "opacity")
-            arrive.fromValue = 0
-            arrive.toValue = 1
-            arrive.duration = 0.55
-            arrive.timingFunction = NotchSongMotion.settleCurve
-            canvas.opacity = 1
-            canvas.add(arrive, forKey: "arrive")
-        }
+        presence.apply(shown, fades: fades, to: canvas)
     }
 
     private func paint(_ colors: NotchWingGlowColors) {
@@ -158,11 +155,16 @@ final class NotchWingGlowView: NSView {
         super.layout()
         let size = bounds.size
         guard size.width > 1, size.height > 1 else { return }
-        let wing = max(1, (size.width - camera) / 2)
+        let wing = max(1, (size.width - camera.width) / 2)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         canvas.frame = bounds
-        for layer in [ground, stage, base, ink, ends, floor, scrim] as [CALayer] { layer.frame = bounds }
+        for layer in [ground, stage, base, ends, floor, scrim] as [CALayer] { layer.frame = bounds }
+        // The camera's black stands as tall as the housing, which the closed
+        // strip is: an island taller than that, closing or opening around
+        // this glow, keeps its colour below the camera.
+        let inkHeight = camera.height > 0 ? min(size.height, camera.height) : size.height
+        ink.frame = CGRect(x: 0, y: size.height - inkHeight, width: size.width, height: inkHeight)
         // A pool fills each wing and an accent glows toward its outer end,
         // where an agent's ring or the companion sits.
         let poolSize = CGSize(width: max(wing * 1.6, size.height * 2.2), height: size.height * 1.9)
@@ -175,8 +177,6 @@ final class NotchWingGlowView: NSView {
         accents.left.position = CGPoint(x: wing * 0.24, y: size.height * 0.42)
         accents.right.bounds = CGRect(origin: .zero, size: accentSize)
         accents.right.position = CGPoint(x: size.width - wing * 0.24, y: size.height * 0.42)
-        ends.colors = [NSColor.black.withAlphaComponent(0.6).cgColor, NSColor.black.withAlphaComponent(0).cgColor,
-                       NSColor.black.withAlphaComponent(0).cgColor, NSColor.black.withAlphaComponent(0.6).cgColor]
         CATransaction.commit()
         // The camera's ink reaches further into an agent's wing than into the
         // resting island's: a change between the two eases across with the colours.
@@ -206,6 +206,7 @@ final class NotchWingGlowView: NSView {
     /// Solid black over the camera, fading out into each wing, so the
     /// wings glow apart and the housing melts into the island.
     private func paintInk(width: CGFloat) {
+        let camera = camera.width
         guard camera > 0, width > camera else {
             ink.isHidden = true
             return
@@ -217,7 +218,8 @@ final class NotchWingGlowView: NSView {
         let leftStops = Self.falloff.reversed().map { (Double(start - reach * CGFloat($0.at)) / Double(width), $0.ink) }
         let rightStops = Self.falloff.map { (Double(end + reach * CGFloat($0.at)) / Double(width), $0.ink) }
         let stops = leftStops + rightStops
-        ink.colors = stops.map { NSColor.black.withAlphaComponent($0.1).cgColor }
+        // The colours never change; only where they fall does, with the width.
+        if ink.colors == nil { ink.colors = stops.map { NSColor.black.withAlphaComponent($0.1).cgColor } }
         ink.locations = stops.map { NSNumber(value: min(1, max(0, $0.0))) }
     }
 
@@ -228,6 +230,39 @@ final class NotchWingGlowView: NSView {
         CATransaction.setDisableActions(true)
         for layer in [canvas, ground, stage, base, pools.left, pools.right, accents.left, accents.right, ink, ends,
                       floor, scrim] as [CALayer] { layer.contentsScale = scale }
+        CATransaction.commit()
+    }
+}
+
+/// Puts a glow's presence (NotchGlowPresence) on its layer: at once while
+/// the glow follows the island's resize frame by frame, or eased over the
+/// song's fade, from wherever it stands, while the island stays still.
+struct NotchGlowPresenceLayer {
+    private static let key = "presence"
+
+    func apply(_ value: Double, fades: Bool, to layer: CALayer) {
+        let target = Float(min(1, max(0, value)))
+        if fades {
+            guard layer.opacity != target else { return }
+            let from = layer.presentation()?.opacity ?? layer.opacity
+            set(target, on: layer)
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = from
+            fade.toValue = target
+            fade.duration = NotchGlowPresence.fade
+            fade.timingFunction = NotchSongMotion.fadeCurve
+            layer.add(fade, forKey: Self.key)
+        } else {
+            guard layer.opacity != target || layer.animation(forKey: Self.key) != nil else { return }
+            layer.removeAnimation(forKey: Self.key)
+            set(target, on: layer)
+        }
+    }
+
+    private func set(_ opacity: Float, on layer: CALayer) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.opacity = opacity
         CATransaction.commit()
     }
 }

@@ -89,15 +89,41 @@ extension NotchSongMode {
         !notch.expanded && !notch.peeking && notch.notice == nil && !notch.dragPlaceholder
             && notch.captureControls == nil && !notch.fullscreenCompact
     }
+
+    /// The notice the closed island shows in its strip, where it is on screen.
+    static func closedNotice(_ notch: NotchService) -> NotchNotice? {
+        guard noticeShows(notch), !notch.noticeExpanded else { return nil }
+        return notch.notice
+    }
+
+    /// The notice the island opened into a card (a call, a meeting, a
+    /// connected speaker or a held message), where it is on screen.
+    static func openNotice(_ notch: NotchService) -> NotchNotice? {
+        guard noticeShows(notch), notch.noticeExpanded else { return nil }
+        return notch.notice
+    }
+
+    private static func noticeShows(_ notch: NotchService) -> Bool {
+        !notch.expanded && !notch.peeking && !notch.dragPlaceholder && notch.captureControls == nil
+            && !notch.fullscreenCompact
+    }
 }
 
 /// The island's ground in colour when no song wears it: the working agents'
-/// colours split across their wings, and the companion's colours around it
-/// at rest and behind the open pages. One glow at a time, by the precedence
-/// in NotchIslandGlow; it sits under the song's backdrop, which takes over
-/// whenever a song is worn. Mirror windows never draw it.
+/// colours split across their wings, an Office notice's colours under it, and
+/// the companion's colours around it at rest and behind the open pages. One
+/// glow at a time, by the precedence in NotchIslandGlow; it sits under the
+/// song's backdrop, which takes over whenever a song is worn. Mirror windows
+/// never draw it.
+///
+/// It decides what to draw and hands that to NotchGlowStages, which alone
+/// follow the island frame by frame: the agents, the companion and the
+/// notices are read only when they change, never on every frame of a resize.
+/// The closed island's glows are one stage, so a glow passing from the
+/// companion to a notice or the agents and back recolours in place.
 struct NotchGlowBackdrop: View {
-    @ObservedObject var presentation: NotchBackdropPresentation
+    /// Passed on, not observed: the stages follow the outline.
+    let presentation: NotchBackdropPresentation
     @ObservedObject private var notch = NotchService.shared
     @ObservedObject private var music = NotchMusicService.shared
     @ObservedObject private var usage = AgentUsageService.shared
@@ -107,98 +133,128 @@ struct NotchGlowBackdrop: View {
     /// cross-faded as the member is.
     @ObservedObject private var shuffle = NotchMascotShuffleService.shared
     @Environment(\.colorSchemeContrast) private var contrast
-    /// Each glow's colours, held while it fades out, so it leaves with a fade, not a cut.
-    @State private var heldWings: NotchWingGlowColors?
-    @State private var heldIdle: NotchArtworkPalette?
+    /// The agents' colours, held while their strip still shows its last
+    /// reading after the last agent stopped (NotchStripHold), so the strip
+    /// never stands in plain black on its way out.
+    @State private var heldAgents: NotchWingGlowColors?
 
     var body: some View {
-        let box = presentation.contour.boundingRect.integral
         let idleAllowed = NotchIslandGlow.idleAllowed(enabled: NotchSongMode.idleGlowEnabled, lowPower: lowPower.isOn)
         let playing = music.playback?.isPlaying == true
+        let songGlows = playing && (NotchSongMode.announcesSong(notch) || NotchSongMode.glowsClosed(notch, music))
         let closed = NotchIslandGlow.closed(
-            agentStrip: NotchSongMode.showsAgentStrip(notch),
-            songGlows: playing && (NotchSongMode.announcesSong(notch) || NotchSongMode.glowsClosed(notch, music)),
-            companionRests: NotchSongMode.companionRests(notch), idleAllowed: idleAllowed)
-        let open = notch.expanded
+            agentStrip: NotchSongMode.showsAgentStrip(notch), songGlows: songGlows,
+            companionRests: NotchSongMode.companionRests(notch), idleAllowed: idleAllowed,
+            notice: NotchSongMode.closedNotice(notch).flatMap { noticeGlow($0, idleAllowed: idleAllowed) })
+        let open: NotchIslandGlow = notch.expanded
             ? NotchIslandGlow.open(wearsSong: NotchSongMode.wearsSong(notch, music),
                                    plainPage: notch.showingCommandBar || NotchSongMode.showsPlainPage(notch),
                                    companionOn: notch.mascotOn, idleAllowed: idleAllowed)
-            : .none
-        let wings = wingColors(for: closed)
-        let idle = open == .idle ? NotchIdlePalette.current() : nil
+            : NotchSongMode.openNotice(notch).flatMap { noticeGlow($0, idleAllowed: idleAllowed) }.map { .notice($0) } ?? .none
+        let liveAgents = agentColors
+        let wings = wingColors(for: closed, agents: liveAgents)
+        let palette = openPalette(for: open)
+        let increased = contrast == .increased
+        let camera = notch.geometry.isNotched
+            ? CGSize(width: notch.geometry.cameraWidth, height: notch.geometry.cameraHeight) : nil
         ZStack {
-            if !box.isNull, box.width > 0, box.height > 0 {
-                if let shown = wings ?? heldWings {
-                    fitted(NotchWingGlow(colors: shown, camera: notch.geometry.floats ? 0 : notch.geometry.cameraWidth,
-                                         veil: contrast == .increased ? .page : .open),
-                           box: box)
-                        .animation(NotchSongMotion.fade) { $0.opacity(wings == nil ? 0 : 1) }
-                }
-                if let palette = idle ?? heldIdle {
-                    fitted(NotchMusicAurora(palette: palette, isPlaying: true,
-                                            veil: NotchSongMode.veil(page: true, notch: notch,
-                                                                     increasedContrast: contrast == .increased),
-                                            quiet: true, shown: idle != nil, still: true)
-                            .overlay(alignment: .top) {
-                                if notch.geometry.isNotched {
-                                    NotchCameraInk(camera: CGSize(width: notch.geometry.cameraWidth,
-                                                                  height: notch.geometry.cameraHeight))
-                                }
-                            },
-                           box: box)
-                        .animation(NotchSongMotion.fade) { $0.opacity(idle == nil ? 0 : 1) }
-                }
-            }
+            NotchGlowStage(presentation: presentation, art: wings.map { colors in
+                .wings(colors, camera: notch.geometry.floats ? .zero
+                           : CGSize(width: notch.geometry.cameraWidth, height: notch.geometry.cameraHeight),
+                       // A notice's words keep AA over the strip's veil, as the song's strip does.
+                       veil: increased ? .page : closed.isNotice ? .strip : .open)
+            })
+            NotchGlowStage(presentation: presentation, art: palette.map { palette in
+                .aurora(NotchAuroraArt(
+                    palette: palette, isPlaying: true,
+                    veil: open.isNotice ? (increased ? .page : .vivid)
+                        : NotchSongMode.veil(page: true, notch: notch, increasedContrast: increased),
+                    quiet: true, still: true, camera: camera, inkShown: true))
+            })
         }
-        .onChange(of: wings, initial: true) { _, next in if let next { heldWings = next } }
-        .onChange(of: idle, initial: true) { _, next in
-            if let next { heldIdle = next }
-            // Words take the companion's tints while its colours are worn.
-            NotchIdlePaint.shared.wear(next)
-        }
-        // Gone for good: the fade has run, so the held colours can go too.
-        .task(id: wings == nil) {
-            guard wings == nil, heldWings != nil else { return }
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            if !Task.isCancelled { heldWings = nil }
-        }
-        .task(id: idle == nil) {
-            guard idle == nil, heldIdle != nil else { return }
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            if !Task.isCancelled { heldIdle = nil }
-        }
+        .onChange(of: liveAgents, initial: true) { _, next in if let next { heldAgents = next } }
+        // Words take the open glow's tints while its colours are worn.
+        .onChange(of: palette, initial: true) { _, next in NotchIdlePaint.shared.wear(next) }
         .onDisappear { NotchIdlePaint.shared.wear(nil) }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    /// The glow sized to the island's box and cut to its live outline, so it
-    /// opens and closes with the island, as the song's backdrop is.
-    private func fitted<Content: View>(_ content: Content, box: CGRect) -> some View {
-        content
-            .frame(width: box.width, height: box.height)
-            .mask(NotchBackdropShape(contour: presentation.contour.offsetBy(dx: -box.minX, dy: -box.minY)))
-            .padding(EdgeInsets(top: box.minY, leading: box.minX, bottom: 0, trailing: 0))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    /// The working agents' colours, one agent's on both sides, or nil once
+    /// the last has stopped.
+    private var agentColors: NotchWingGlowColors? {
+        guard let sides = NotchAgentWings.glowSides(finishes.model(live: usage.snapshot.live).wings) else { return nil }
+        return NotchWingGlowColors(left: sides.left.wingGlow, right: sides.right.wingGlow, fadesEdges: false)
     }
 
-    /// Each side's colours: the agents' own while their strip shows, one
-    /// agent's on both sides; the companion's at rest, its lead colour on
-    /// the side it rests on.
-    private func wingColors(for glow: NotchIslandGlow) -> NotchWingGlowColors? {
+    /// Each side's colours: the agents' own while their strip shows; the
+    /// companion's at rest, its lead colour on the side it rests on; a
+    /// notice's own, toned for words as the song's strip is.
+    private func wingColors(for glow: NotchIslandGlow, agents: NotchWingGlowColors?) -> NotchWingGlowColors? {
         switch glow {
         case .agents:
-            guard let sides = NotchAgentWings.glowSides(finishes.model(live: usage.snapshot.live).wings) else { return nil }
-            return NotchWingGlowColors(left: sides.left.wingGlow, right: sides.right.wingGlow, fadesEdges: false)
+            return agents ?? heldAgents
         case .idle:
             let glow = NotchIslandGlow.restingGlow(NotchIdlePalette.current().pure.map(NotchRGB.init))
             guard glow.count >= 3 else { return nil }
             let near = [glow[0], glow[2], glow[1]], far = [glow[1], glow[2], glow[0]]
             let left = notch.mascotSide == .left
             return NotchWingGlowColors(left: left ? near : far, right: left ? far : near, fadesEdges: true)
+        case .notice(.agent(let agent)):
+            return NotchWingGlowColors(left: agent.wingGlow, right: agent.wingGlow, fadesEdges: false)
+        case .notice(let source):
+            let glow = palette(for: source).glow.map(NotchRGB.init)
+            guard let first = glow.first else { return nil }
+            let three = [first, glow.count > 1 ? glow[1] : first, glow.count > 2 ? glow[2] : first]
+            return NotchWingGlowColors(left: [three[0], three[2], three[1]], right: [three[1], three[2], three[0]],
+                                       fadesEdges: false)
         case .song, .none:
             return nil
         }
+    }
+
+    /// The open island's colours: the companion's behind its pages, or a
+    /// notice's behind the card it opened into.
+    private func openPalette(for glow: NotchIslandGlow) -> NotchArtworkPalette? {
+        switch glow {
+        case .idle: return NotchIdlePalette.current()
+        case .notice(let source): return palette(for: source)
+        case .song, .agents, .none: return nil
+        }
+    }
+
+    private func palette(for source: NotchNoticeGlow) -> NotchArtworkPalette {
+        switch source {
+        case .song: return NotchArtworkPalette.song(music.artwork) ?? NotchIdlePalette.current()
+        case .agent(let agent): return NotchAgentPalette.of(agent)
+        case .companion: return NotchIdlePalette.current()
+        }
+    }
+
+    private func noticeGlow(_ notice: NotchNotice, idleAllowed: Bool) -> NotchNoticeGlow? {
+        NotchIslandGlow.notice(office: notice.office != nil, agent: notice.agent,
+                               songWorn: NotchSongMode.enabled && music.playback?.isPlaying == true,
+                               idleAllowed: idleAllowed)
+    }
+}
+
+private extension NotchIslandGlow {
+    var isNotice: Bool {
+        if case .notice = self { return true }
+        return false
+    }
+}
+
+/// An agent's colours as a palette, for the card its notice opens into.
+/// Main thread only.
+enum NotchAgentPalette {
+    private static var made: [AgentProvider: NotchArtworkPalette] = [:]
+
+    static func of(_ agent: AgentProvider) -> NotchArtworkPalette {
+        if let palette = made[agent] { return palette }
+        let palette = NotchArtworkPalette(pure: agent.glowStops.map(\.nsColor))
+        made[agent] = palette
+        return palette
     }
 }
 
@@ -209,29 +265,95 @@ private extension NotchRGB {
     }
 }
 
-/// The closed island's static glow, one set of colours each side of the
-/// camera (NotchWingGlowView). Decoration only: no clicks, no VoiceOver.
-struct NotchWingGlow: View {
-    let colors: NotchWingGlowColors
-    let camera: CGFloat
-    let veil: NotchAuroraVeil
+/// What one glow draws: the closed island's wings, or the drifting colour of
+/// the open island and the song.
+enum NotchGlowArt: Equatable {
+    case wings(NotchWingGlowColors, camera: CGSize, veil: NotchAuroraVeil)
+    case aurora(NotchAuroraArt)
+}
+
+struct NotchAuroraArt: Equatable {
+    var palette: NotchArtworkPalette
+    var isPlaying: Bool
+    var mood: NotchMusicMood = .neutral
+    var veil: NotchAuroraVeil
+    var quiet = false
+    var still = false
+    var camera: CGSize?
+    var inkShown = true
+}
+
+/// One glow, laid out to the island's box and cut to its live outline by the
+/// island's own silhouette (the canvas's mask), so it opens and closes with
+/// the island on every frame without a mask of its own. It is drawn only
+/// while it shows or is fading, and fades along the island's own resize
+/// (NotchGlowPresence), holding its last colours on the way out.
+struct NotchGlowStage: View {
+    @ObservedObject var presentation: NotchBackdropPresentation
+    /// What to draw, or nil when the glow is not shown.
+    let art: NotchGlowArt?
+    @State private var book = Book()
+    /// Wakes the stage when a fade in place has run, so a glow gone for good is no longer drawn.
+    @State private var wake = 0
+
+    final class Book {
+        var presence = NotchGlowPresence()
+        var art: NotchGlowArt?
+    }
 
     var body: some View {
-        NotchWingGlowBridge(colors: colors, camera: camera, veil: veil)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        let _ = wake
+        let frame = book.presence.step(shown: art != nil, plan: presentation.glowPlan,
+                                       progress: presentation.glowProgress, now: CACurrentMediaTime())
+        if let art { book.art = art }
+        if !frame.mounted { book.art = nil }
+        let box = presentation.contour.boundingRect.integral
+        return ZStack {
+            if frame.mounted, let drawn = book.art, !box.isNull, box.width > 0, box.height > 0 {
+                NotchGlowArtView(art: drawn, presence: frame.opacity, fades: frame.fades)
+                    .frame(width: box.width, height: box.height)
+                    .padding(EdgeInsets(top: box.minY, leading: box.minX, bottom: 0, trailing: 0))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+        .task(id: book.presence.fadeEnd) {
+            guard let end = book.presence.fadeEnd else { return }
+            let wait = end - CACurrentMediaTime()
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            if !Task.isCancelled { wake &+= 1 }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct NotchGlowArtView: View {
+    let art: NotchGlowArt
+    let presence: Double
+    let fades: Bool
+
+    var body: some View {
+        switch art {
+        case .wings(let colors, let camera, let veil):
+            NotchWingGlowBridge(colors: colors, camera: camera, veil: veil, presence: presence, fades: fades)
+        case .aurora(let aurora):
+            NotchMusicAurora(palette: aurora.palette, isPlaying: aurora.isPlaying, mood: aurora.mood, veil: aurora.veil,
+                             quiet: aurora.quiet, shown: true, still: aurora.still, camera: aurora.camera,
+                             inkShown: aurora.inkShown, presence: presence, fades: fades)
+        }
     }
 }
 
 private struct NotchWingGlowBridge: NSViewRepresentable {
     let colors: NotchWingGlowColors
-    let camera: CGFloat
+    let camera: CGSize
     let veil: NotchAuroraVeil
+    let presence: Double
+    let fades: Bool
 
     func makeNSView(context: Context) -> NotchWingGlowView { NotchWingGlowView() }
 
     func updateNSView(_ view: NotchWingGlowView, context: Context) {
-        view.apply(colors: colors, camera: camera, veil: veil)
+        view.apply(colors: colors, camera: camera, veil: veil, presence: presence, fades: fades)
     }
 }
-
