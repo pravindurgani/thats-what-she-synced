@@ -204,7 +204,7 @@ function setupDeal() {
   }));
 }
 
-// the charger moment: punch-in, pour, the level rises to the charge, the bolt glints.
+// the charger moment: punch-in, pour, the level rises to the charge, the battery glints.
 // On SVG, anime.js reads x and y as attributes, so these moves name translateY.
 function setupMoment({ createTimeline, utils, spring, stagger }) {
   const card = $('[data-moment]');
@@ -213,19 +213,21 @@ function setupMoment({ createTimeline, utils, spring, stagger }) {
   const words = $$('[data-m="word"]', card);
   const lvl = $('.lvl', card);
   const stream = $('.stream', card);
-  const bolt = $('.bolt', card);
-  const full = 21 * (1 - 0.62);
+  const bolt = $('[data-m="bolt"]', card);
+  // the mug's window is 11.4 pt tall; the charge shown is 64%
+  const empty = 11.4;
+  const full = empty * (1 - 0.64);
   utils.set(punch, { opacity: 0, scale: 0.9 });
   utils.set(words, { opacity: 0, translateY: 3 });
-  utils.set(lvl, { translateY: 21 });
+  utils.set(lvl, { translateY: empty });
   onEnter(card, () => {
     createTimeline({ defaults: { ease: 'outExpo' } })
       .add(punch, { opacity: [0, 1], duration: 130, ease: 'linear' }, 0)
       .add(punch, { scale: [0.9, 1], ease: spring({ bounce: 0.35, duration: 420 }) }, 0)
       .add(words, { opacity: [0, 1], translateY: [3, 0], duration: 370, delay: stagger(60) }, 80)
       .add(stream, { opacity: [0, 1], scaleY: [0, 1], duration: 160, ease: 'outQuad' }, 300)
-      .add(lvl, { translateY: [21, full], duration: 1000, ease: 'outCubic' }, 420)
-      .add(stream, { opacity: [1, 0], translateY: [0, 14], duration: 220, ease: 'inQuad' }, 1200)
+      .add(lvl, { translateY: [empty, full], duration: 1000, ease: 'outCubic' }, 420)
+      .add(stream, { opacity: [1, 0], translateY: [0, 8], duration: 220, ease: 'inQuad' }, 1200)
       .add(bolt, { scale: [1, 1.18, 1], duration: 360, ease: 'outQuad' }, 1450);
   });
 }

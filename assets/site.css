@@ -285,8 +285,8 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 @keyframes d-bb-lk { 0%, 100% { transform: rotate(0deg); } 12.5%, 62.5% { transform: rotate(-68deg); } 25%, 75% { transform: rotate(0deg); } 37.5%, 87.5% { transform: rotate(-44deg); } 50% { transform: rotate(0deg); } }
 @keyframes d-bb-rl { 0%, 100% { transform: rotate(0deg); } 12.5%, 62.5% { transform: rotate(-34deg); } 25%, 75% { transform: rotate(0deg); } 37.5%, 87.5% { transform: rotate(-22deg); } 50% { transform: rotate(0deg); } }
 @keyframes d-bb-rk { 0%, 100% { transform: rotate(0deg); } 12.5%, 62.5% { transform: rotate(68deg); } 25%, 75% { transform: rotate(0deg); } 37.5%, 87.5% { transform: rotate(44deg); } 50% { transform: rotate(0deg); } }
-@keyframes d-bb-body { 0%, 100% { transform: translate(1px, -1.6px) rotate(4deg); } 12.5%, 62.5% { transform: translate(0px, 1.25px) rotate(0deg); } 25%, 75% { transform: translate(0px, -1.6px) rotate(0deg); } 37.5%, 87.5% { transform: translate(-1.3px, .55px) rotate(-7deg); } 50% { transform: translate(1.3px, -1.6px) rotate(7deg); } }
-@keyframes d-bb-box { 0%, 100% { transform: translateY(-.6px) rotate(-17deg); } 12.5%, 62.5% { transform: translateY(0px) rotate(0deg); } 25%, 75% { transform: translateY(-1.3px) rotate(0deg); } 37.5%, 87.5% { transform: translateY(0px) rotate(-13deg); } 50% { transform: translateY(-1.3px) rotate(13deg); } }
+@keyframes d-bb-body { 0%, 100% { transform: translate(1px, -.6px) rotate(4deg); } 12.5%, 62.5% { transform: translate(0px, 1.25px) rotate(0deg); } 25%, 75% { transform: translate(0px, -.6px) rotate(0deg); } 37.5%, 87.5% { transform: translate(-1.3px, .55px) rotate(-7deg); } 50% { transform: translate(1.3px, -.6px) rotate(7deg); } }
+@keyframes d-bb-box { 0%, 100% { transform: translateY(-.4px) rotate(-17deg); } 12.5%, 62.5% { transform: translateY(0px) rotate(0deg); } 25%, 75% { transform: translateY(-.5px) rotate(0deg); } 37.5%, 87.5% { transform: translateY(0px) rotate(-13deg); } 50% { transform: translateY(-.5px) rotate(13deg); } }
 .f-bb .la { transform: rotate(166deg); animation-name: d-bb-la; }
 .f-bb .ra { transform: rotate(-166deg); animation-name: d-bb-ra; }
 .f-bb .rf { transform: rotate(0deg); animation-name: d-bb-rf; }
@@ -294,8 +294,8 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 .f-bb .lk { transform: rotate(0deg); animation-name: d-bb-lk; }
 .f-bb .rl { transform: rotate(0deg); animation-name: d-bb-rl; }
 .f-bb .rk { transform: rotate(0deg); animation-name: d-bb-rk; }
-.f-bb .body { transform: translate(0px, -1.6px) rotate(0deg); animation-name: d-bb-body; }
-.f-bb .box { transform: translateY(-1.3px) rotate(0deg); animation-name: d-bb-box; }
+.f-bb .body { transform: translate(0px, -.6px) rotate(0deg); animation-name: d-bb-body; }
+.f-bb .box { transform: translateY(-.5px) rotate(0deg); animation-name: d-bb-box; }
 @keyframes d-sc-la { 0%, 100% { transform: rotate(78deg); } 12.5%, 37.5% { transform: rotate(26deg); } 25% { transform: rotate(14deg); } 50% { transform: rotate(84deg); } 62.5% { transform: rotate(98deg); } 75% { transform: rotate(106deg); } 87.5% { transform: rotate(40deg); } }
 @keyframes d-sc-lf { 0%, 100% { transform: rotate(-58deg); } 12.5%, 37.5% { transform: rotate(-72deg); } 25% { transform: rotate(-20deg); } 50% { transform: rotate(8deg); } 62.5% { transform: rotate(0deg); } 75% { transform: rotate(4deg); } 87.5% { transform: rotate(-112deg); } }
 @keyframes d-sc-ra { 0%, 100% { transform: rotate(-78deg); } 12.5%, 37.5% { transform: rotate(-26deg); } 25% { transform: rotate(-84deg); } 50% { transform: rotate(-14deg); } 62.5% { transform: rotate(-98deg); } 75% { transform: rotate(-106deg); } 87.5% { transform: rotate(-40deg); } }
@@ -322,7 +322,7 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 @keyframes d-a-lk { 0%, 100% { transform: rotate(0deg); } 12.5%, 37.5%, 62.5% { transform: rotate(-20deg); } 25%, 50%, 75% { transform: rotate(-20deg); } 87.5% { transform: rotate(-72deg); } }
 @keyframes d-a-rl { 0%, 100% { transform: rotate(-8deg); } 12.5%, 37.5%, 62.5% { transform: rotate(-10deg); } 25%, 50%, 75% { transform: rotate(-10deg); } 87.5% { transform: rotate(-36deg); } }
 @keyframes d-a-rk { 0%, 100% { transform: rotate(0deg); } 12.5%, 37.5%, 62.5% { transform: rotate(20deg); } 25%, 50%, 75% { transform: rotate(20deg); } 87.5% { transform: rotate(72deg); } }
-@keyframes d-a-body { 0%, 100% { transform: translate(0px, -3.2px) rotate(0deg); } 12.5%, 37.5%, 62.5% { transform: translate(-.9px, .2px) rotate(-5deg); } 25%, 50%, 75% { transform: translate(.9px, .2px) rotate(5deg); } 87.5% { transform: translate(0px, 1.4px) rotate(0deg); } }
+@keyframes d-a-body { 0%, 100% { transform: translate(0px, -2.4px) rotate(0deg); } 12.5%, 37.5%, 62.5% { transform: translate(-.9px, .2px) rotate(-5deg); } 25%, 50%, 75% { transform: translate(.9px, .2px) rotate(5deg); } 87.5% { transform: translate(0px, 1.4px) rotate(0deg); } }
 .f-a .la { transform: rotate(52deg); animation-name: d-a-la; }
 .f-a .lf { transform: rotate(-84deg); animation-name: d-a-lf; }
 .f-a .ra { transform: rotate(-28deg); animation-name: d-a-ra; }
@@ -340,7 +340,7 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 @keyframes d-b-lk { 0%, 100% { transform: rotate(0deg); } 6.25% { transform: rotate(0deg); } 18.75%, 43.75%, 68.75% { transform: rotate(-8deg); } 31.25%, 56.25%, 81.25% { transform: rotate(0deg); } 93.75% { transform: rotate(-72deg); } }
 @keyframes d-b-rl { 0%, 100% { transform: rotate(-8deg); } 6.25% { transform: rotate(0deg); } 18.75%, 43.75%, 68.75% { transform: rotate(-4deg); } 31.25%, 56.25%, 81.25% { transform: rotate(-20deg); } 93.75% { transform: rotate(-36deg); } }
 @keyframes d-b-rk { 0%, 100% { transform: rotate(0deg); } 6.25% { transform: rotate(0deg); } 18.75%, 43.75%, 68.75% { transform: rotate(0deg); } 31.25%, 56.25%, 81.25% { transform: rotate(8deg); } 93.75% { transform: rotate(72deg); } }
-@keyframes d-b-body { 0%, 100% { transform: translate(0px, -3.2px) rotate(0deg); } 6.25% { transform: translate(0px, 0px) rotate(0deg); } 18.75%, 43.75%, 68.75% { transform: translate(-1.7px, .3px) rotate(0deg); } 31.25%, 56.25%, 81.25% { transform: translate(1.7px, .3px) rotate(0deg); } 93.75% { transform: translate(0px, 1.4px) rotate(0deg); } }
+@keyframes d-b-body { 0%, 100% { transform: translate(0px, -2.4px) rotate(0deg); } 6.25% { transform: translate(0px, 0px) rotate(0deg); } 18.75%, 43.75%, 68.75% { transform: translate(-1.7px, .3px) rotate(0deg); } 31.25%, 56.25%, 81.25% { transform: translate(1.7px, .3px) rotate(0deg); } 93.75% { transform: translate(0px, 1.4px) rotate(0deg); } }
 .f-b .la { transform: rotate(24deg); animation-name: d-b-la; }
 .f-b .lf { transform: rotate(-124deg); animation-name: d-b-lf; }
 .f-b .ra { transform: rotate(-30deg); animation-name: d-b-ra; }
@@ -358,7 +358,7 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 @keyframes d-c-lk { 0%, 100% { transform: rotate(0deg); } 6.25%, 18.75%, 31.25%, 43.75%, 56.25%, 68.75%, 81.25% { transform: rotate(-28deg); } 12.5%, 37.5%, 62.5% { transform: rotate(0deg); } 25%, 50%, 75% { transform: rotate(0deg); } 87.5% { transform: rotate(0deg); } 93.75% { transform: rotate(-40deg); } }
 @keyframes d-c-rl { 0%, 100% { transform: rotate(-8deg); } 6.25%, 18.75%, 31.25%, 43.75%, 56.25%, 68.75%, 81.25% { transform: rotate(-14deg); } 12.5%, 37.5%, 62.5% { transform: rotate(0deg); } 25%, 50%, 75% { transform: rotate(0deg); } 87.5% { transform: rotate(0deg); } 93.75% { transform: rotate(-20deg); } }
 @keyframes d-c-rk { 0%, 100% { transform: rotate(0deg); } 6.25%, 18.75%, 31.25%, 43.75%, 56.25%, 68.75%, 81.25% { transform: rotate(28deg); } 12.5%, 37.5%, 62.5% { transform: rotate(0deg); } 25%, 50%, 75% { transform: rotate(0deg); } 87.5% { transform: rotate(0deg); } 93.75% { transform: rotate(40deg); } }
-@keyframes d-c-body { 0%, 100% { transform: translate(0px, -3.2px) rotate(0deg) scaleX(1); } 6.25%, 18.75%, 31.25%, 43.75%, 56.25%, 68.75%, 81.25% { transform: translate(-.8px, .25px) rotate(0deg) scaleX(1); } 12.5%, 37.5%, 62.5% { transform: translate(.8px, -.3px) rotate(0deg) scaleX(1); } 25%, 50%, 75% { transform: translate(0px, -1px) rotate(0deg) scaleX(1); } 87.5% { transform: translate(0px, 0px) rotate(0deg) scaleX(1); } 93.75% { transform: translate(0px, .8px) rotate(0deg) scaleX(-1); } }
+@keyframes d-c-body { 0%, 100% { transform: translate(0px, -2.4px) rotate(0deg) scaleX(1); } 6.25%, 18.75%, 31.25%, 43.75%, 56.25%, 68.75%, 81.25% { transform: translate(-.8px, .25px) rotate(0deg) scaleX(1); } 12.5%, 37.5%, 62.5% { transform: translate(.8px, -.3px) rotate(0deg) scaleX(1); } 25%, 50%, 75% { transform: translate(0px, -1px) rotate(0deg) scaleX(1); } 87.5% { transform: translate(0px, 0px) rotate(0deg) scaleX(1); } 93.75% { transform: translate(0px, .8px) rotate(0deg) scaleX(-1); } }
 .f-c .la { transform: rotate(150deg); animation-name: d-c-la; }
 .f-c .lf { transform: rotate(20deg); animation-name: d-c-lf; }
 .f-c .ra { transform: rotate(-150deg); animation-name: d-c-ra; }
@@ -394,8 +394,8 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 .card .tile { position: absolute; inset: 0; border-radius: 0; align-items: flex-start; }
 .card .mem { width: 36cqw; height: 36cqw; margin-top: 6cqw; }
 /* dancers stand on the lower third and keep their raised hands clear of the corner labels */
-.card .dn { height: 36cqw; width: calc(36cqw * 60 / 32); margin-top: 11.5cqw; }
-.card .dn.solo { width: calc(36cqw * 20 / 32); }
+.card .dn { height: 31cqw; width: calc(31cqw * 60 / 32); margin-top: 15.5cqw; }
+.card .dn.solo { width: calc(31cqw * 20 / 32); }
 .card .cn { position: absolute; left: 0; bottom: 5cqw; max-width: 94%; display: flex; align-items: stretch; gap: 3.2cqw; padding: 2.2cqw 4.4cqw 2cqw 0; background: var(--navy);
             font-family: var(--display-75); font-weight: 800; font-stretch: 72%; font-size: clamp(15px, 7.4cqw, 24px); line-height: 1.05; text-transform: uppercase; letter-spacing: .01em; }
 .card .cn::before { content: ""; flex: none; width: 1.8cqw; min-width: 4px; margin: -2.2cqw 0 -2cqw; background: var(--mustard); }
@@ -405,7 +405,7 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 .card .oncam::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #FF5A5F; }
 .card.on .oncam { display: inline-flex; }
 
-/* what it does: a memo, and three Office notices drawn live in the app's look */
+/* what it does: a memo, and the app's Office notices, live */
 .memo { position: relative; background: var(--manila); }
 .memo .tab { position: absolute; top: -40px; left: max(0px, calc((100% - 1240px) / 2)); margin: 0 0 0 48px; height: 40px; padding: 13px 20px 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: var(--manila);
              font-family: var(--mono); font-weight: 700; font-size: 13px; line-height: 1.2; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
@@ -413,47 +413,79 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 .memohead dt { font-weight: 700; }
 .memohead dd { margin: 0; }
 .memo .ctl:hover { background: #F0E6C8; }
-.notices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 28px; }
-.notice { margin: 0; }
-.nk { border-radius: var(--radius-lg); overflow: hidden; background: linear-gradient(180deg, #56657A 0%, #8D97A0 60%, #BDB5A4 100%); }
-.nk svg { display: block; width: 100%; height: auto; aspect-ratio: 300 / 184; overflow: hidden; }
-.notice figcaption { margin-top: 12px; font-size: 18px; line-height: 1.4; color: #26344B; }
-.calm { margin: 26px 0 0; font-family: var(--mono); font-size: 15px; color: #3A3524; }
-.nk .slab { fill: #000000; }
-.nk .housing { fill: #121212; }
-.nk text { font-family: var(--system); fill: #FFFFFF; }
-.nk .t1 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
-.nk .t2 { font-size: 13.5px; font-weight: 500; fill: rgba(255, 255, 255, .74); }
-.nk .tv { font-size: 19px; font-weight: 600; text-anchor: end; font-variant-numeric: tabular-nums; }
-.nk .t3 { font-family: "SF Mono", ui-monospace, Menlo, var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .02em; fill: rgba(255, 255, 255, .9); }
-.nk .rule { fill: var(--mustard); }
-.nk .bolt { fill: #FFFFFF; transform-box: fill-box; transform-origin: center; }
-.nk g, .nk rect, .nk circle, .nk path { transform-box: fill-box; transform-origin: center; }
-/* the mug fills to the charge (62%); steam curls up now and then */
-.mugg { --p: .62; --cof: var(--c1); }
-.nk .mugg * { transform-box: view-box; transform-origin: 0 0; }
-.mugg .lvl { transform: translateY(calc(21px * (1 - var(--p, .5)))); }
-.mugg .stream, .mugg .steam2 path { opacity: 0; }
-.mugg .steam2 path { fill: none; stroke: var(--cof); stroke-width: 1.4; stroke-linecap: round; animation: steam2 3.6s ease-in-out infinite; }
-.mugg .steam2 path + path { animation-delay: .7s; }
-.nk .mugg .stream { transform-origin: 19.5px 0; }
-@keyframes steam2 { 0%, 50%, 100% { opacity: 0; transform: translateY(2px); } 66% { opacity: .9; transform: none; } 88% { opacity: 0; transform: translateY(-3px); } }
-/* the boombox pumps on the beat; the meter's top segments bounce */
-.nk .cone { animation: pump .5s var(--expo) infinite; }
-@keyframes pump { 0% { transform: scale(1.14); } 100% { transform: scale(1); } }
-.vu .s8 { opacity: 0; }
-.vu .s6 { animation: vu-mid .5s steps(1, end) infinite; }
-.vu .s7 { animation: vu-hot .5s steps(1, end) infinite; }
-.vu .s8 { animation: vu-peak 1s steps(1, end) infinite; }
-@keyframes vu-mid { 0%, 70% { opacity: 1; } 71%, 100% { opacity: .4; } }
-@keyframes vu-hot { 0%, 40% { opacity: 1; } 41%, 100% { opacity: .25; } }
-@keyframes vu-peak { 0%, 16% { opacity: 1; } 17%, 100% { opacity: 0; } }
-/* the desk phone: two quick rings, a pause */
-.rp { opacity: 0; animation: ring 2.4s cubic-bezier(.2, .7, .3, 1) infinite; }
-.rp.r2 { animation-delay: .32s; }
-@keyframes ring { 0% { opacity: .85; transform: scale(1); } 22%, 100% { opacity: 0; transform: scale(1.55); } }
-.phone { animation: wiggle 2.4s ease-in-out infinite; }
+/* four notices, drawn in points from the app's renders (office-renders, volume-moment) and zoomed together by --zn:
+   three closed strips (charge, volume, agents) around a 155 pt camera housing, and the call card */
+.notices { --zn: 1.35; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px 28px; margin-top: 24px; }
+.ncol { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.notice { margin: 0; display: flex; flex-direction: column; min-width: 0; }
+.nk { display: flex; justify-content: center; align-items: flex-start; border-radius: var(--radius-lg); overflow: hidden; background: linear-gradient(180deg, #56657A 0%, #8D97A0 60%, #BDB5A4 100%); }
+.callf .nk { flex: 1 1 auto; }
+.notice figcaption { margin-top: 10px; font-size: 17px; line-height: 1.4; color: #26344B; }
+.calm { margin: 22px 0 0; font-family: var(--mono); font-size: 15px; color: #3A3524; }
+.strip, .ccard { --hc: 155px; position: relative; flex: none; zoom: var(--zn); margin-bottom: 14px; background: #000; color: #FFFFFF; font-family: var(--system); }
+.strip { width: calc(var(--wl) + var(--hc) + var(--wr)); height: 32px; border-radius: 0 0 12px 12px; }
+.s-charge { --wl: 157px; --wr: 89.5px; }
+.s-vol { --wl: 176.75px; --wr: 80.75px; }
+.s-agents { --wl: 66px; --wr: 66px; }
+.strip::before, .strip::after, .ccard::before, .ccard::after { content: ""; position: absolute; top: 0; width: 6px; height: 6px; }
+.strip::before, .ccard::before { left: -6px; background: radial-gradient(circle at 0 100%, transparent 5.5px, #000 6px); }
+.strip::after, .ccard::after { right: -6px; background: radial-gradient(circle at 100% 100%, transparent 5.5px, #000 6px); }
+.strip .hc, .ccard .hc { position: absolute; top: 0; height: 24px; width: var(--hc); border-radius: 0 0 10px 10px; background: #141414; }
+.strip .hc { left: var(--wl); }
+.ccard .hc { left: 50%; margin-left: calc(var(--hc) / -2); }
+.strip .w { position: absolute; top: 0; height: 32px; display: flex; align-items: center; }
+.strip .w.l { left: 0; width: var(--wl); padding-left: 8px; gap: 7px; }
+.strip .w.r { right: 0; width: var(--wr); padding-right: 10px; justify-content: flex-end; gap: 6px; }
+.s-agents .w.l, .s-agents .w.r { justify-content: center; gap: 5px; padding: 0; }
+.s-agents .glow { opacity: .95; }
+.s-agents .glow.l { left: 0; width: 104px; }
+.s-agents .glow.r { right: 0; width: 104px; }
+.l3, .who { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.strip .t1 { font-size: 11.5px; font-weight: 600; line-height: 1.2; letter-spacing: -.005em; }
+.strip .t1.big { font-size: 14px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.strip .tv { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: #DADADA; }
+.cap { display: flex; align-items: center; gap: 3.5px; margin-top: 2px; font: 500 7.6px/1.1 "SF Mono", ui-monospace, Menlo, var(--mono); letter-spacing: .02em; color: rgba(255, 255, 255, .82); white-space: nowrap; }
+.cap::before { content: ""; flex: none; width: 1.5px; height: 7.5px; background: var(--mustard); }
+/* charging: the battery glyph; the mug fills to the charge with two pill bars and grey steam */
+.batt { display: block; flex: none; width: 20.5px; height: 9.3px; }
+.mugwrap { display: block; flex: none; width: 17.5px; height: 21px; margin-top: -4px; }
+.mugn { display: block; width: 100%; height: 100%; overflow: visible; }
+.mugn * { transform-box: view-box; transform-origin: 0 0; }
+.mugn .steam { fill: none; stroke: #7C7C7C; stroke-width: 1.3; stroke-linecap: round; }
+.mugn .lvl { fill: #C8956A; transform: translateY(4.1px); }
+.mugn .stream { fill: #C8956A; opacity: 0; transform-origin: 7.7px -3px; }
+/* volume: the connect card's boombox in miniature, its cones kicking on the beat */
+.minibox { display: block; flex: none; width: 22px; height: 13px; overflow: visible; }
+.minibox .cone { transform-box: fill-box; transform-origin: center; animation: kick 1.2s var(--expo) infinite; }
+@keyframes kick { 0% { transform: scale(1.12); } 18%, 100% { transform: scale(1); } }
+/* the VU meter: nine 3 pt capsules from 6 to 18 pt, lit low to high in the moment's colours, the top two beet, unlit at 14% white.
+   It shows the level as the app does: ceil(level x 9) lit, so 85% lights eight. */
+.vu { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
+.vu i { display: block; flex: none; width: 3px; border-radius: 1px; background: rgba(255, 255, 255, .14); }
+.vu i.on { background: var(--c); box-shadow: 0 0 2.5px color-mix(in srgb, var(--c) 55%, transparent); }
+.vu i:nth-child(1) { height: 6px; }  .vu i:nth-child(2) { height: 7.5px; }  .vu i:nth-child(3) { height: 9px; }
+.vu i:nth-child(4) { height: 10.5px; }  .vu i:nth-child(5) { height: 12px; }  .vu i:nth-child(6) { height: 13.5px; }
+.vu i:nth-child(7) { height: 15px; }
+.vu i:nth-child(8) { height: 16.5px; }
+.vu i:nth-child(9) { height: 18px; }
+/* the call card: blinds behind, a desk phone ringing twice, then a pause */
+.ccard { --cw: 372px; width: var(--cw); height: 170px; border-radius: 0 0 36px 36px; }
+.blinds { position: absolute; left: 16px; right: 16px; top: 38px; bottom: 14px; background: repeating-linear-gradient(180deg, rgba(255, 255, 255, .075) 0 2px, transparent 2px 5px);
+          -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent); mask-image: radial-gradient(closest-side, #000 55%, transparent); }
+.ringer { position: absolute; left: 17px; top: 69px; width: 58px; height: 58px; }
+.ringer > span { position: absolute; border-radius: 50%; }
+.ringer .rim, .ringer .rp { inset: 0; border: 2.4px solid var(--mustard); }
+.ringer .rp { opacity: 0; animation: ring 2.4s cubic-bezier(.2, .7, .3, 1) infinite; }
+.ringer .rp.r2 { animation-delay: .32s; }
+@keyframes ring { 0% { opacity: .85; transform: scale(1); } 22%, 100% { opacity: 0; transform: scale(1.5); } }
+.ringer .phone { inset: 5.5px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #F7D774, #C9A227); animation: wiggle 2.4s ease-in-out infinite; }
+.ringer .phone svg { display: block; width: 24px; height: 24px; }
 @keyframes wiggle { 0%, 34%, 100% { transform: rotate(0deg); } 4%, 12%, 20%, 28% { transform: rotate(-9deg); } 8%, 16%, 24% { transform: rotate(9deg); } }
+.who { position: absolute; left: 94.5px; top: 66px; }
+.ccard .t1 { font-size: 19.5px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em; }
+.ccard .t2 { margin-top: 3px; font-size: 13.5px; font-weight: 500; line-height: 1.2; color: rgba(255, 255, 255, .82); }
+.ccard .cap { margin-top: 9px; gap: 5px; font-size: 10px; }
+.ccard .cap::before { width: 2px; height: 10px; }
 
 /* install */
 .navy { background: var(--navy); color: var(--paper); }
@@ -501,20 +533,22 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
 .lost .memohead { margin-bottom: 28px; }
 .lost .stage { margin-top: 36px; }
 
-/* ---------- responsive: drawn at 1440 and 390. The island's zoom steps so the notch spans the screen; the lower third keeps clear of it. ---------- */
+/* ---------- responsive: drawn at 1440 and 390. The island's zoom steps so the notch spans the screen with an inset, and the lower third keeps clear of it. ---------- */
+/* install: two by two from 1000 px. The build step's Copy sits on its label row and the clone line is sized to fit the block. */
+@media (min-width: 1000px) {
+  .steps { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 28px 40px; }
+  .step.wide { position: relative; container-type: inline-size; }
+  .step.wide > .code { grid-column: 1 / -1; max-width: none; display: block; }
+  .step.wide pre { font-size: clamp(12px, (100cqw - 34px) / 41, 15px); border-radius: calc(var(--radius-lg) - 1px); }
+  .step.wide .copy { position: absolute; top: 2px; right: 0; min-height: 44px; border: 1px solid #3A5377; border-radius: var(--radius-md); }
+}
 @media (min-width: 1200px) {
   .steps { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 32px 56px; }
-  .step.wide { grid-template-columns: 48px minmax(0, 1fr); }
-  .step.wide > .code { grid-column: 1 / -1; max-width: none; }
-  .step.wide { position: relative; }
-  .step.wide > .code { display: block; }
-  .step.wide pre { font-size: 14.5px; border-radius: calc(var(--radius-lg) - 1px); }
-  /* the build step's Copy sits on its label row, so the clone URL keeps the block's full width */
-  .step.wide .copy { position: absolute; top: 2px; right: 0; min-height: 44px; border: 1px solid #3A5377; border-radius: var(--radius-md); }
 }
 /* 1200-1279: a step down, so the snap-zoom keeps both wings on screen */
 @media (min-width: 1200px) and (max-width: 1279px) {
   .stage { --z: 3.05; }
+  .notices { --zn: 1.3; }
 }
 @media (min-width: 1680px) {
   .wrap { max-width: 1400px; }
@@ -522,13 +556,13 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
   .stage { --z: 3.65; height: 280px; }
   .lower .nm { font-size: 30px; }
   .lower .rl { font-size: 16px; }
+  .notices { --zn: 1.55; }
 }
 @media (max-width: 1199px) {
   .stage { --z: 2.5; height: 222px; }
   .lower .nm { font-size: 24px; }
   .lower .rl { font-size: 14px; }
-  .notices { gap: 18px; }
-  .notice figcaption { font-size: 17px; }
+  .notices { --zn: 1.05; }
 }
 @media (max-width: 999px) {
   .stage { --z: 1.85; height: 184px; --bezel: 8px; }
@@ -543,12 +577,8 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
   .card .tag { font-size: 10px; }
   .card .oncam { font-size: 9.5px; padding: 5px 6px 4px; gap: 5px; }
   .card .oncam::before { width: 6px; height: 6px; }
+  .notices { --zn: 1.5; grid-template-columns: minmax(0, 1fr); }
   .step { grid-template-columns: 44px minmax(0, 1fr); }
-}
-@media (max-width: 899px) {
-  .notices { grid-template-columns: minmax(0, 1fr); gap: 20px; }
-  .notice { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 12px 28px; align-items: center; }
-  .notice figcaption { margin: 0; font-size: 19px; }
 }
 @media (max-width: 760px) {
   .wrap { padding: 0 16px; }
@@ -563,7 +593,7 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
   .cta { width: 100%; }
   .actions { width: 100%; }
   .actions .btn { flex: 1 1 100%; }
-  .stage { --z: 1.4; --snap: 1; --bezel: 6px; height: 156px; }
+  .stage { --z: 1.8; --snap: 1; --bezel: 6px; height: 166px; }
   .lower { left: 12px; bottom: 12px; max-width: calc(100% - 24px); }
   .lower .nm { font-size: 18px; }
   .lower .rl { font-size: 13px; }
@@ -573,9 +603,8 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
   .sechead .intro { font-size: 17px; }
   .castgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
   .card .cn { font-size: clamp(13px, 7.6cqw, 24px); }
-  .card .dn { margin-top: 10cqw; }
-  .notice { grid-template-columns: minmax(0, 1fr); }
-  .notice figcaption { font-size: 17px; }
+  .notices { --zn: 1.2; }
+  .notice figcaption { font-size: 16px; }
   .calm { font-size: 14px; }
   .step { grid-template-columns: 36px minmax(0, 1fr); gap: 6px 12px; }
   .step .n { font-size: 40px; }
@@ -583,20 +612,48 @@ html:not(.js) :is(.js-only, .pickhint, .copy), html.static :is(.js-only, .pickhi
   .after { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .credits { grid-template-columns: minmax(0, 1fr); padding-top: 40px; padding-bottom: 40px; }
 }
+@media (max-width: 639px) {
+  .stage { --cam: 150px; }
+}
+/* phones: a narrower camera housing so the cast and the notices read larger; every wing keeps an inset from the bezel */
 @media (max-width: 560px) {
-  .stage { --cam: 120px; --z: 1.36; height: 152px; }
+  .stage { --cam: 120px; --z: 1.6; height: 158px; }
   .lost .stage { height: 176px; }
+  .notices { --zn: 1.12; }
+  .strip { --hc: 28px; }
+  .ccard { --cw: 300px; --hc: 120px; }
   .step > .code { grid-column: 1 / -1; }
 }
+@media (max-width: 449px) {
+  .stage { --z: 1.45; height: 152px; }
+}
+@media (max-width: 419px) {
+  .stage { --z: 1.3; height: 148px; }
+}
 @media (max-width: 389px) {
-  .stage { --z: 1.25; height: 146px; }
+  .stage { --z: 1.2; height: 146px; }
+  .notices { --zn: 1.02; }
 }
 @media (max-width: 359px) {
-  .stage { --z: 1.12; height: 142px; }
+  .stage { --z: 1.08; height: 142px; }
+  .notices { --zn: .9; }
 }
 /* 320 px: the island scales down so both wings stay on screen */
 @media (max-width: 344px) {
   .stage { --z: 1; }
+}
+/* landscape phones: a tighter hero, so the notch is on the first screen */
+@media (max-height: 520px) and (min-width: 600px) and (orientation: landscape) {
+  .nav { padding-top: 2px; padding-bottom: 2px; }
+  .hero { padding-top: 0; }
+  .hero h1 { font-size: 3rem; }
+  .herorow { grid-template-columns: minmax(0, 1fr) auto; margin: 8px 0 14px; gap: 8px 24px; }
+  .hero .sub { font-size: 15px; }
+  .hero .sub strong { font-size: 20px; margin-bottom: 2px; }
+  .hero .fact { margin-top: 6px; font-size: 13.5px; }
+  .cta { width: auto; align-items: flex-end; gap: 6px; }
+  .actions { width: auto; flex-wrap: nowrap; gap: 10px; }
+  .actions .btn { flex: none; min-height: 44px; padding: 0 18px; }
 }
 
 /* ---------- motion control: Pause stops the cycle and every loop; off-screen regions rest; nothing is ever hidden ---------- */
