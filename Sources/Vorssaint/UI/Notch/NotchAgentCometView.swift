@@ -5,16 +5,22 @@ import AppKit
 import QuartzCore
 
 /// The comet ring. A conic gradient in the agent's three colours, cut to a
-/// thin ring, turns once every 1.4 seconds with a bright head leading it;
+/// thin ring, turns once every 2.8 seconds with a bright head leading it;
 /// behind it a halo breathes in and out. Both are Core Animation run by the
 /// render server, so the app does no work per frame, and both are removed
-/// whenever the ring is hidden, its window covered or its agent done.
+/// whenever the ring is hidden, its window covered or its agent done. An
+/// agent can work for hours, so they ask for no more frames than they need:
+/// the orbit 30 a second, the breath 15, every other one of the orbit's.
+/// The comet, its mask and its head are drawn once into a bitmap the orbit
+/// turns, rather than cut out of the gradient again on every frame.
 final class NotchAgentCometView: NSView {
     private let halo = CAGradientLayer()
     /// A dark lens inside the ring, so the mark keeps its contrast over the glow.
     private let lens = CAShapeLayer()
     private let track = CAShapeLayer()
     private let orbit = CALayer()
+    /// The comet, its glow and its head: still within themselves, so drawn once.
+    private let spinner = CALayer()
     private let comet = CAGradientLayer()
     private let band = CAShapeLayer()
     private let headGlow = CAGradientLayer()
@@ -35,6 +41,16 @@ final class NotchAgentCometView: NSView {
     var orbitAnimation: CABasicAnimation? { orbit.animation(forKey: "orbit") as? CABasicAnimation }
     var breathAnimation: CABasicAnimation? { halo.animation(forKey: "breath") as? CABasicAnimation }
     var sealShows: Bool { seal.opacity == 1 && seal.strokeEnd == 1 }
+    /// Whether the turning comet is drawn once and moved as a bitmap.
+    var drawsCometOnce: Bool { spinner.shouldRasterize }
+
+    /// The orbit's frames: smooth at 30 a second, a head of two points
+    /// stepping about 4 degrees a frame at one turn in 2.8 seconds.
+    static let orbitFrames = NotchSongMotion.slowFrames
+    /// The halo's breath, a soft opacity change over 1.6 seconds: 15 frames a
+    /// second, every other one of the orbit's, so the two together still ask
+    /// the compositor for 30, never for the 40 that 20 and 30 would.
+    static let breathFrames = NotchSongMotion.gentleFrames
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -68,9 +84,13 @@ final class NotchAgentCometView: NSView {
         seal.strokeColor = NotchAgentWings.done.cgColor
         seal.strokeEnd = 0
         seal.opacity = 0
-        orbit.addSublayer(comet)
-        orbit.addSublayer(headGlow)
-        orbit.addSublayer(head)
+        spinner.addSublayer(comet)
+        spinner.addSublayer(headGlow)
+        spinner.addSublayer(head)
+        // Its edges stay as fine as drawn ones while the orbit turns it (see rescale).
+        spinner.rasterizationScale = 4
+        spinner.shouldRasterize = true
+        orbit.addSublayer(spinner)
         orbit.addSublayer(seal)
         for sublayer in [halo, lens, track, orbit] { layer?.addSublayer(sublayer) }
     }
@@ -157,7 +177,8 @@ final class NotchAgentCometView: NSView {
         CATransaction.begin()
         CATransaction.setAnimationDuration(animated ? 0.2 : 0)
         CATransaction.setDisableActions(!animated)
-        for part in [comet, head, headGlow, track] as [CALayer] { part.opacity = finished ? 0 : 1 }
+        // The comet fades whole, so its bitmap is not drawn again on the way.
+        for part in [spinner, track] as [CALayer] { part.opacity = finished ? 0 : 1 }
         seal.opacity = finished ? 1 : 0
         paintHalo()
         CATransaction.commit()
@@ -211,9 +232,7 @@ final class NotchAgentCometView: NSView {
             spin.duration = NotchAgentWings.orbit
             spin.repeatCount = .infinity
             spin.timingFunction = CAMediaTimingFunction(name: .linear)
-            // Smooth, yet not at a ProMotion display's 120 frames a second:
-            // a two-point head moving this fast reads the same at 60.
-            spin.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+            spin.preferredFrameRateRange = Self.orbitFrames
             orbit.add(spin, forKey: "orbit")
         }
         if halo.animation(forKey: "breath") == nil {
@@ -224,7 +243,7 @@ final class NotchAgentCometView: NSView {
             breath.autoreverses = true
             breath.repeatCount = .infinity
             breath.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            breath.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+            breath.preferredFrameRateRange = Self.breathFrames
             halo.add(breath, forKey: "breath")
         }
     }
@@ -255,6 +274,7 @@ final class NotchAgentCometView: NSView {
         track.path = circle
         orbit.bounds = box
         orbit.position = center
+        spinner.frame = box
         comet.frame = box
         band.frame = box
         band.path = circle
@@ -300,7 +320,11 @@ final class NotchAgentCometView: NSView {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for part in [halo, lens, track, orbit, comet, band, headGlow, head, seal] as [CALayer] { part.contentsScale = scale }
+        for part in [halo, lens, track, orbit, spinner, comet, band, headGlow, head, seal] as [CALayer] {
+            part.contentsScale = scale
+        }
+        // At twice the display's scale, so the turning bitmap stays as fine as the ring drawn live.
+        spinner.rasterizationScale = scale * 2
         CATransaction.commit()
     }
 }

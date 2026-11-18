@@ -10,18 +10,20 @@ import QuartzCore
 /// and the other its reaction to a beat, so neither undoes the other or
 /// anything the rig plays.
 ///
-/// Idle loops are short episodes chained through Core Animation, as the
-/// rig's blinks are: each begins a few seconds after the last ends, and
-/// nothing runs in between. They play only while the rig idles, which it
-/// does only while it can be seen, and never under Reduce Motion or in Low
-/// Power Mode.
+/// The idle motion comes in short bursts chained through Core Animation, as
+/// the rig's blinks are: a sway, a wobble, a tilt and a glint, a puff of
+/// steam or a flutter of leaves, about two seconds long, eased in from rest
+/// and back to it, starting every eight to twelve seconds. In between the
+/// member stands still with nothing running but its blinks. Bursts play only
+/// while the rig idles, which it does only while it can be seen and awake,
+/// and never under Reduce Motion or in Low Power Mode.
 ///
-/// The parts that move on their own, Scarn's arms, the Beet's tops and the
-/// Mug's steam and notes, sit apart from the rest of the figure, behind it
-/// or in front, as they are drawn. The rest holds still within itself, so
-/// while the member idles it is drawn once into a bitmap the render server
-/// moves with the stages (see syncStill), rather than every mask, gradient
-/// and glow of it drawn again on each frame of the loop.
+/// The parts that move on their own, Scarn's arms, the Beet's tops, the
+/// Mug's steam and notes and Goldenface's glint, sit apart from the rest of
+/// the figure, behind it or in front, as they are drawn. The rest holds
+/// still within itself, so while the member idles it is drawn once into a
+/// bitmap the render server moves with the stages (see syncStill), rather
+/// than every mask, gradient and glow of it drawn again on each frame.
 final class NotchMascotCastParts {
     /// The whole figure on the beat.
     let beatStage = CALayer()
@@ -31,7 +33,8 @@ final class NotchMascotCastParts {
     let underlay = CALayer()
     /// The member's drawing, under the face.
     let drawing = CALayer()
-    /// Parts that move on their own in front of the figure: the Mug's steam and notes.
+    /// Parts that move on their own in front of the figure: the Mug's steam
+    /// and notes, Goldenface's glint.
     let overlay = CALayer()
     private(set) var member: NotchMascotStyle?
     var reduceMotion = false
@@ -39,14 +42,20 @@ final class NotchMascotCastParts {
     private var scale: CGFloat = 2
     private var idling = false
     private var idleRelay: NotchMascotCastRelay?
-    /// Goldenface tilts to one side and then, next time, to the other.
-    private var tiltSide: CGFloat = 1
+    /// How long the last burst ran, so the next starts a period after it began.
+    private var lastBurst: TimeInterval = 0
+    /// Each burst leans the other way to the last: Goldenface's tilt,
+    /// Scarn's sway, the Jello's wobble and the Beet's tops.
+    private var burstSide: CGFloat = 1
     /// Which wisp of steam turns into a note on the next beat.
     private var nextNote = 0
 
     // The parts that move on their own.
     private var arms: [CALayer] = []
+    /// Goldenface's glint, and the face-shaped window in front of the figure
+    /// it crosses, which shows only while it does.
     private var glint: CALayer?
+    private var sheen: CALayer?
     private var rim: CALayer?
     private var steam = CALayer()
     private var wisps: [CAShapeLayer] = []
@@ -87,7 +96,7 @@ final class NotchMascotCastParts {
         self.member = member
         self.size = size
         self.scale = scale
-        arms = []; glint = nil; rim = nil; wisps = []; notes = []; coffee = nil; tops = nil; leaves = []
+        arms = []; glint = nil; sheen = nil; rim = nil; wisps = []; notes = []; coffee = nil; tops = nil; leaves = []
         steam = CALayer()
         for layer in [underlay, drawing, overlay] { layer.sublayers = nil }
         let box = CGRect(x: 0, y: 0, width: size, height: size)
@@ -217,7 +226,8 @@ final class NotchMascotCastParts {
     }
 
     /// Goldenface: the face stays gold; the song tints the rim-light on his
-    /// black clothes and the glint that crosses his face on the beat.
+    /// black clothes and the glint that crosses his face, now and then at
+    /// rest and on the beat.
     private func drawGoldenface(tint: NotchMascotCastTint) {
         let parts = NotchMascotGeometry.goldenface(size: size)
         shape(parts.clothes, fill: NotchMascotCastColor.blackClothes, in: drawing)
@@ -230,16 +240,45 @@ final class NotchMascotCastParts {
                  from: CGPoint(x: 0.25, y: 0.05), to: CGPoint(x: 0.8, y: 0.75), locations: [0, 0.5, 1], in: face)
         shape(parts.highlight, fill: NotchMascotCastColor.goldLight.mixed(with: NotchMascotColor(red: 1, green: 1, blue: 1),
                                                                           0.45), in: face)
-        // The glint: a bright band leaning across, waiting left of the face.
-        let band = layer(CAGradientLayer(), in: face)
+        // The glint: a bright band leaning across, waiting left of the face,
+        // in a window the face's shape in front of the still figure, so it
+        // crosses without the figure being drawn again. The window shows
+        // only while it crosses; otherwise it is left out of every frame.
+        let window = clip(parts.head, in: overlay)
+        window.opacity = 0
+        let band = layer(CAGradientLayer(), in: window)
         let shine = NotchMascotColor(red: 1, green: 1, blue: 1).mixed(with: tint.rim, tint.glow == nil ? 0.15 : 0.4)
         band.colors = [shine.with(alpha: 0), shine.with(alpha: 0.95), shine.with(alpha: 0)].map(\.cgColor)
         band.startPoint = CGPoint(x: 0, y: 0.5)
         band.endPoint = CGPoint(x: 1, y: 0.5)
         band.frame = parts.glint
         band.transform = CATransform3DMakeRotation(0.4, 0, 0, 1)
-        band.opacity = 0
         glint = band
+        sheen = window
+    }
+
+    /// The glint sweeping once across Goldenface's face over `duration`,
+    /// `delay` seconds into whatever plays it, on `curve` at `rate`.
+    private func glintPass(duration: CFTimeInterval, delay: CFTimeInterval = 0,
+                           curve: CAMediaTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut),
+                           rate: CAFrameRateRange) -> (band: CAAnimation, window: CAAnimation)? {
+        guard glint != nil, sheen != nil else { return nil }
+        let sweep = CABasicAnimation(keyPath: "transform.translation.x")
+        sweep.fromValue = 0
+        sweep.toValue = NotchMascotGeometry.goldenface(size: size).glintTravel
+        sweep.isAdditive = true
+        sweep.duration = duration
+        sweep.timingFunction = curve
+        sweep.beginTime = delay
+        sweep.preferredFrameRateRange = rate
+        let shine = CAKeyframeAnimation(keyPath: "opacity")
+        shine.values = [0, 1, 1, 0]
+        shine.keyTimes = [0, 0.2, 0.7, 1]
+        shine.duration = duration
+        shine.timingFunction = curve
+        shine.beginTime = delay
+        shine.preferredFrameRateRange = rate
+        return (sweep, shine)
     }
 
     /// The Jelly Stapler: a see-through yellow block, the stapler dark
@@ -324,9 +363,9 @@ final class NotchMascotCastParts {
                                                                           0.35).with(alpha: 0.85), in: bulb)
     }
 
-    // MARK: Idle loops
+    // MARK: Idle bursts
 
-    /// Plays the member's idle loop while `on`, from a moment from now.
+    /// Plays the member's idle bursts while `on`, the first a moment from now.
     func setIdling(_ on: Bool) {
         guard on != idling else { return }
         idling = on
@@ -340,8 +379,23 @@ final class NotchMascotCastParts {
         for layer in movingParts { layer.removeAnimation(forKey: "castIdle") }
     }
 
-    /// Slow motions need no more than 30 frames a second.
-    private static let slowRate = NotchSongMotion.slowFrames
+    /// A burst's sways, tilts, wisps and leaves move a few degrees, or a
+    /// point or two, over a second or more: 15 frames a second steps each
+    /// well under a pixel, at half the compositing of 30. What crosses
+    /// quicker, Goldenface's glint and the Jello's wobble, asks for 30.
+    private static let gentleRate = NotchSongMotion.gentleFrames
+    private static let quickRate = NotchSongMotion.slowFrames
+
+    /// How long one burst of idle motion lasts, and how often one starts,
+    /// start to start: alive, without a frame drawn between them.
+    static let burstLength: ClosedRange<TimeInterval> = 1.5...2.5
+    static let burstPeriod: ClosedRange<TimeInterval> = 8...12
+
+    /// The rest between the end of a burst `length` seconds long and the
+    /// start of the next, so they start eight to twelve seconds apart.
+    static func restAfter(burst length: TimeInterval) -> TimeInterval {
+        max(burstPeriod.lowerBound - burstLength.upperBound, Double.random(in: burstPeriod) - length)
+    }
 
     /// A beat inside the figure draws it live until the beats have paused this long.
     static let stillAfterBeat: CFTimeInterval = 1.5
@@ -349,7 +403,7 @@ final class NotchMascotCastParts {
     /// Whether the still figure is drawn once and moved as a bitmap: while
     /// the member idles, unless a beat has just moved a part inside it. At
     /// twice the display's scale, so its edges stay as fine as drawn ones
-    /// while the stages turn and squash it; between episodes, at rest, it is
+    /// while the stages turn and squash it; between bursts, at rest, it is
     /// the same figure. Each change to its parts, a song's colours, a new
     /// look, draws the bitmap again once.
     var drawsStill: Bool { drawing.shouldRasterize }
@@ -365,16 +419,20 @@ final class NotchMascotCastParts {
         CATransaction.commit()
     }
 
-    /// One episode of the member's idle loop, `gap` seconds from now, and the
-    /// next one queued as it ends. Low Power Mode is read again before each
-    /// one, so a loop running when it comes on stops once the episode
-    /// playing ends, even if the rig has not yet heard of the change.
+    /// One burst of the member's idle motion, `gap` seconds from now, and the
+    /// next queued as it ends. Every burst leaves from rest and comes back to
+    /// it on the island's fade curve (NotchSongMotion.fadeCurve), so the
+    /// figure never snaps, and nothing runs between bursts. Low Power Mode is
+    /// read again before each one, so bursts that were playing when it came
+    /// on stop once the one playing ends, even if the rig has not yet heard
+    /// of the change.
     private func scheduleIdle(after gap: TimeInterval) {
-        // Beats that moved a part inside the figure may have paused since the last episode.
+        // Beats that moved a part inside the figure may have paused since the last burst.
         syncStill()
         guard idling, !reduceMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled, let member, size > 0 else { return }
         let begin = CACurrentMediaTime() + gap
-        let ease = CAMediaTimingFunction(name: .easeInEaseOut)
+        let ease = NotchSongMotion.fadeCurve
+        let side = burstSide
         // The animation that ends last carries the relay that queues the next.
         func play(_ animation: CAAnimation, on layer: CALayer, carries: Bool = false) {
             animation.beginTime = begin + animation.beginTime
@@ -385,40 +443,53 @@ final class NotchMascotCastParts {
             }
             layer.add(animation, forKey: "castIdle")
         }
+        /// A turn through `values`, from rest and back to it, eased at every key.
+        func swing(_ values: [CGFloat], at times: [Double], duration: CFTimeInterval) -> CAKeyframeAnimation {
+            let turn = CAKeyframeAnimation(keyPath: "transform.rotation.z")
+            turn.values = values
+            turn.keyTimes = times.map { NSNumber(value: $0) }
+            turn.timingFunctions = Array(repeating: ease, count: max(1, values.count - 1))
+            turn.duration = duration
+            turn.preferredFrameRateRange = Self.gentleRate
+            return turn
+        }
+        let length: TimeInterval
         switch member {
         case .scarn:
-            // A gentle sway from the feet, side to side and back.
-            let sway = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-            sway.values = [0, 0.055, -0.05, 0.035, 0]
-            sway.keyTimes = [0, 0.25, 0.55, 0.8, 1]
-            sway.timingFunctions = Array(repeating: ease, count: 4)
-            sway.duration = 3.4
-            sway.preferredFrameRateRange = Self.slowRate
-            play(sway, on: idleStage, carries: true)
+            // A gentle sway from the feet, to one side, the other, and home.
+            length = Double.random(in: 1.9...2.4)
+            play(swing([0, 0.05, -0.04, 0.018, 0].map { $0 * side }, at: [0, 0.28, 0.6, 0.84, 1], duration: length),
+                 on: idleStage, carries: true)
         case .goldenface:
-            // A slow, menacing tilt to one side, held, and back.
-            let tilt = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-            tilt.values = [0, 0.1 * tiltSide, 0.1 * tiltSide, 0]
-            tilt.keyTimes = [0, 0.38, 0.7, 1]
-            tilt.timingFunctions = Array(repeating: ease, count: 3)
-            tilt.duration = 4.4
-            tilt.preferredFrameRateRange = Self.slowRate
-            tiltSide = -tiltSide
-            play(tilt, on: idleStage, carries: true)
+            // A slow, menacing tilt to one side, held while a glint crosses
+            // his face, and back.
+            length = Double.random(in: 2.1...2.5)
+            play(swing([0, 0.09 * side, 0.09 * side, 0], at: [0, 0.32, 0.7, 1], duration: length),
+                 on: idleStage, carries: true)
+            if let glint, let sheen,
+               let pass = glintPass(duration: 0.75, delay: length * 0.3, curve: ease, rate: Self.quickRate) {
+                play(pass.band, on: glint)
+                play(pass.window, on: sheen)
+            }
         case .jello:
-            // A soft wobble, the top swinging over its base.
+            // A soft wobble, the top swinging over its base and settling.
+            length = Double.random(in: 1.5...1.7)
             let wobble = CAKeyframeAnimation(keyPath: "transform")
-            wobble.values = [(0, 1, 1), (0.09, 0.97, 1.02), (-0.07, 1.02, 0.98), (0.04, 0.99, 1.01), (-0.015, 1, 1),
-                             (0, 1, 1)].map { NSValue(caTransform3D: Self.jiggle(shear: $0.0, x: $0.1, y: $0.2)) }
-            wobble.keyTimes = [0, 0.18, 0.4, 0.62, 0.82, 1]
+            wobble.values = [(0, 1, 1), (0.085, 0.97, 1.02), (-0.065, 1.02, 0.98), (0.04, 0.99, 1.01),
+                             (-0.018, 1.004, 0.997), (0, 1, 1)]
+                .map { NSValue(caTransform3D: Self.jiggle(shear: $0.0 * side, x: $0.1, y: $0.2)) }
+            wobble.keyTimes = [0, 0.16, 0.36, 0.57, 0.78, 1]
             wobble.timingFunctions = Array(repeating: ease, count: 5)
-            wobble.duration = 1.1
-            // Quicker than the others' loops, so a beat's rate rather than
-            // theirs: still never a ProMotion display's 120.
-            wobble.preferredFrameRateRange = NotchSongMotion.beatFrames
+            wobble.duration = length
+            // Quicker than the others' sways: 30 frames a second, about a
+            // third of a point a frame at its quickest.
+            wobble.preferredFrameRateRange = Self.quickRate
             play(wobble, on: idleStage, carries: true)
         case .mug:
-            // Two or three wisps curl up from the coffee and thin away.
+            // Two or three wisps curl up from the coffee in turn and thin away.
+            guard !wisps.isEmpty else { return }
+            let puffLength = Double.random(in: 1.6...1.8), stagger = 0.3
+            length = puffLength + stagger * Double(wisps.count - 1)
             for (index, wisp) in wisps.enumerated() {
                 let draw = CAKeyframeAnimation(keyPath: "strokeEnd")
                 draw.values = [0, 1, 1]
@@ -434,53 +505,37 @@ final class NotchMascotCastParts {
                 rise.toValue = -size * 0.08
                 let puff = CAAnimationGroup()
                 puff.animations = [draw, thin, fade, rise]
-                puff.duration = 2.1
+                puff.duration = puffLength
                 puff.timingFunction = ease
-                puff.beginTime = Double(index) * 0.32
-                puff.preferredFrameRateRange = Self.slowRate
+                puff.beginTime = Double(index) * stagger
+                puff.preferredFrameRateRange = Self.gentleRate
                 play(puff, on: wisp, carries: index == wisps.count - 1)
             }
         case .beet:
-            // The tops sway about the crown, each leaf a little on its own.
-            let sway = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-            sway.values = [0, 0.08, -0.06, 0.04, 0]
-            sway.keyTimes = [0, 0.27, 0.55, 0.8, 1]
-            sway.timingFunctions = Array(repeating: ease, count: 4)
-            sway.duration = 3
-            sway.preferredFrameRateRange = Self.slowRate
-            play(sway, on: tops ?? underlay, carries: true)
+            // The tops sway about the crown, each leaf fluttering a little on its own.
+            length = Double.random(in: 1.9...2.3)
+            play(swing([0, 0.08, -0.06, 0.03, 0].map { $0 * side }, at: [0, 0.27, 0.56, 0.8, 1], duration: length),
+                 on: tops ?? underlay, carries: true)
+            let lead = 0.12, flutterLength = (length - lead * Double(max(0, leaves.count - 1))) * 0.95
             for (index, leaf) in leaves.enumerated() {
-                let flutter = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-                let way: CGFloat = index % 2 == 0 ? 1 : -1
-                flutter.values = [0, 0.12 * way, -0.08 * way, 0]
-                flutter.keyTimes = [0, 0.35, 0.7, 1]
-                flutter.timingFunctions = Array(repeating: ease, count: 3)
-                flutter.duration = 2.6
-                flutter.beginTime = 0.15 * Double(index)
-                flutter.preferredFrameRateRange = Self.slowRate
+                let way: CGFloat = (index % 2 == 0 ? 1 : -1) * side
+                let flutter = swing([0, 0.12 * way, -0.08 * way, 0], at: [0, 0.35, 0.7, 1], duration: flutterLength)
+                flutter.beginTime = lead * Double(index)
                 play(flutter, on: leaf)
             }
         case .minimal, .robot, .shuffle:
             return
         }
+        lastBurst = length
+        // The next leans the other way.
+        burstSide = -side
     }
 
-    /// The next episode waits a few seconds after this one; the mug's steam
-    /// comes every six to eight.
+    /// The next burst starts eight to twelve seconds after this one did.
     fileprivate func idleDidStop(finished: Bool, relay: NotchMascotCastRelay) {
         guard finished, relay === idleRelay, idling else { return }
         idleRelay = nil
-        let gap: ClosedRange<TimeInterval>
-        switch member {
-        case .scarn: gap = 1.2...3.2
-        case .goldenface: gap = 1.8...4
-        case .jello: gap = 2.2...4.2
-        // The puffs take about three seconds, so one starts every six to eight.
-        case .mug: gap = 3.2...5.2
-        case .beet: gap = 1...2.6
-        default: return
-        }
-        scheduleIdle(after: Double.random(in: gap))
+        scheduleIdle(after: Self.restAfter(burst: lastBurst))
     }
 
     // MARK: The beat
@@ -490,8 +545,8 @@ final class NotchMascotCastParts {
     /// one has the figure, so a quick beat never makes it jump.
     func beat(strength: CGFloat, side: CGFloat) {
         guard let member, !reduceMotion, size > 0 else { return }
-        // Goldenface's glint and rim and the Mug's coffee move inside the
-        // still figure, which is then drawn live while the beats go on.
+        // Goldenface's rim and the Mug's coffee move inside the still
+        // figure, which is then drawn live while the beats go on.
         if member == .goldenface || member == .mug {
             partBeat = CACurrentMediaTime()
             syncStill()
@@ -516,20 +571,12 @@ final class NotchMascotCastParts {
             shake.duration = 0.62
             arm?.add(Self.atBeatRate(shake), forKey: "castBeat")
         case .goldenface:
-            // A gold glint sweeps across the face.
-            if let glint {
-                let sweep = CABasicAnimation(keyPath: "transform.translation.x")
-                sweep.fromValue = 0
-                sweep.toValue = NotchMascotGeometry.goldenface(size: size).glintTravel
-                sweep.isAdditive = true
-                let shine = CAKeyframeAnimation(keyPath: "opacity")
-                shine.values = [0, 1, 1, 0]
-                shine.keyTimes = [0, 0.2, 0.7, 1]
-                let pass = CAAnimationGroup()
-                pass.animations = [sweep, shine]
-                pass.duration = 0.48
-                pass.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                glint.add(Self.atBeatRate(pass), forKey: "castBeat")
+            // A gold glint sweeps across the face, in place of one an idle
+            // burst may have under way.
+            if let glint, let sheen, let pass = glintPass(duration: 0.48, rate: NotchSongMotion.beatFrames) {
+                for part in [glint, sheen] { part.removeAnimation(forKey: "castIdle") }
+                glint.add(pass.band, forKey: "castBeat")
+                sheen.add(pass.window, forKey: "castBeat")
             }
             if let rim {
                 let flare = CAKeyframeAnimation(keyPath: "opacity")
@@ -609,10 +656,13 @@ final class NotchMascotCastParts {
         if idling { scheduleIdle(after: 1) }
     }
 
-    /// Every layer an idle loop or a beat moves.
+    /// The idle burst set to play, or playing: nothing between bursts.
+    var burstAnimations: [CAAnimation] { movingParts.compactMap { $0.animation(forKey: "castIdle") } }
+
+    /// Every layer an idle burst or a beat moves.
     private var movingParts: [CALayer] {
         var parts: [CALayer] = [beatStage, idleStage, steam]
-        parts += [coffee, tops, glint, rim].compactMap { $0 }
+        parts += [coffee, tops, glint, sheen, rim].compactMap { $0 }
         parts += arms
         parts += wisps as [CALayer]
         parts += notes as [CALayer]
