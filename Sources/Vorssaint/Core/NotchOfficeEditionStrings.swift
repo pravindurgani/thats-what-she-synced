@@ -36,6 +36,8 @@ struct NotchOfficeEditionStrings {
     /// The links to the companion's and the music side's own choices, for
     /// VoiceOver.
     let openHint: String
+    /// Under those links while the edition is off: what they show waits for it.
+    let appliesWithEdition: String
     /// More words a search finds the card by.
     let keywords: [String]
 
@@ -66,6 +68,7 @@ struct NotchOfficeEditionStrings {
         idleGlow: "Glow when nothing plays",
         idleGlowHint: "The companion’s colours light the island when no song is on.",
         openHint: "Opens where it is chosen.",
+        appliesWithEdition: "Applies when the Office edition is on.",
         keywords: ["Office", "mug", "colour", "color", "glow", "theme", "duotone", "alerts", "notices"])
 }
 

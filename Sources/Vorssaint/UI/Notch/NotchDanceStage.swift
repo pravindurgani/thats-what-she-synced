@@ -64,6 +64,23 @@ final class NotchDanceStage {
     private var floor: NotchDanceLayout?
     private var paint: NotchDancePaint?
     private var contentsScale: CGFloat = 2
+    /// Each figure's move as last set going, and the spotlight's, so the
+    /// next starts from where they stand without reading the screen.
+    private var motions: [Motion?] = []
+    private var spotlight = NotchBeatTrack()
+
+    /// A figure's move: when it started, its knots' times from then, each
+    /// shape's path at each knot, and the curve of each span between.
+    private struct Motion {
+        let begin: CFTimeInterval
+        let times: [CFTimeInterval]
+        let paths: [[CGPath]]
+        let curves: [CAMediaTimingFunction]
+    }
+
+    /// The share of a settle into a pose played at the beat's 60 frames a
+    /// second: the settle curve's first fifth, three quarters of the way.
+    private static let quickShare: CFTimeInterval = 0.2
 
     /// One figure's shape layers.
     private struct Figure {
@@ -189,6 +206,8 @@ final class NotchDanceStage {
             }
             return Figure(keyline: outline, ring: ring, parts: parts)
         }
+        motions = Array(repeating: nil, count: figures.count)
+        spotlight.stop()
         // A dark pool behind the whole floor, and the spotlight at the feet.
         scrim.frame = CGRect(x: 0, y: 0, width: floor.width, height: floor.height)
         let spotWidth = min(Self.spotSize.width * floor.scale, floor.width)
@@ -291,38 +310,56 @@ final class NotchDanceStage {
     func show(_ poses: [NotchDancerPose], duration: CFTimeInterval,
               curve: CAMediaTimingFunction = NotchSongMotion.settleCurve) {
         guard poses.count == dancers.count, let floor else { return }
+        let now = CACurrentMediaTime()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for (index, (dancer, figure)) in zip(dancers, figures).enumerated() {
             let paths = figure.paths(dancer.drawing(poses[index], floor: floor))
-            for (shape, path) in zip(figure.shapes, paths) {
-                if duration > 0, let from = shape.presentation()?.path ?? shape.path {
+            let standing = duration > 0 ? self.standing(index, at: now) : []
+            var starts: [CGPath] = []
+            for (place, (shape, path)) in zip(figure.shapes, paths).enumerated() {
+                if duration > 0, let from = standing[place] ?? shape.presentation()?.path ?? shape.path {
+                    starts.append(from)
                     let move = CABasicAnimation(keyPath: "path")
                     move.fromValue = from
                     move.toValue = path
                     move.duration = duration
                     move.timingFunction = curve
-                    move.preferredFrameRateRange = NotchSongMotion.beatFrames
-                    shape.add(move, forKey: "dance")
+                    // The settle's quick start at 60 frames a second, its long end at 30.
+                    NotchSongMotion.play(move, attack: duration * Self.quickShare, on: shape, key: "dance", at: now)
                 } else {
-                    shape.removeAnimation(forKey: "dance")
+                    starts.append(path)
+                    NotchSongMotion.stop("dance", on: shape)
                 }
                 shape.path = path
             }
+            motions[index] = duration > 0
+                ? Motion(begin: now, times: [0, duration], paths: [starts, paths], curves: [curve]) : nil
         }
-        if duration <= 0 { spot.removeAnimation(forKey: "pulse") }
+        if duration <= 0 {
+            NotchSongMotion.stop("pulse", on: spot)
+            spotlight.stop()
+        }
         CATransaction.commit()
         self.poses = poses
     }
 
     /// One dancer's answer to a beat, from wherever it is now: a quick
-    /// ease-out into each key pose, then the settle the frames trace.
+    /// ease-out into each key pose, then the settle the frames trace, at the
+    /// beat's 60 frames a second throughout. A step's slow end would ask for
+    /// 30 on its own, but the next step, a neighbour's or the half-beat move
+    /// of the Farewell Three's middle dancer, is nearly always under way at
+    /// 60 by then: measured, splitting them kept the frames asked the same
+    /// and set twice the animations going.
     func play(_ step: NotchDanceStep, dancer index: Int) {
         guard index < dancers.count, let floor, let last = step.frames.last, step.duration > 0 else { return }
         let dancer = dancers[index]
         let figure = figures[index]
+        let now = CACurrentMediaTime()
+        let standing = standing(index, at: now)
         let frames = step.frames.map { figure.paths(dancer.drawing($0.pose, floor: floor)) }
-        let times = [NSNumber(value: 0)] + step.frames.map { NSNumber(value: $0.time / step.duration) }
+        let times = [0] + step.frames.map(\.time)
+        let keyTimes = times.map { NSNumber(value: $0 / step.duration) }
         let curves = step.frames.map { frame -> CAMediaTimingFunction in
             switch frame.curve {
             case .attack: return CAMediaTimingFunction(name: .easeOut)
@@ -330,43 +367,72 @@ final class NotchDanceStage {
             case .settle: return CAMediaTimingFunction(name: .linear)
             }
         }
+        var starts: [CGPath] = []
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for (place, shape) in figure.shapes.enumerated() {
-            guard let from = shape.presentation()?.path ?? shape.path else { continue }
+            let end = frames[frames.count - 1][place]
+            guard let from = standing[place] ?? shape.presentation()?.path ?? shape.path else {
+                starts.append(end)
+                continue
+            }
+            starts.append(from)
             let move = CAKeyframeAnimation(keyPath: "path")
             move.values = [from] + frames.map { $0[place] }
-            move.keyTimes = times
+            move.keyTimes = keyTimes
             move.timingFunctions = curves
             move.duration = step.duration
+            shape.path = end
             // Each move is redrawn from its path on every frame it runs.
-            move.preferredFrameRateRange = NotchSongMotion.beatFrames
-            shape.path = frames[frames.count - 1][place]
-            shape.add(move, forKey: "dance")
+            NotchSongMotion.play(move, attack: step.duration, on: shape, key: "dance", at: now)
         }
         CATransaction.commit()
+        motions[index] = Motion(begin: now, times: times, paths: [starts] + frames, curves: curves)
         poses[index] = last.pose
     }
 
-    /// The spotlight jumps with a beat and falls away before the next.
+    /// Where each of figure `index`'s shapes stands at `time`, worked out
+    /// from the move last set going, as Core Animation draws it; its own
+    /// path once that move is done. Nil for a shape whose outlines are not
+    /// drawn alike, which is then read from the screen.
+    private func standing(_ index: Int, at time: CFTimeInterval) -> [CGPath?] {
+        let shapes = figures[index].shapes
+        guard index < motions.count, let motion = motions[index], motion.times.count > 1,
+              let last = motion.times.last, time - motion.begin < last else { return shapes.map(\.path) }
+        let elapsed = max(0, time - motion.begin)
+        var span = 0
+        while span + 2 < motion.times.count, motion.times[span + 1] <= elapsed { span += 1 }
+        let length = motion.times[span + 1] - motion.times[span]
+        let share = CGFloat(motion.curves[span].progress(at: length > 0 ? (elapsed - motion.times[span]) / length : 1))
+        return shapes.indices.map { place -> CGPath? in
+            guard place < motion.paths[span].count, place < motion.paths[span + 1].count else { return nil }
+            return NotchPathBlend.mix(motion.paths[span][place], motion.paths[span + 1][place], share)
+        }
+    }
+
+    /// The spotlight jumps with a beat and falls away before the next, at
+    /// 60 frames a second as the steps under it are.
     func pulse(_ strength: CGFloat) {
-        let share = Float(min(1, max(0, strength.isFinite ? strength : 0)))
-        let peak = Self.spotRest + (Self.spotPeak - Self.spotRest) * share
-        let swell = CAKeyframeAnimation(keyPath: "opacity")
-        swell.values = [spot.presentation()?.opacity ?? spot.opacity, peak, Self.spotRest]
-        swell.keyTimes = [0, NSNumber(value: Self.spotAttack / (Self.spotAttack + Self.spotDecay)), 1]
-        swell.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeIn)]
-        swell.duration = Self.spotAttack + Self.spotDecay
-        swell.preferredFrameRateRange = NotchSongMotion.beatFrames
-        spot.add(swell, forKey: "pulse")
+        let share = Double(min(1, max(0, strength.isFinite ? strength : 0)))
+        let rest = Double(Self.spotRest)
+        let peak = rest + Double(Self.spotPeak - Self.spotRest) * share
+        let now = CACurrentMediaTime()
+        let from = spotlight.value(at: now, resting: rest)
+        let swell = spotlight.start(NotchBeatCurve(times: [0, Self.spotAttack, Self.spotAttack + Self.spotDecay],
+                                                   values: [from, peak, rest],
+                                                   curves: [CAMediaTimingFunction(name: .easeOut),
+                                                            CAMediaTimingFunction(name: .easeIn)]), at: now)
+        NotchSongMotion.play(swell.animation("opacity"), attack: swell.duration, on: spot, key: "pulse", at: now)
     }
 
     /// Every running move ends where it was headed.
     func halt() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        figures.flatMap(\.shapes).forEach { $0.removeAnimation(forKey: "dance") }
-        spot.removeAnimation(forKey: "pulse")
+        figures.flatMap(\.shapes).forEach { NotchSongMotion.stop("dance", on: $0) }
+        NotchSongMotion.stop("pulse", on: spot)
         CATransaction.commit()
+        motions = Array(repeating: nil, count: figures.count)
+        spotlight.stop()
     }
 }

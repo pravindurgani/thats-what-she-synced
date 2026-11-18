@@ -1040,8 +1040,11 @@ final class NotchMascotHostView: NSView {
     private var songSubscription: AnyCancellable?
     private var beatSubscription: AnyCancellable?
     private var shuffleSubscription: AnyCancellable?
-    private var lastPush: Double = 0
     private var sway: CGFloat = 1
+    /// The bop's swell and lean as last set going, so the next starts where
+    /// they stand without reading the screen.
+    private var bopSwell = NotchBeatTrack()
+    private var bopLean = NotchBeatTrack()
 
     /// While the island wears a song, the island's companion takes its colours
     /// and bops to the island's beat, swaying the other way on each new hit.
@@ -1064,9 +1067,9 @@ final class NotchMascotHostView: NSView {
     }
 
     private func syncBeat(wearing: Bool) {
-        let dances = wearing && !mascot.reduceMotion && window != nil && !isHiddenOrHasHiddenAncestor
+        let dances = wearing && !mascot.reduceMotion && isOnScreen
         if dances, beatSubscription == nil {
-            beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] bounce in self?.bop(bounce) }
+            beatSubscription = NotchMusicPulse.shared.beat.sink { [weak self] beat in self?.bop(beat) }
         } else if !dances {
             stopBopping()
         }
@@ -1075,26 +1078,30 @@ final class NotchMascotHostView: NSView {
     private func stopBopping() {
         guard beatSubscription != nil else { return }
         beatSubscription = nil
-        bop(0)
+        bop(.settle(from: 0))
     }
 
-    private func bop(_ bounce: Double) {
-        let push = CGFloat(min(1, max(0, bounce)))
-        let onset = bounce > lastPush + 0.12
-        if onset { sway = -sway }
-        lastPush = bounce
+    /// Each new hit sways it the other way. The swell and the lean follow the
+    /// hit's push and its fall as one move (NotchMusicBeat.moves), the hit at
+    /// 60 frames a second and the fall at 30, rather than an implicit
+    /// animation, at the display's full rate, for each of twenty readings a
+    /// second.
+    private func bop(_ beat: NotchMusicBeat) {
+        let now = CACurrentMediaTime()
+        guard !beat.settles || bopSwell.value(at: now) != 0 || bopLean.value(at: now) != 0 else { return }
+        if beat.isNewHit { sway = -sway }
         // A member of the cast brings its own move to each onset, so the
         // bop under it only swells a little and leaves the leaning to it.
         let cast = mascot.look.style.isCast
-        if onset, cast { mascot.beat(strength: push, side: sway) }
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(push > 0.05 ? 0.08 : NotchSongMotion.beatReturn)
-        CATransaction.setAnimationTimingFunction(push > 0.05 ? CAMediaTimingFunction(name: .easeOut) : NotchSongMotion.settleCurve)
-        let swell = (cast ? 0.05 : 0.12) * push
-        var bopped = CATransform3DMakeScale(1 + swell, 1 + swell, 1)
-        bopped = CATransform3DRotate(bopped, cast ? 0 : sway * 0.1 * push, 0, 0, 1)
-        mascot.root.sublayerTransform = bopped
-        CATransaction.commit()
+        if beat.isNewHit, cast { mascot.beat(strength: CGFloat(min(1, max(0, beat.push))), side: sway) }
+        let side = Double(sway)
+        let swell = bopSwell.start(beat.moves { (cast ? 0.05 : 0.12) * min(1, max(0, $0)) }, at: now)
+        let lean = bopLean.start(beat.moves { cast ? 0 : side * 0.1 * min(1, max(0, $0)) }, at: now)
+        let poses = zip(swell.values, lean.values).map { swell, lean in
+            NSValue(caTransform3D: CATransform3DRotate(CATransform3DMakeScale(1 + swell, 1 + swell, 1), lean, 0, 0, 1))
+        }
+        NotchSongMotion.play(swell.animation("sublayerTransform", values: poses), attack: beat.attack,
+                             on: mascot.root, key: "bop", at: now)
     }
 
     /// Set to Shuffle, the companion changes to each member the shuffle

@@ -228,6 +228,60 @@ struct NotchDanceLayout: Equatable {
     var ground: CGFloat { NotchDanceFloor.ground(height: height, scale: scale) }
 }
 
+/// Where a figure's outline stands between two of a move's outlines, worked
+/// out as Core Animation draws it: each point of one moved its share of the
+/// way to the matching point of the other. So a beat's move can start from
+/// where the last one has the figure without reading it off the screen.
+enum NotchPathBlend {
+    private struct Element: Equatable {
+        let type: CGPathElementType
+        let points: [CGPoint]
+
+        static func == (lhs: Self, rhs: Self) -> Bool { lhs.type == rhs.type && lhs.points.count == rhs.points.count }
+    }
+
+    private static func elements(_ path: CGPath) -> [Element] {
+        var found: [Element] = []
+        path.applyWithBlock { pointer in
+            let element = pointer.pointee
+            let count: Int
+            switch element.type {
+            case .moveToPoint, .addLineToPoint: count = 1
+            case .addQuadCurveToPoint: count = 2
+            case .addCurveToPoint: count = 3
+            case .closeSubpath: count = 0
+            @unknown default: count = 0
+            }
+            found.append(Element(type: element.type, points: (0..<count).map { element.points[$0] }))
+        }
+        return found
+    }
+
+    /// `from` moved `share` of the way to `to`, or nil when the two are not
+    /// drawn alike, point for point.
+    static func mix(_ from: CGPath, _ to: CGPath, _ share: CGFloat) -> CGPath? {
+        if share <= 0 { return from }
+        if share >= 1 { return to }
+        let a = elements(from), b = elements(to)
+        guard a == b else { return nil }
+        let path = CGMutablePath()
+        for (start, end) in zip(a, b) {
+            let points = zip(start.points, end.points).map { p, q in
+                CGPoint(x: p.x + (q.x - p.x) * share, y: p.y + (q.y - p.y) * share)
+            }
+            switch start.type {
+            case .moveToPoint: path.move(to: points[0])
+            case .addLineToPoint: path.addLine(to: points[0])
+            case .addQuadCurveToPoint: path.addQuadCurve(to: points[1], control: points[0])
+            case .addCurveToPoint: path.addCurve(to: points[2], control1: points[0], control2: points[1])
+            case .closeSubpath: path.closeSubpath()
+            @unknown default: return nil
+            }
+        }
+        return path
+    }
+}
+
 // MARK: - Timing
 
 enum NotchDanceTiming {
@@ -295,8 +349,12 @@ struct NotchDanceTempo: Equatable {
     private(set) var interval = NotchDanceTiming.defaultInterval
 
     /// The strength of a new hit, or nil while the last one falls away.
-    mutating func hear(_ bounce: Double, at time: Double) -> Double? {
+    /// `previous`, when the beat says where its push stood a reading before,
+    /// stands for the last push heard: the island sends its hits, not every
+    /// reading of their fall (NotchMusicBeat).
+    mutating func hear(_ bounce: Double, after previous: Double? = nil, at time: Double) -> Double? {
         let push = bounce.isFinite ? min(1, max(0, bounce)) : 0
+        if let previous { lastPush = previous.isFinite ? min(1, max(0, previous)) : 0 }
         defer { lastPush = push }
         guard push > lastPush + 0.12 else { return nil }
         if let lastOnset, time.isFinite {

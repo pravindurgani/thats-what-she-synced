@@ -101,37 +101,302 @@ enum NotchSongMotion {
     // its cost follows the frames asked for: the cast's idle bursts at 15
     // frames a second cost WindowServer less than half what they did at 30. The
     // island's motion asks for what it needs to look the same: the gentlest
-    // moves 15, slow drifts, quicker sways and the comet's turn 30, beats 60,
-    // and only short one-offs more. Rates that divide one another (15, 30,
-    // 60) share their frames; 20 beside 30 would add frames of its own.
+    // moves 15, slow drifts, quicker sways, the comet's turn and a beat's
+    // fall 30, a beat's hit 60, and only short one-offs more. Rates that
+    // divide one another (15, 30, 60) share their frames; 20 beside 30 would
+    // add frames of its own.
 
-    /// Slow drifts, turns and quicker sways that take seconds: 30 frames a
-    /// second moves a soft glow less than a point a frame.
+    /// Slow drifts, turns and quicker sways that take seconds, and a beat
+    /// falling away: 30 frames a second moves a soft glow less than a point
+    /// or two a frame.
     static let slowFrames = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
     /// The gentlest moves: a glow's breath, a sway of a few degrees, a wisp
     /// rising. 15 frames a second, every other one of a slow motion's, steps
     /// each of them well under a pixel.
     static let gentleFrames = CAFrameRateRange(minimum: 10, maximum: 15, preferred: 15)
-    /// A beat's quick moves: smooth at 60.
+    /// A beat's hit, its quick push: smooth at 60.
     static let beatFrames = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
 
-    /// Moves `layer`'s `key` to `value` from where it shows now, over
-    /// `duration` on `curve`, at the beat's frame rate: what a transaction's
-    /// implicit animation does, without asking for 120 frames a second for
-    /// each of the twenty readings a second the beat follows.
-    static func ease(_ layer: CALayer, _ key: String, to value: Any, duration: CFTimeInterval,
-                     curve: CAMediaTimingFunction) {
-        let move = CABasicAnimation(keyPath: key)
-        move.fromValue = layer.presentation()?.value(forKey: key) ?? layer.value(forKey: key)
-        move.toValue = value
-        move.duration = duration
-        move.timingFunction = curve
-        move.preferredFrameRateRange = beatFrames
+    /// Plays a beat's move on `layer` under `key`, starting at `time` (media
+    /// time): its first `attack` seconds, the hit, at the beat's 60 frames a
+    /// second, and the rest, the fall, at 30. The two are slices of the one
+    /// animation, the second picking it up where the first leaves off, so
+    /// the curve is the same as the whole; each replaces the slice its key
+    /// held. An attack of 0 plays it all at 30, as a settle.
+    static func play(_ animation: CAAnimation, attack: CFTimeInterval, on layer: CALayer, key: String,
+                     at time: CFTimeInterval) {
+        let begin = layer.convertTime(time, from: nil)
+        let length = animation.duration
+        let hit = min(max(0, attack), length)
+        let fallKey = key + "Fall"
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer.setValue(value, forKey: key)
-        layer.add(move, forKey: key)
-        CATransaction.commit()
+        defer { CATransaction.commit() }
+        if hit > 0 {
+            let slice = animation.copy() as! CAAnimation
+            slice.beginTime = begin
+            if hit < length { slice.repeatDuration = hit }
+            slice.preferredFrameRateRange = beatFrames
+            layer.add(slice, forKey: key)
+        } else if layer.animation(forKey: key) != nil {
+            layer.removeAnimation(forKey: key)
+        }
+        if hit < length {
+            let slice = animation.copy() as! CAAnimation
+            slice.beginTime = begin + hit
+            slice.timeOffset = hit
+            slice.repeatDuration = length - hit
+            slice.preferredFrameRateRange = slowFrames
+            layer.add(slice, forKey: fallKey)
+        } else if layer.animation(forKey: fallKey) != nil {
+            layer.removeAnimation(forKey: fallKey)
+        }
+    }
+
+    /// Takes a move `play` set going off `layer`, whichever slice is on.
+    static func stop(_ key: String, on layer: CALayer) {
+        for name in [key, key + "Fall"] where layer.animation(forKey: name) != nil {
+            layer.removeAnimation(forKey: name)
+        }
+    }
+}
+
+// MARK: - The beat
+
+/// One hit of the island's beat, as the aurora hears it in the song's
+/// levels, for everything that moves with it (NotchMusicPulse). It is sent
+/// as a hit lands and as the beat settles, never on the readings between:
+/// each listener plays the hit's push and its whole fall as one move,
+/// worked out once (NotchBeatCurve), so the twenty readings a second
+/// between hits cost nothing.
+struct NotchMusicBeat: Equatable {
+    /// The push the hit lands at, 0 to 1. A settle is 0.
+    let push: Double
+    /// Where the push stood at the reading before, as the last hit fell.
+    let previous: Double
+
+    /// The beat settling: the music stopped answering.
+    static func settle(from previous: Double) -> NotchMusicBeat { NotchMusicBeat(push: 0, previous: previous) }
+
+    var settles: Bool { push <= 0 }
+
+    /// How far above the last reading a hit lands to count as a new one.
+    static let newHitRise = 0.12
+    /// A hit well above where the last had fallen to: the companion sways
+    /// the other way, the cast plays its move and the dancers step.
+    var isNewHit: Bool { push > previous + Self.newHitRise }
+
+    /// The moves a listener eases through for this beat, one a reading: a
+    /// quick ease out toward each push of the hit's fall, and a settle once
+    /// it is nearly down, as the bubbles and the companion always eased.
+    func moves(_ value: (Double) -> Double) -> [NotchBeatCurve.Move] {
+        let pushes = settles ? [0.0] : NotchBeatFall.pushes(from: push)
+        return pushes.map { push in
+            let quick = push > 0.05
+            return .init(target: value(push), duration: quick ? 0.08 : NotchSongMotion.beatReturn,
+                         curve: quick ? CAMediaTimingFunction(name: .easeOut) : NotchSongMotion.settleCurve)
+        }
+    }
+
+    /// How long a listener's move plays at the hit's frame rate: one
+    /// reading, the hit itself; a settle has none.
+    var attack: CFTimeInterval { settles ? 0 : NotchBeatFall.reading }
+}
+
+/// How a hit's push falls away. The aurora reads the music twenty times a
+/// second; each reading without a hit keeps 0.72 of the last one's push,
+/// and below 0.01 it rests. Between hits nothing new is heard, so the fall
+/// is known the moment the hit lands.
+enum NotchBeatFall {
+    /// The time between two readings.
+    static let reading: CFTimeInterval = 0.05
+    static let keeps = 0.72
+    static let rest = 0.01
+    /// A hit lifting the push less than this above where its fall stands
+    /// changes nothing on screen, so nothing is set going again.
+    static let deadBand = 0.03
+
+    /// The push at each reading from a hit of `push`: the hit's own, then
+    /// each reading's fall, and last the rest, 0.
+    static func pushes(from push: Double) -> [Double] {
+        var value = push.isFinite ? min(1, max(0, push)) : 0
+        var values: [Double] = []
+        while value >= rest {
+            values.append(value)
+            value *= keeps
+        }
+        return values + [0]
+    }
+}
+
+/// A value moved toward a new target at every reading, each move eased from
+/// wherever the last had it and cut short by the next, as a layer's
+/// animations moved it when each reading set one going. Worked out once, as
+/// knots and the curve between them, it is one animation drawing that same
+/// curve, and where it stands at any moment is known without asking the
+/// screen.
+struct NotchBeatCurve: Equatable {
+    struct Move: Equatable {
+        let target: Double
+        let duration: CFTimeInterval
+        let curve: CAMediaTimingFunction
+    }
+
+    /// Seconds from the start, the value there, and the curve of each span
+    /// to the next knot.
+    let times: [CFTimeInterval]
+    let values: [Double]
+    let curves: [CAMediaTimingFunction]
+
+    init(times: [CFTimeInterval], values: [Double], curves: [CAMediaTimingFunction]) {
+        self.times = times
+        self.values = values
+        self.curves = curves
+    }
+
+    /// From `start`, the first of `moves` at once and each next one
+    /// `reading` seconds after the last, which it cuts short; the last runs
+    /// its whole length.
+    init(from start: Double, moves: [Move], every reading: CFTimeInterval = NotchBeatFall.reading) {
+        var times: [CFTimeInterval] = [0], values = [start], curves: [CAMediaTimingFunction] = []
+        var value = start
+        for (index, move) in moves.enumerated() {
+            let begin = Double(index) * reading
+            let last = index == moves.count - 1
+            let length = max(0.001, move.duration)
+            if !last, length > reading {
+                let share = reading / length
+                value += (move.target - value) * move.curve.progress(at: share)
+                times.append(begin + reading)
+                values.append(value)
+                curves.append(move.curve.cut(at: share))
+            } else {
+                value = move.target
+                times.append(begin + length)
+                values.append(value)
+                curves.append(move.curve)
+                if !last, length < reading {
+                    times.append(begin + reading)
+                    values.append(value)
+                    curves.append(CAMediaTimingFunction(name: .linear))
+                }
+            }
+        }
+        self.init(times: times, values: values, curves: curves)
+    }
+
+    var duration: CFTimeInterval { times.last ?? 0 }
+    /// Where it comes to rest.
+    var end: Double { values.last ?? 0 }
+
+    /// Where it stands `elapsed` seconds from its start.
+    func value(at elapsed: CFTimeInterval) -> Double {
+        guard let first = values.first else { return 0 }
+        guard elapsed > 0 else { return first }
+        guard elapsed < duration, times.count > 1 else { return end }
+        var span = 0
+        while span + 2 < times.count, times[span + 1] <= elapsed { span += 1 }
+        let length = times[span + 1] - times[span]
+        let share = length > 0 ? (elapsed - times[span]) / length : 1
+        return values[span] + (values[span + 1] - values[span]) * curves[span].progress(at: share)
+    }
+
+    /// The curve as a keyframe animation of `keyPath`, its values mapped by
+    /// `map`, or `values` given whole: a transform of two curves worked out
+    /// alike, say.
+    func animation(_ keyPath: String, additive: Bool = false, values given: [Any]? = nil,
+                   map: (Double) -> Any = { $0 }) -> CAKeyframeAnimation {
+        let move = CAKeyframeAnimation(keyPath: keyPath)
+        move.values = given ?? values.map(map)
+        move.keyTimes = times.map { NSNumber(value: duration > 0 ? $0 / duration : 0) }
+        move.timingFunctions = curves
+        move.duration = duration
+        move.isAdditive = additive
+        return move
+    }
+}
+
+/// One layer's part in the beat: the move last set going on it, and when,
+/// so the next starts from where it stands without reading the screen.
+struct NotchBeatTrack {
+    private(set) var curve: NotchBeatCurve?
+    private(set) var begin: CFTimeInterval = 0
+
+    /// Where the move stands at `time`; `resting` with none.
+    func value(at time: CFTimeInterval, resting: Double = 0) -> Double {
+        curve?.value(at: time - begin) ?? resting
+    }
+
+    /// Whether a move is still running at `time`.
+    func moves(at time: CFTimeInterval) -> Bool {
+        curve.map { time - begin < $0.duration } ?? false
+    }
+
+    /// A new move, from where this one stands at `time`, through `moves`
+    /// a reading apart.
+    mutating func start(_ moves: [NotchBeatCurve.Move], at time: CFTimeInterval, resting: Double = 0) -> NotchBeatCurve {
+        start(NotchBeatCurve(from: value(at: time, resting: resting), moves: moves), at: time)
+    }
+
+    @discardableResult
+    mutating func start(_ next: NotchBeatCurve, at time: CFTimeInterval) -> NotchBeatCurve {
+        curve = next
+        begin = time
+        return next
+    }
+
+    mutating func stop() { curve = nil }
+}
+
+extension CAMediaTimingFunction {
+    private var points: (x1: Double, y1: Double, x2: Double, y2: Double) {
+        var first: [Float] = [0, 0], second: [Float] = [0, 0]
+        getControlPoint(at: 1, values: &first)
+        getControlPoint(at: 2, values: &second)
+        return (Double(first[0]), Double(first[1]), Double(second[0]), Double(second[1]))
+    }
+
+    private static func bezier(_ s: Double, _ a: Double, _ b: Double) -> Double {
+        let r = 1 - s
+        return 3 * r * r * s * a + 3 * r * s * s * b + s * s * s
+    }
+
+    /// Where on its curve `time`, a share of its duration, falls.
+    private func parameter(at time: Double) -> Double {
+        let p = points
+        var low = 0.0, high = 1.0
+        for _ in 0..<48 {
+            let mid = (low + high) / 2
+            if Self.bezier(mid, p.x1, p.x2) < time { low = mid } else { high = mid }
+        }
+        return (low + high) / 2
+    }
+
+    /// How far it has eased, 0 to 1, at `time`, a share of its duration.
+    func progress(at time: Double) -> Double {
+        guard time.isFinite else { return 1 }
+        if time <= 0 { return 0 }
+        if time >= 1 { return 1 }
+        let p = points
+        return Self.bezier(parameter(at: time), p.y1, p.y2)
+    }
+
+    /// Its first `share` of the time, as a curve of its own: what this ease
+    /// draws when the next cuts it short.
+    func cut(at share: Double) -> CAMediaTimingFunction {
+        guard share > 0, share < 1 else { return self }
+        let p = points
+        let u = parameter(at: share)
+        func lerp(_ a: Double, _ b: Double) -> Double { a + (b - a) * u }
+        // De Casteljau: the first part of the curve split at u, from (0, 0).
+        let x01 = lerp(0, p.x1), y01 = lerp(0, p.y1)
+        let x12 = lerp(p.x1, p.x2), y12 = lerp(p.y1, p.y2)
+        let x23 = lerp(p.x2, 1), y23 = lerp(p.y2, 1)
+        let x012 = lerp(x01, x12), y012 = lerp(y01, y12)
+        let x123 = lerp(x12, x23), y123 = lerp(y12, y23)
+        let x = lerp(x012, x123), y = lerp(y012, y123)
+        guard x > 0.000_001, y > 0.000_001 else { return CAMediaTimingFunction(name: .linear) }
+        return CAMediaTimingFunction(controlPoints: Float(x01 / x), Float(y01 / y), Float(x012 / x), Float(y012 / y))
     }
 }
 

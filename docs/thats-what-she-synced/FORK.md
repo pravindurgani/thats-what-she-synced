@@ -21,6 +21,7 @@ How That's What She Synced sits on top of Vorssaint, so upstream updates stay ea
 2. Gate every hook on `NotchOfficeEdition`, so with Office edition off the island is plain Vorssaint.
 3. Use the shared pieces (`NotchPunchIn`, `NotchLowerThird`, `NotchMomentPaint`, `NotchSongMotion`) so moments stay one family.
 4. Nothing runs while the island is hidden, still or in Low Power Mode. Slow motion runs at 30 fps or less.
+5. A beat sets one move going per hit, never one per reading: the hit at 60 fps, its fall at 30 (`NotchBeatCurve`, `NotchSongMotion.play`). Each move starts from where the last one stands, worked out, not read from a presentation layer.
 
 ## Taking an upstream update
 
@@ -29,6 +30,7 @@ Tools/check-upstream.sh                  # new commits, conflicts, hooks
 git merge origin/main                    # or your Vorssaint remote
 ./build.sh && ./build.sh --test          # 0 warnings, TESTS OK
 Tools/bench-notch.sh --rounds 2          # the island's cost, Office edition on vs off
+./build.sh --dev && ./build/VorssaintDeveloper --music-path-probe   # the beat's cost, no music needed
 ```
 
 ## Next, maybe

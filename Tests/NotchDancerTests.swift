@@ -329,6 +329,14 @@ enum NotchDancerTests {
         suite.expect(tempo.hear(.nan, at: 21) == nil, "an unreadable push is silence")
         tempo.reset()
         suite.expect(tempo == NotchDanceTempo(), "a fresh start forgets the last song's tempo")
+        // The island sends its hits, not each reading of their fall: a hit
+        // says where the push stood a reading before.
+        var hits = NotchDanceTempo()
+        suite.expect(hits.hear(0.8, after: 0, at: 30) == 0.8, "a hit from rest is a new hit")
+        suite.expect(hits.hear(0.62, after: 0.55, at: 30.5) == nil,
+                     "a hit barely above where the last one's fall stood is no new hit")
+        suite.expect(hits.hear(0.62, after: 0.3, at: 31) == 0.62,
+                     "a hit well above where the fall stood is, though the last hit was stronger")
         suite.expectClose(NotchDanceTiming.fallbackDelay(afterBeatInterval: 0.5), 0.9,
                           "after a beat, steps stand in only once a beat is clearly missing")
         suite.expectClose(NotchDanceTiming.fallbackDelay(afterBeatInterval: 0.8), 1.28, "a slow song waits longer")
@@ -575,6 +583,34 @@ enum NotchDancerTests {
         suite.expect(NotchDancer.beads(along: 3.1, radius: 0.96) >= 3 && NotchDancer.beads(along: 0, radius: 1) == 1
                         && NotchDancer.beads(along: .nan, radius: 1) == 1,
                      "a limb's keyline takes enough beads that its edge dips by a hair at most")
+        // A beat's move starts from where the last one has the figure,
+        // worked out rather than read from the screen: every outline of a
+        // figure is drawn alike in every pose, so it blends as the render
+        // server blends it.
+        for routine in NotchDanceRoutine.allCases {
+            let floor = NotchDanceLayout(routine: routine, height: 32)
+            for (index, dancer) in routine.dancers.enumerated() {
+                let poses = [routine.groove(index), routine.still(index), routine.rest(index)]
+                    + (0..<NotchDanceRoutine.loop).flatMap { beat in
+                        routine.step(index, beat: beat, energy: 1, interval: 0.5, settle: 0.5).frames.map(\.pose)
+                    }
+                let drawn = poses.map { pose -> [CGPath] in
+                    let drawing = dancer.drawing(pose, floor: floor)
+                    return [drawing.keyline, drawing.ring] + drawing.parts
+                }
+                let alike = zip(drawn, drawn.dropFirst()).allSatisfy { a, b in
+                    zip(a, b).allSatisfy { from, to in
+                        guard let mixed = NotchPathBlend.mix(from, to, 0.3) else { return false }
+                        return mixed.boundingBoxOfPath.equalTo(blend(from, to, 0.3).boundingBoxOfPath)
+                    }
+                }
+                suite.expect(alike, "\(routine.rawValue) dancer \(index): every outline blends between poses, point for point")
+            }
+        }
+        let square = CGPath(rect: CGRect(x: 0, y: 0, width: 4, height: 4), transform: nil)
+        let circle = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: 4, height: 4), transform: nil)
+        suite.expect(NotchPathBlend.mix(square, circle, 0.5) == nil && NotchPathBlend.mix(square, circle, 0) == square,
+                     "outlines drawn differently do not blend, and none is needed at either end")
     }
 
     /// `a` moved `share` of the way to `b`, point by point, as Core
