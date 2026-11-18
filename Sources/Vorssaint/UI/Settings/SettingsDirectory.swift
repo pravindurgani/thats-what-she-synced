@@ -296,7 +296,12 @@ enum SettingsDirectory {
                   notch: .module(.agents), when: state.on(DefaultsKey.notchAgentsClaude)),
             .init([notchEditor.activity, notchEditor.resting, notch.coverMenus, notchEditor.feedback, notch.inputSource,
                    notch.newTrack, lockScreen.title, lockScreen.sounds, lockScreen.show], notch: .activity),
-            .init([notchEdition.title, "Office", "mug"], notch: .activity),
+            // The fork's own card: each switch by its name, and the words the README once used.
+            // Its name is also typed with a keyboard's straight apostrophe, which search does not fold.
+            .init([notchEdition.cardTitle, notchEdition.title, notchEdition.songColours, notchEdition.look,
+                   notchEdition.vivid, notchEdition.oneColour, notchEdition.officeAlerts, notchEdition.idleGlow,
+                   notchEdition.cardTitle.replacingOccurrences(of: "\u{2019}", with: "'")]
+                  + notchEdition.keywords, notch: .activity),
             .init([notchLowBattery.title], feature: .monitorPower, notch: .activity, when: batteryRest),
             .init([notchLowBattery.threshold, notchLowBattery.early, notchLowBattery.menuBar],
                   feature: .monitorPower, notch: .activity, when: tintedBattery),

@@ -131,7 +131,10 @@ struct MetricsTests {
                 NotchOfficeMomentsTests.run(suite)
                 NotchOfficeFamilyTests.run(suite)
             }),
-            ("notch-office-edition", { NotchOfficeEditionTests.run(suite) }),
+            ("notch-office-edition", {
+                NotchOfficeEditionTests.run(suite)
+                NotchOfficeEditionSettingsTests.run(suite)
+            }),
             ("notch", {
                 NotchTests.run(suite)
                 NotchCompactTests.run(suite)
