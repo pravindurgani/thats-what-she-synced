@@ -30,6 +30,19 @@ enum NotchMusicSide: String, CaseIterable, Identifiable {
 
     var dances: Bool { self != .bars }
 
+    /// The widest floor this choice may need, at full size: a shuffle may
+    /// deal the three, so its wings are fitted to them.
+    var floorWidth: CGFloat? {
+        guard dances else { return nil }
+        return routine.map(\.floorWidth) ?? NotchDanceRoutine.allCases.map(\.floorWidth).max()
+    }
+
+    /// The wings it asks for at full size: the three's wider, a solo's narrower.
+    var wing: CGFloat? {
+        guard dances else { return nil }
+        return routine.map(\.wing) ?? NotchDanceRoutine.allCases.map(\.wing).max()
+    }
+
     /// The dance this choice always shows; nil for the bars and for shuffle.
     var routine: NotchDanceRoutine? {
         switch self {
@@ -126,28 +139,71 @@ struct NotchDanceShuffle: Equatable {
 
 // MARK: - The floor
 
-/// The patch of the strip the dancers stand on, beside the camera.
+/// The patch of the strip the dancers stand on, beside the camera. Sizes are
+/// in points at full size, the figures 26 points tall in a 32-point strip:
+/// big enough to read at a glance, as the site draws them.
 enum NotchDanceFloor {
-    /// Three figures side by side, arms up, with a hand's room between them.
-    static let width: CGFloat = 32
+    /// Points per unit of a dancer's body (NotchDancerBody) at full size. One
+    /// scale for every figure, so they differ by height and outfit, never by
+    /// how thick they are drawn.
+    static let unit: CGFloat = 1.25
+    /// The tallest figure at full size, and the strip that gives it.
+    static let fullFigure: CGFloat = 26
+    /// A figure stands as tall as its strip less 6 points, within these.
+    static let figureRange: ClosedRange<CGFloat> = 18...30
+    /// Where the menus leave too little room for full size, the figures step
+    /// down to this height in a narrower wing before the strip shows bars.
+    static let steppedFigure: CGFloat = 22
+    static let steppedWing: CGFloat = 44
+
     /// The box the strip keeps clear of its rounded end: the figures from
     /// their feet to their heads. Feet are narrow, so its corners round off.
-    static let figureBox: CGFloat = 20
-    static let figureCorner: CGFloat = 4
+    static let figureBox: CGFloat = 26
+    static let figureCorner: CGFloat = 7
+    /// The gap the box keeps from the strip's end: a little less than the
+    /// strip's own, as only a hand at the end of a move reaches it.
+    static let edgeGap: CGFloat = 4
 
-    /// Full size in a strip 32 points tall or taller; a shorter strip, a
-    /// simulated camera's under a short menu bar, shrinks the figures to fit.
-    static func scale(height: CGFloat) -> CGFloat {
-        guard height.isFinite else { return 1 }
-        return min(1, max(0.6, (height - 6) / 26))
+    /// The figures' height in a strip `height` tall.
+    static func figureHeight(strip height: CGFloat) -> CGFloat {
+        guard height.isFinite else { return fullFigure }
+        return min(figureRange.upperBound, max(figureRange.lowerBound, height - 6))
     }
 
-    /// Where their feet stand: the figures centred in the strip, which
-    /// leaves the room above them that a boombox pushed overhead needs.
-    static func ground(height: CGFloat) -> CGFloat {
-        guard height.isFinite else { return 6 }
-        return max(0, (height - figureBox * scale(height: height)) / 2)
+    /// The figures' full size in a strip `height` tall, as a share of 26
+    /// points: 1 in a 32-point strip, less in a simulated camera's short one,
+    /// more in a tall one.
+    static func scale(height: CGFloat) -> CGFloat { figureHeight(strip: height) / fullFigure }
+
+    /// The smallest the figures are drawn before the strip shows bars instead.
+    static var smallestScale: CGFloat { figureRange.lowerBound / fullFigure }
+    static var steppedScale: CGFloat { steppedFigure / fullFigure }
+
+    /// Where their feet stand: a little below the middle of the strip, which
+    /// leaves the room above them that a jump and a boombox overhead need.
+    static func ground(height: CGFloat, scale: CGFloat) -> CGFloat {
+        guard height.isFinite, scale.isFinite else { return 3 }
+        return max(0, (height - figureBox * scale) * 0.42)
     }
+}
+
+/// One dance's floor in a strip: its height, the figures' size as a share of
+/// full size, and the floor's width at that size.
+struct NotchDanceLayout: Equatable {
+    let height: CGFloat
+    let scale: CGFloat
+    let width: CGFloat
+
+    /// At `scale`, or at full size for the strip when none is given.
+    init(routine: NotchDanceRoutine, height: CGFloat, scale: CGFloat? = nil) {
+        self.height = height
+        let full = NotchDanceFloor.scale(height: height)
+        let chosen = scale.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? full
+        self.scale = chosen
+        width = routine.floorWidth * chosen
+    }
+
+    var ground: CGFloat { NotchDanceFloor.ground(height: height, scale: scale) }
 }
 
 // MARK: - Timing
@@ -317,55 +373,67 @@ struct NotchDancerPose: Equatable {
 
 // MARK: - A dancer
 
-/// One body's proportions in points, for a figure about 19 points tall.
-/// Mild on purpose: a head a little large so it reads at this size, and no
-/// feature of any person.
+/// One body's proportions in units of NotchDanceFloor.unit, 1.25 points at
+/// full size: a figure of the standard build stands 26 points tall. Bold on
+/// purpose, as the site draws them: a big round head, a filled capsule of a
+/// torso about 7 points wide, limbs as thick round-capped strokes. Mild in
+/// every other way, and no feature of any person.
 struct NotchDancerBody: Equatable {
-    var headRadius: CGFloat = 2.15
-    var neck: CGFloat = 0.35
-    var torso: CGFloat = 5.5
+    /// About 7 points across, with a sliver of keyline between it and the
+    /// torso, so a white shirt front never reads as part of the head.
+    var headRadius: CGFloat = 2.85
+    var neck: CGFloat = 0.45
+    var torso: CGFloat = 6.6
+    /// The torso capsule's width, about 7 points.
+    var torsoWidth: CGFloat = 5.6
     /// Half the shoulders' width, and half the hips'.
     var shoulder: CGFloat = 2.3
-    var hip: CGFloat = 1.45
+    var hip: CGFloat = 1.15
     var upperArm: CGFloat = 3.1
     var foreArm: CGFloat = 2.95
-    var thigh: CGFloat = 3.85
-    var shin: CGFloat = 3.75
+    var thigh: CGFloat = 3.45
+    var shin: CGFloat = 3.3
     /// Half the distance between the feet.
-    var stance: CGFloat = 1.45
-    var legWidth: CGFloat = 1.75
-    var armWidth: CGFloat = 1.4
-    var handRadius: CGFloat = 0.72
+    var stance: CGFloat = 1.6
+    /// Legs 2.8 points, arms 2.4, hands 1.5 across their radius.
+    var legWidth: CGFloat = 2.24
+    var armWidth: CGFloat = 1.92
+    var handRadius: CGFloat = 1.2
+    /// Shoes: dark caps about 3.4 by 1.8 points, each a little outward.
+    var shoeWidth: CGFloat = 2.72
+    var shoeHeight: CGFloat = 1.44
+    var toeOut: CGFloat = 0.3
 
-    /// A foot's point sits half a leg's stroke up, so its round end stands on the floor.
-    var footLift: CGFloat { legWidth / 2 }
+    /// A foot's point, the ankle, sits inside the shoe, so the leg's round end tucks into it.
+    var footLift: CGFloat { shoeHeight * 0.85 }
     var standingHeight: CGFloat { footLift + thigh + shin + torso + neck + headRadius * 2 }
 }
 
 /// One drawn part of a dancer, back to front, as the island layers it.
 struct NotchDancerLayer: Equatable {
     enum Shape: Equatable {
-        case legs, arms, torso, shirt, tie, collar, hands, head, box, handle, cones, caps
+        case legs, shoes, soles, arms, torso, shirt, tie, collar, hands, head, box, handle, cones, caps
     }
 
     enum Paint: Equatable {
         /// An outfit or prop colour, 0xRRGGBB, the same in every song.
         case outfit(UInt32)
-        /// One of the song's colours: 0 is the dancer's own, 1 the next.
+        /// One of the song's colours at full voice: 0 is the dancer's own, 1 the next.
         case song(Int)
-        /// Heads and hands: one fill for every figure, never a skin tone.
+        /// A tone of the song's lead colour (see NotchDanceTone).
+        case tone(NotchDanceTone)
+        /// Ties and collars: the song's second colour, deep enough to read on a light shirt.
+        case tie
+        /// Heads and hands: one paper fill for every figure, never a skin tone.
         case head
     }
 
     enum Stroke: Equatable {
         /// Filled.
         case fill
-        /// The limb's own width.
+        /// The limb's own width, round-capped.
         case limb
-        /// The limb's width and a thin edge either side: drawn first in a
-        /// light colour, it keeps a dark outfit legible on the black island.
-        case rim
-        /// A line this many points wide.
+        /// A line this many units wide.
         case line(CGFloat)
     }
 
@@ -373,56 +441,135 @@ struct NotchDancerLayer: Equatable {
     let paint: Paint
     var stroke: Stroke = .fill
 
-    static let rimWidth: CGFloat = 0.55
+    /// Whether the figure's black keyline runs around this part. Details
+    /// laid over a part (a shirt front, a tie, a collar, soles, cones) sit
+    /// inside its outline and need none of their own.
+    var keyline: Bool {
+        switch shape {
+        case .legs, .shoes, .arms, .torso, .hands, .head, .handle: return true
+        case .box: return stroke == .fill
+        case .soles, .shirt, .tie, .collar, .cones, .caps: return false
+        }
+    }
+
+    /// Heads and hands lie over the body, often over light clothes, so
+    /// their keyline is drawn over what lies behind them, a ring that keeps
+    /// a paper head apart from a white shirt and a hand from a sleeve.
+    var keylineInFront: Bool { shape == .head || shape == .hands }
+}
+
+/// The tones a dancer's outfit takes from the song's lead colour. Every one
+/// reads on the black island: light and mid at 7:1 or more, deep at 4.5:1 or
+/// more, nothing darker than trousers' slate.
+enum NotchDanceTone: CaseIterable, Equatable {
+    /// A light shirt: a pastel of the lead colour. Mid and deep: the lead
+    /// colour itself, the deep one at full voice.
+    case light, mid, deep
+    /// A dark suit as the island can show one: a luminous slate, mixed
+    /// about half and half with the song's lead colour.
+    case suit
+    /// A grey suit: the same slate at the mid tone.
+    case greySuit
+    /// Trousers: the slate a step deeper, never below 0.3 luminance.
+    case trousers
+
+    /// The luminance each is toned to.
+    var luminance: ClosedRange<Double> {
+        switch self {
+        case .light: return 0.78...0.82
+        case .mid, .greySuit: return 0.55...0.6
+        case .deep: return 0.35...0.4
+        case .suit: return 0.35...0.38
+        case .trousers: return 0.3...0.33
+        }
+    }
+
+    /// How much of the song's lead colour a slate takes; nil for the plain tones.
+    var slateShare: Double? {
+        switch self {
+        case .suit, .greySuit, .trousers: return 0.45
+        case .light, .mid, .deep: return nil
+        }
+    }
+
+    /// The most colour each keeps: a light shirt is a pastel, not a neon.
+    var saturationCap: Double {
+        switch self {
+        case .light: return 0.42
+        case .mid: return 0.8
+        case .deep, .suit, .greySuit, .trousers: return 1
+        }
+    }
+
+    /// The slate a suit and trousers start from.
+    static let slate = NotchRGB(hex: 0x4A5A6E)
+
+    /// This tone of `lead`, the song's lead colour.
+    func of(_ lead: NotchRGB) -> NotchRGB {
+        let base = slateShare.map { Self.slate.mixed(with: lead, by: $0) } ?? lead
+        return base.saturated(by: 1, atLeast: 0, atMost: saturationCap)
+            .toned(maxLuminance: luminance.upperBound, minLuminance: luminance.lowerBound)
+            .lifted(toLuminance: luminance.lowerBound)
+    }
+
+    /// The tie's tone of the song's second colour: vivid and deep enough to
+    /// stand out on a white or light shirt, and still clear of black.
+    static func tie(_ second: NotchRGB) -> NotchRGB {
+        second.saturated(by: 1.1, atLeast: 0.6).toned(maxLuminance: 0.3, minLuminance: 0.2).lifted(toLuminance: 0.2)
+    }
+
+    /// Heads and hands: paper, the same on every figure.
+    static let paper = NotchRGB(hex: 0xF7F5F0)
 }
 
 /// One figure: its body, where it stands and what it wears.
 struct NotchDancer: Equatable {
     var body = NotchDancerBody()
-    /// Standing height in points on a full-height strip.
-    var height: CGFloat = 19
-    /// Its standing centre from the floor's middle, on a full-height strip.
+    /// Its standing centre from the floor's middle, in points at full size.
     var position: CGFloat = 0
     /// Which of the song's colours is its own.
     var accent = 0
     var layers: [NotchDancerLayer]
 
+    /// Standing height in points at full size.
+    var height: CGFloat { body.standingHeight * NotchDanceFloor.unit }
+
     var carriesBox: Bool { layers.contains { $0.shape == .box } }
 
-    /// Points on this figure to points on a floor `floorHeight` tall.
-    func scale(floorHeight: CGFloat) -> CGFloat {
-        NotchDanceFloor.scale(height: floorHeight) * height / body.standingHeight
-    }
+    /// Units on this figure to points on `floor`.
+    func scale(_ floor: NotchDanceLayout) -> CGFloat { floor.scale * NotchDanceFloor.unit }
 
-    /// A layer's stroke width on a floor `floorHeight` tall; nil fills it.
-    func lineWidth(_ layer: NotchDancerLayer, floorHeight: CGFloat) -> CGFloat? {
-        let natural: CGFloat
-        switch layer.shape {
-        case .legs: natural = body.legWidth
-        case .arms: natural = body.armWidth
-        default: natural = 0.6
-        }
+    /// A layer's stroke width on `floor`; nil fills it.
+    func lineWidth(_ layer: NotchDancerLayer, floor: NotchDanceLayout) -> CGFloat? {
         let width: CGFloat
         switch layer.stroke {
         case .fill: return nil
-        case .limb: width = natural
-        case .rim: width = natural + NotchDancerLayer.rimWidth * 2
-        case .line(let points): width = points
+        case .limb:
+            switch layer.shape {
+            case .legs: width = body.legWidth
+            case .arms: width = body.armWidth
+            case .torso: width = body.torsoWidth
+            default: width = 0.6
+            }
+        case .line(let units): width = units
         }
-        return width * scale(floorHeight: floorHeight)
+        return width * scale(floor)
     }
+
+    /// The black keyline around the figure, in points: 1 at full size.
+    static func keyline(_ floor: NotchDanceLayout) -> CGFloat { floor.scale }
 }
 
-/// The boombox, in points on the figure.
+/// The boombox, in units on the figure.
 enum NotchBoombox {
     static let width: CGFloat = 9
-    static let height: CGFloat = 4.6
+    static let height: CGFloat = 3.9
     static let corner: CGFloat = 1.05
     /// The hands hold it this far above its bottom edge.
     static let grip: CGFloat = 0.3
-    static let handle: CGFloat = 1
+    static let handle: CGFloat = 0.6
     static let coneOffset: CGFloat = 2.35
-    static let coneRadius: CGFloat = 1.3
+    static let coneRadius: CGFloat = 1.2
 }
 
 // MARK: - The rig
@@ -518,15 +665,12 @@ struct NotchDancerRig: Equatable {
 }
 
 extension NotchDancer {
-    /// The figure in `pose`, one path per layer, in points on a floor
-    /// `floorHeight` tall with its origin at the bottom left.
-    func paths(_ pose: NotchDancerPose, floorHeight: CGFloat) -> [CGPath] {
+    /// The figure in `pose`, one path per layer, in points on `floor` with
+    /// its origin at the bottom left.
+    func paths(_ pose: NotchDancerPose, floor: NotchDanceLayout) -> [CGPath] {
         let rig = NotchDancerRig(body: body, pose: pose)
-        let unit = scale(floorHeight: floorHeight)
-        let place = Placement(
-            originX: NotchDanceFloor.width / 2 + position * NotchDanceFloor.scale(height: floorHeight),
-            originY: NotchDanceFloor.ground(height: floorHeight), unit: unit,
-            pivot: rig.root.x, facing: pose.facing)
+        let place = Placement(originX: floor.width / 2 + position * floor.scale, originY: floor.ground,
+                              unit: scale(floor), pivot: rig.root.x, facing: pose.facing)
         return layers.map { path(for: $0.shape, rig: rig, pose: pose, place: place) }
     }
 
@@ -563,31 +707,51 @@ extension NotchDancer {
                 path.addLines(between: [rig.shoulders[index], rig.elbows[index], rig.hands[index]].map(place.callAsFunction))
             }
         case .torso:
-            // A little above the shoulders and below the hips, so sleeves
-            // and trousers tuck in under it.
-            let corners = [rig.shoulders[0].moved(rig.up, 0.55).moved(rig.side, -0.25),
-                           rig.shoulders[1].moved(rig.up, 0.55).moved(rig.side, 0.25),
-                           rig.hips[1].moved(rig.up, -0.55).moved(rig.side, 0.35),
-                           rig.hips[0].moved(rig.up, -0.55).moved(rig.side, -0.35)]
-            return Self.roundedPolygon(corners.map(place.callAsFunction), radius: 1.05 * place.unit)
+            // A capsule, drawn as one thick round-capped stroke: its top
+            // tucks under the head and its bottom over the trousers.
+            let radius = body.torsoWidth / 2
+            path.addLines(between: [rig.neck.moved(rig.up, -0.15 - radius),
+                                    rig.pelvis.moved(rig.up, radius - 0.7)].map(place.callAsFunction))
+        case .shoes:
+            for index in 0..<2 {
+                var transform = place.transform
+                let out: CGFloat = index == 0 ? -body.toeOut : body.toeOut
+                let foot = rig.feet[index]
+                let cap = CGRect(x: foot.x + out - body.shoeWidth / 2, y: foot.y - body.footLift,
+                                 width: body.shoeWidth, height: body.shoeHeight)
+                let round = body.shoeHeight / 2
+                path.addPath(CGPath(roundedRect: cap, cornerWidth: round, cornerHeight: round, transform: &transform))
+            }
+        case .soles:
+            for index in 0..<2 {
+                let out: CGFloat = index == 0 ? -body.toeOut : body.toeOut
+                let foot = rig.feet[index]
+                let y = foot.y - body.footLift + 0.2
+                let half = body.shoeWidth / 2 - 0.45
+                path.addLines(between: [CGPoint(x: foot.x + out - half, y: y),
+                                        CGPoint(x: foot.x + out + half, y: y)].map(place.callAsFunction))
+            }
         case .shirt:
-            let collar = body.shoulder * 0.66
-            path.addLines(between: [rig.neck.moved(rig.up, 0.5).moved(rig.side, -collar),
-                                    rig.neck.moved(rig.up, 0.5).moved(rig.side, collar),
-                                    rig.neck.moved(rig.up, -3.4)].map(place.callAsFunction))
+            // The shirt's V under an open jacket, a band of the jacket
+            // above it, so it never joins the head.
+            let collar = body.torsoWidth * 0.31
+            path.addLines(between: [rig.neck.moved(rig.up, -0.9).moved(rig.side, -collar),
+                                    rig.neck.moved(rig.up, -0.9).moved(rig.side, collar),
+                                    rig.neck.moved(rig.up, -4.4)].map(place.callAsFunction))
             path.closeSubpath()
         case .tie:
-            path.addLines(between: [rig.neck.moved(rig.up, 0.1).moved(rig.side, -0.26),
-                                    rig.neck.moved(rig.up, 0.1).moved(rig.side, 0.26),
-                                    rig.neck.moved(rig.up, -2.8).moved(rig.side, 0.46),
-                                    rig.neck.moved(rig.up, -3.6),
-                                    rig.neck.moved(rig.up, -2.8).moved(rig.side, -0.46)].map(place.callAsFunction))
+            // A thin tie: a knot, then a blade to a point.
+            path.addLines(between: [rig.neck.moved(rig.up, -0.75).moved(rig.side, -0.42),
+                                    rig.neck.moved(rig.up, -0.75).moved(rig.side, 0.42),
+                                    rig.neck.moved(rig.up, -3.9).moved(rig.side, 0.58),
+                                    rig.neck.moved(rig.up, -4.8),
+                                    rig.neck.moved(rig.up, -3.9).moved(rig.side, -0.58)].map(place.callAsFunction))
             path.closeSubpath()
         case .collar:
-            let collar = body.shoulder * 0.6
-            path.addLines(between: [rig.neck.moved(rig.up, 0.35).moved(rig.side, -collar),
-                                    rig.neck.moved(rig.up, -1.5),
-                                    rig.neck.moved(rig.up, 0.35).moved(rig.side, collar)].map(place.callAsFunction))
+            let collar = body.torsoWidth * 0.26
+            path.addLines(between: [rig.neck.moved(rig.up, -0.75).moved(rig.side, -collar),
+                                    rig.neck.moved(rig.up, -2.3),
+                                    rig.neck.moved(rig.up, -0.75).moved(rig.side, collar)].map(place.callAsFunction))
         case .hands:
             for hand in rig.hands { path.addPath(Self.circle(hand, radius: body.handRadius, place: place)) }
         case .head:
@@ -621,26 +785,12 @@ extension NotchDancer {
             .concatenating(place.transform)
     }
 
+    /// A head or hand: round from every side, so a spin moves it but never
+    /// squashes it.
     private static func circle(_ center: CGPoint, radius: CGFloat, place: Placement) -> CGPath {
-        var transform = place.transform
-        return CGPath(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2),
-                      transform: &transform)
-    }
-
-    /// A closed outline through `points` with every corner rounded, built
-    /// from the same elements whatever the pose, so it animates point to point.
-    static func roundedPolygon(_ points: [CGPoint], radius: CGFloat) -> CGPath {
-        let path = CGMutablePath()
-        let count = points.count
-        for index in 0..<count {
-            let corner = points[index]
-            let previous = points[(index + count - 1) % count], next = points[(index + 1) % count]
-            let enter = corner.toward(previous, radius), leave = corner.toward(next, radius)
-            if index == 0 { path.move(to: enter) } else { path.addLine(to: enter) }
-            path.addQuadCurve(to: leave, control: corner)
-        }
-        path.closeSubpath()
-        return path
+        let middle = place(center), size = radius * place.unit
+        return CGPath(ellipseIn: CGRect(x: middle.x - size, y: middle.y - size, width: size * 2, height: size * 2),
+                      transform: nil)
     }
 }
 
@@ -710,6 +860,23 @@ enum NotchDanceRoutine: String, CaseIterable, Identifiable {
 
     /// The beat's place in the eight-beat loop, from 0.
     static func count(_ beat: Int) -> Int { ((beat % loop) + loop) % loop }
+
+    /// The floor's width at full size: the three stand 16 points apart.
+    var floorWidth: CGFloat {
+        switch self {
+        case .farewellThree: return 48
+        case .boomboxBoss, .scarn: return 34
+        }
+    }
+
+    /// The wings the strip takes for it at full size, both sides alike so
+    /// the island stays balanced: the floor, and the even gap at the end.
+    var wing: CGFloat {
+        switch self {
+        case .farewellThree: return 60
+        case .boomboxBoss, .scarn: return 48
+        }
+    }
 
     /// The dancers, left to right.
     var dancers: [NotchDancer] {
@@ -800,20 +967,34 @@ enum NotchDanceRoutine: String, CaseIterable, Identifiable {
     /// A solo dancer in a white shirt and thin tie, no jacket, dark
     /// trousers, holding a boombox. The box goes overhead and pushes up
     /// toward the island's top edge, as toward a ceiling vent.
-    private static let boombox = NotchDancer(height: 18, layers: [
-        NotchDancerLayer(shape: .legs, paint: .song(0), stroke: .rim),
-        NotchDancerLayer(shape: .legs, paint: .outfit(0x2B2B33), stroke: .limb),
-        NotchDancerLayer(shape: .torso, paint: .outfit(0xF2F2F2)),
-        NotchDancerLayer(shape: .tie, paint: .song(0)),
-        NotchDancerLayer(shape: .arms, paint: .outfit(0xF2F2F2), stroke: .limb),
+    private static let boombox = NotchDancer(body: bossBody, layers: [
+        NotchDancerLayer(shape: .legs, paint: .tone(.trousers), stroke: .limb),
+        NotchDancerLayer(shape: .shoes, paint: .outfit(shoe)),
+        NotchDancerLayer(shape: .soles, paint: .outfit(sole), stroke: .line(0.45)),
+        NotchDancerLayer(shape: .torso, paint: .tone(.light), stroke: .limb),
+        NotchDancerLayer(shape: .tie, paint: .tie),
+        NotchDancerLayer(shape: .arms, paint: .tone(.light), stroke: .limb),
         NotchDancerLayer(shape: .hands, paint: .head),
         NotchDancerLayer(shape: .head, paint: .head),
-        NotchDancerLayer(shape: .handle, paint: .outfit(0x9A9EA8), stroke: .line(0.7)),
-        NotchDancerLayer(shape: .box, paint: .outfit(0x9A9EA8), stroke: .line(1.1)),
+        NotchDancerLayer(shape: .handle, paint: .outfit(steel), stroke: .line(0.7)),
         NotchDancerLayer(shape: .box, paint: .outfit(0x2A2A2E)),
+        NotchDancerLayer(shape: .box, paint: .outfit(steel), stroke: .line(0.55)),
         NotchDancerLayer(shape: .cones, paint: .song(1)),
         NotchDancerLayer(shape: .caps, paint: .outfit(0x2A2A2E)),
     ])
+
+    /// Shoes, their soles, and the boombox's metal.
+    private static let shoe: UInt32 = 0x1C1D22
+    private static let sole: UInt32 = 0xD9DCE2
+    private static let steel: UInt32 = 0xB8BCC2
+    /// A shirt front, under a jacket.
+    private static let shirtFront: UInt32 = 0xF4F1E8
+
+    /// A solo with the box overhead needs the strip's height for the box:
+    /// the same build, its legs and torso shorter and its arms long enough
+    /// to push the box clear of its head.
+    private static let bossBody = NotchDancerBody(headRadius: 2.45, torso: 5.8, torsoWidth: 5.3, upperArm: 3.5,
+                                                  foreArm: 3.3, thigh: 2.55, shin: 2.45)
 
     private enum Boombox {
         /// Hands under the box's bottom corners, the box clear of the head.
@@ -847,7 +1028,7 @@ enum NotchDanceRoutine: String, CaseIterable, Identifiable {
         /// Legs straighten and the box pushes up toward the top edge.
         static let push = NotchDancerPose.with {
             overhead(&$0)
-            $0.lift = 0.2
+            $0.lift = 0.1
             $0.leftShrug = 0.5
             $0.rightShrug = 0.5
             $0.accent = 1
@@ -859,7 +1040,7 @@ enum NotchDanceRoutine: String, CaseIterable, Identifiable {
             $0.lean = -0.14
             $0.leftShrug = 0.3
             $0.rightShrug = 0.3
-            $0.leftHand = CGVector(dx: -1.15, dy: 4.85)
+            $0.leftHand = CGVector(dx: -1.15, dy: 4.95)
             $0.rightHand = CGVector(dx: 1.6, dy: 6)
             $0.accent = 0.5
         }
@@ -867,18 +1048,18 @@ enum NotchDanceRoutine: String, CaseIterable, Identifiable {
         /// Up again, hips right, the box tipped down on the right.
         static let pushRight = NotchDancerPose.with {
             $0.hip.dx = 1.5
-            $0.lift = 0.2
+            $0.lift = 0.1
             $0.lean = 0.14
             $0.leftShrug = 0.4
             $0.rightShrug = 0.4
             $0.leftHand = CGVector(dx: -1.6, dy: 6)
-            $0.rightHand = CGVector(dx: 1.15, dy: 4.85)
+            $0.rightHand = CGVector(dx: 1.15, dy: 4.95)
             $0.accent = 1
         }
 
         /// The eighth beat: one hand lets go for a fist pump.
         static let fistPump = NotchDancerPose.with {
-            $0.lift = 0.2
+            $0.lift = 0.1
             $0.leftShrug = 0.5
             $0.rightShrug = 0.3
             $0.oneHand = 1
@@ -906,14 +1087,13 @@ enum NotchDanceRoutine: String, CaseIterable, Identifiable {
     /// out to shake, a hop to the other, arms open to meet new friends,
     /// hands circling to tie the yarn, then pulling the knot tight.
     private static let scarnDancer = NotchDancer(layers: [
-        NotchDancerLayer(shape: .legs, paint: .song(0), stroke: .rim),
-        NotchDancerLayer(shape: .legs, paint: .outfit(0x23242B), stroke: .limb),
-        NotchDancerLayer(shape: .torso, paint: .song(0), stroke: .line(1.1)),
-        NotchDancerLayer(shape: .torso, paint: .outfit(0x1B1B1F)),
-        NotchDancerLayer(shape: .shirt, paint: .outfit(0xF4F1E8)),
-        NotchDancerLayer(shape: .tie, paint: .song(0)),
-        NotchDancerLayer(shape: .arms, paint: .song(0), stroke: .rim),
-        NotchDancerLayer(shape: .arms, paint: .outfit(0x1B1B1F), stroke: .limb),
+        NotchDancerLayer(shape: .legs, paint: .tone(.suit), stroke: .limb),
+        NotchDancerLayer(shape: .shoes, paint: .outfit(shoe)),
+        NotchDancerLayer(shape: .soles, paint: .outfit(sole), stroke: .line(0.45)),
+        NotchDancerLayer(shape: .torso, paint: .tone(.suit), stroke: .limb),
+        NotchDancerLayer(shape: .shirt, paint: .outfit(shirtFront)),
+        NotchDancerLayer(shape: .tie, paint: .tie),
+        NotchDancerLayer(shape: .arms, paint: .tone(.suit), stroke: .limb),
         NotchDancerLayer(shape: .hands, paint: .head),
         NotchDancerLayer(shape: .head, paint: .head),
     ])
@@ -1009,35 +1189,39 @@ enum NotchDanceRoutine: String, CaseIterable, Identifiable {
     /// double time, hands up and a quick spin. Every eighth beat all three
     /// jump with their arms up together, then scatter back to their own.
     private static let three: [NotchDancer] = [
-        NotchDancer(height: 20, position: -9.8, accent: 0, layers: [
-            NotchDancerLayer(shape: .legs, paint: .outfit(0x4A505E), stroke: .limb),
-            NotchDancerLayer(shape: .torso, paint: .song(0), stroke: .line(1.1)),
-            NotchDancerLayer(shape: .torso, paint: .outfit(0x2F3440)),
-            NotchDancerLayer(shape: .arms, paint: .song(0), stroke: .rim),
-            NotchDancerLayer(shape: .arms, paint: .outfit(0x2F3440), stroke: .limb),
+        // Tallest, about 26 points: a deep casual top, no tie.
+        NotchDancer(position: -16, accent: 0, layers: [
+            NotchDancerLayer(shape: .legs, paint: .tone(.trousers), stroke: .limb),
+            NotchDancerLayer(shape: .shoes, paint: .outfit(shoe)),
+            NotchDancerLayer(shape: .soles, paint: .outfit(sole), stroke: .line(0.45)),
+            NotchDancerLayer(shape: .torso, paint: .tone(.deep), stroke: .limb),
+            NotchDancerLayer(shape: .arms, paint: .tone(.deep), stroke: .limb),
             NotchDancerLayer(shape: .hands, paint: .head),
             NotchDancerLayer(shape: .head, paint: .head),
         ]),
-        NotchDancer(body: NotchDancerBody(shoulder: 2.65, hip: 1.85, stance: 1.7), height: 18.5, position: 0, accent: 1,
-                    layers: [
-                        NotchDancerLayer(shape: .legs, paint: .outfit(0x5A5F6B), stroke: .limb),
-                        NotchDancerLayer(shape: .torso, paint: .outfit(0x5A5F6B)),
-                        NotchDancerLayer(shape: .shirt, paint: .outfit(0xF4F1E8)),
-                        NotchDancerLayer(shape: .tie, paint: .song(0)),
-                        NotchDancerLayer(shape: .arms, paint: .outfit(0x5A5F6B), stroke: .limb),
-                        NotchDancerLayer(shape: .hands, paint: .head),
-                        NotchDancerLayer(shape: .head, paint: .head),
-                    ]),
-        NotchDancer(body: NotchDancerBody(shoulder: 2.05, hip: 1.25, stance: 1.35, legWidth: 1.6, armWidth: 1.3),
-                    height: 19, position: 10, accent: 2, layers: [
-                        NotchDancerLayer(shape: .legs, paint: .song(0), stroke: .rim),
-                        NotchDancerLayer(shape: .legs, paint: .outfit(0x343B48), stroke: .limb),
-                        NotchDancerLayer(shape: .torso, paint: .outfit(0xDDE6EE)),
-                        NotchDancerLayer(shape: .collar, paint: .song(0), stroke: .line(0.75)),
-                        NotchDancerLayer(shape: .arms, paint: .outfit(0xDDE6EE), stroke: .limb),
-                        NotchDancerLayer(shape: .hands, paint: .head),
-                        NotchDancerLayer(shape: .head, paint: .head),
-                    ]),
+        // About 24 points: a grey suit in the mid tone, a shirt front and a tie.
+        NotchDancer(body: NotchDancerBody(torso: 5.95, thigh: 3, shin: 2.9), position: 0, accent: 1, layers: [
+            NotchDancerLayer(shape: .legs, paint: .tone(.greySuit), stroke: .limb),
+            NotchDancerLayer(shape: .shoes, paint: .outfit(shoe)),
+            NotchDancerLayer(shape: .soles, paint: .outfit(sole), stroke: .line(0.45)),
+            NotchDancerLayer(shape: .torso, paint: .tone(.greySuit), stroke: .limb),
+            NotchDancerLayer(shape: .shirt, paint: .outfit(shirtFront)),
+            NotchDancerLayer(shape: .tie, paint: .tie),
+            NotchDancerLayer(shape: .arms, paint: .tone(.greySuit), stroke: .limb),
+            NotchDancerLayer(shape: .hands, paint: .head),
+            NotchDancerLayer(shape: .head, paint: .head),
+        ]),
+        // About 25 points, trim: a light collared shirt.
+        NotchDancer(body: NotchDancerBody(torso: 6.2, thigh: 3.25, shin: 3.1), position: 16, accent: 2, layers: [
+            NotchDancerLayer(shape: .legs, paint: .tone(.trousers), stroke: .limb),
+            NotchDancerLayer(shape: .shoes, paint: .outfit(shoe)),
+            NotchDancerLayer(shape: .soles, paint: .outfit(sole), stroke: .line(0.45)),
+            NotchDancerLayer(shape: .torso, paint: .tone(.light), stroke: .limb),
+            NotchDancerLayer(shape: .collar, paint: .tie, stroke: .line(0.7)),
+            NotchDancerLayer(shape: .arms, paint: .tone(.light), stroke: .limb),
+            NotchDancerLayer(shape: .hands, paint: .head),
+            NotchDancerLayer(shape: .head, paint: .head),
+        ]),
     ]
 
     private enum Three {
@@ -1112,7 +1296,7 @@ enum NotchDanceRoutine: String, CaseIterable, Identifiable {
 
         /// All three together on the eighth beat.
         static let jump = NotchDancerPose.with {
-            $0.lift = 3
+            $0.lift = 2.4
             $0.hip.dy = -0.8
             $0.leftFoot.dy = 0.9
             $0.rightFoot.dy = 0.9
@@ -1157,15 +1341,6 @@ private extension CGPoint {
 
     func mixed(_ other: CGPoint, _ amount: CGFloat) -> CGPoint {
         CGPoint(x: x + (other.x - x) * amount, y: y + (other.y - y) * amount)
-    }
-
-    /// A point `distance` from here toward `other`, at most halfway.
-    func toward(_ other: CGPoint, _ distance: CGFloat) -> CGPoint {
-        let dx = other.x - x, dy = other.y - y
-        let length = (dx * dx + dy * dy).squareRoot()
-        guard length > 0.0001 else { return self }
-        let travel = min(distance, length / 2)
-        return CGPoint(x: x + dx / length * travel, y: y + dy / length * travel)
     }
 }
 

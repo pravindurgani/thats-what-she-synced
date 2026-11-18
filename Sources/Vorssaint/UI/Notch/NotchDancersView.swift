@@ -16,7 +16,8 @@ struct NotchDancers: View {
     var isPlaying = true
     /// The strip's own song palette, for when the island is not wearing one.
     var palette: NotchArtworkPalette?
-    var height: CGFloat
+    /// Their floor in the strip: its height and the figures' size.
+    var floor: NotchDanceLayout
     @ObservedObject private var paint = NotchSongPaint.shared
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -24,18 +25,19 @@ struct NotchDancers: View {
     var body: some View {
         NotchDancersBridge(routine: routine, playing: isPlaying, moves: !reduceMotion && !lowPower.isOn,
                            paint: NotchDancePaint(paint.palette ?? palette ?? NotchArtworkPalette.coverless()),
-                           height: height)
-            .frame(width: NotchDanceFloor.width, height: height)
+                           floor: floor)
+            .frame(width: floor.width, height: floor.height)
             .accessibilityHidden(true)
             .allowsHitTesting(false)
     }
 }
 
 extension NotchDancePaint {
-    /// The cover's mark colours, bright enough to read on the island's
-    /// colour, for ties, rims and cones; heads keep one neutral fill.
+    /// Outfits in tones of the cover's lead colour, ties in its second, and
+    /// its mark colours, bright enough to read on the island's colour, for
+    /// cones, the glow and the spotlight; heads keep one paper fill.
     init(_ palette: NotchArtworkPalette) {
-        self.init(accents: palette.marks, head: NotchDancePaint.neutralHead)
+        self.init(pure: palette.pure, marks: palette.marks)
     }
 }
 
@@ -90,12 +92,12 @@ private struct NotchDancersBridge: NSViewRepresentable {
     let playing: Bool
     let moves: Bool
     let paint: NotchDancePaint
-    let height: CGFloat
+    let floor: NotchDanceLayout
 
     func makeNSView(context: Context) -> NotchDancersView { NotchDancersView() }
 
     func updateNSView(_ view: NotchDancersView, context: Context) {
-        view.configure(routine: routine, playing: playing, moves: moves, paint: paint, height: height)
+        view.configure(routine: routine, playing: playing, moves: moves, paint: paint, floor: floor)
     }
 
     static func dismantleNSView(_ view: NotchDancersView, coordinator: ()) { view.stop() }
@@ -112,7 +114,7 @@ final class NotchDancersView: NSView {
     private var routine: NotchDanceRoutine?
     private var playing = false
     private var moves = true
-    private var height: CGFloat = 0
+    private var floor: NotchDanceLayout?
     private(set) var isDancing = false
     private var visibilityObserver: NSObjectProtocol?
     /// Bumped whenever the dance stops or changes, so a half-beat move
@@ -134,11 +136,12 @@ final class NotchDancersView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    func configure(routine: NotchDanceRoutine, playing: Bool, moves: Bool, paint: NotchDancePaint, height: CGFloat) {
-        let fresh = routine != self.routine || height != self.height
+    func configure(routine: NotchDanceRoutine, playing: Bool, moves: Bool, paint: NotchDancePaint,
+                   floor: NotchDanceLayout) {
+        let fresh = routine != self.routine || floor != self.floor
         self.playing = playing
         self.moves = moves
-        self.height = height
+        self.floor = floor
         if fresh {
             // A new dance opens on its loop's first count, even when one
             // song runs straight into the next without a pause.
@@ -148,9 +151,9 @@ final class NotchDancersView: NSView {
             // A new song's dance mid-song starts in its groove; the next
             // beat moves it on. Seen, another dance cross-fades in over the last.
             let poses = isDancing && moves ? routine.dancers.indices.map(routine.groove) : standingPoses(routine)
-            stage.configure(routine: routine, floorHeight: height, poses: poses, contentsScale: backingScale,
+            stage.configure(routine: routine, floor: floor, poses: poses, contentsScale: backingScale,
                             fades: window != nil)
-            stage.layer.frame = CGRect(x: 0, y: 0, width: NotchDanceFloor.width, height: height)
+            stage.layer.frame = CGRect(x: 0, y: 0, width: floor.width, height: floor.height)
         }
         stage.wear(paint, animated: window != nil)
         sync()
@@ -248,7 +251,7 @@ final class NotchDancersView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        stage.layer.frame = CGRect(x: 0, y: 0, width: NotchDanceFloor.width, height: height)
+        stage.layer.frame = CGRect(x: 0, y: 0, width: floor?.width ?? 0, height: floor?.height ?? 0)
         CATransaction.commit()
     }
 

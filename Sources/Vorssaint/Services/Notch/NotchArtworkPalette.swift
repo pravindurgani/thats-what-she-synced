@@ -5,8 +5,8 @@ import AppKit
 
 /// Up to three vivid colours read from a cover, in order of how much of the
 /// cover they hold, each toned for one job on the island's dark surface.
-/// A cover with no colour of its own (black and white, greys) has no palette,
-/// so the island keeps its neutral look for it.
+/// A cover with no colour of its own (black and white, greys) has no palette
+/// of its own; the song then wears the companion's (NotchColourlessSong).
 struct NotchArtworkPalette: Equatable {
     /// The cover's colours at full voice: vivid, never washed out.
     let pure: [NSColor]
@@ -69,18 +69,21 @@ struct NotchArtworkPalette: Equatable {
         init(_ palette: NotchArtworkPalette?) { self.palette = palette }
     }
 
-    /// The palette of `image`, read once per image and remembered.
     /// The palette a playing song wears: its cover's, or, for a player that
-    /// publishes no cover at all (Firefox, many podcast and web players), one
-    /// grown from the companion's colour, so the island still wears the song.
-    /// A cover with no colour of its own, black and white, stays neutral.
+    /// publishes no cover at all (Firefox, many podcast and web players), the
+    /// companion's: the cast member's own colours, or one grown from the
+    /// companion's colour, so the island still wears the song. A cover with
+    /// no colour of its own, black and white, wears the companion's colours
+    /// too, so it glows rather than going black (NotchColourlessSong).
     /// `remembers` is false for a snapshot that may be a departing song's,
-    /// as the closed strip's, so only the live cover is held.
-    static func song(_ artwork: NSImage?, remembers: Bool = true) -> NotchArtworkPalette? {
+    /// as the closed strip's, so only the live cover is held. `song` is the
+    /// track the cover belongs to, the playing one when not given.
+    static func song(_ artwork: NSImage?, remembers: Bool = true,
+                     song track: RadialNowPlayingSnapshot? = nil) -> NotchArtworkPalette? {
         if let artwork {
             let palette = of(artwork)
             if remembers { lastCover = palette.map { ($0, Date()) } }
-            return worn(palette)
+            return worn(palette ?? colourless(track ?? NotchMusicService.shared.playback?.track))
         }
         // A cover that arrives late (a looked-up one, say) keeps the last
         // song's colours a moment, rather than passing through the companion's.
@@ -99,8 +102,33 @@ struct NotchArtworkPalette: Equatable {
                 return worn(held.palette)
             }
         }
-        return worn(coverless())
+        return worn(castMember().map { cast(NotchColourlessSong.seeds(cast: $0, song: nil)) } ?? coverless())
     }
+
+    /// A cover with no colour of its own: the cast member's colours, or the
+    /// Office palette the song is dealt. Main thread only.
+    static func colourless(_ track: RadialNowPlayingSnapshot?) -> NotchArtworkPalette {
+        let key = track.flatMap { NotchMascotShuffle.songKey(title: $0.title, artist: $0.artist) }
+        return cast(NotchColourlessSong.seeds(cast: castMember(), song: key))
+    }
+
+    /// The member of the cast the island draws, while the companion is on.
+    private static func castMember() -> NotchMascotStyle? {
+        guard NotchMascotSupport.isEnabled() else { return nil }
+        let drawn = NotchMascotSupport.islandLook().dealing(NotchMascotShuffleService.shared.member).style
+        return drawn.isCast ? drawn : nil
+    }
+
+    /// A palette toned from `seeds`, made once per set of colours.
+    private static func cast(_ seeds: [NotchRGB]) -> NotchArtworkPalette {
+        if let made = seeded[seeds] { return made }
+        if seeded.count > 16 { seeded.removeAll() }
+        let made = NotchArtworkPalette(pure: seeds.map(\.nsColor))
+        seeded[seeds] = made
+        return made
+    }
+
+    private static var seeded: [[NotchRGB]: NotchArtworkPalette] = [:]
 
     /// A palette in the look the person chose (see NotchSongLook).
     static func worn(_ palette: NotchArtworkPalette?) -> NotchArtworkPalette? {
