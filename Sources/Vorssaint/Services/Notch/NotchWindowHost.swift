@@ -304,6 +304,17 @@ final class NotchWindowHost: NSObject, CAAnimationDelegate {
         if canvas.backdropPresentation.stripHeight != geometry.stripHeight {
             canvas.backdropPresentation.stripHeight = geometry.stripHeight
         }
+        if changesFrame {
+            // Planned before anything is laid out: SwiftUI can draw the
+            // backdrop for what changed while the window takes its new frame,
+            // and a glow coming or going then already follows this resize.
+            if canAnimate {
+                let drawn = revealing ? CGSize(width: geometry.collapsed.width, height: 0) : canvas.visibleSize ?? targetSize
+                canvas.backdropPresentation.planGlow(from: drawn, to: size)
+            } else {
+                canvas.backdropPresentation.settleGlow(at: size)
+            }
+        }
         if canAnimate && changesFrame && (usesGlass || canvas.usesGlass) {
             // Glass closing into a black strip shuts as its page leaves, so the
             // empty shell never shows the windows beneath it; opening out of one
@@ -790,6 +801,8 @@ final class NotchWindowHost: NSObject, CAAnimationDelegate {
     var contentProbeGrowing: Bool { canvas.contentProbeGrowing }
     var contentProbeGrowthDrift: CGFloat { canvas.contentProbeGrowthDrift }
     var backdropProbeFrame: CGRect { canvas.backdropProbeFrame }
+    /// The island as composited now, offscreen (see NotchBackdropFramesProbe).
+    func probeIslandImage() -> CGImage? { canvas.probeIslandImage() }
     var backdropProbeIndependent: Bool { canvas.backdropProbeIndependent }
     var backdropProbeFollowsSilhouette: Bool { canvas.backdropProbeFollowsSilhouette }
     var silhouetteProbePath: CGPath? { canvas.visiblePath }
@@ -1370,6 +1383,40 @@ private final class NotchCanvas: NSView {
     var backdropProbeIndependent: Bool {
         host.layer?.mask === contentVisibility && backdrop.layer?.mask == nil
             && (backdrop.layer?.presentation()?.opacity ?? backdrop.layer?.opacity) == 1
+    }
+
+    /// The island as the window server would composite it now: the canvas's
+    /// black, the backdrop and the content at their on-screen opacity, cut to
+    /// the silhouette on screen. Drawn offscreen, for the frame-by-frame probe.
+    func probeIslandImage() -> CGImage? {
+        // The backdrop drawn for the outline on screen now, as the display
+        // link has it drawn on device, however long the last frame took here.
+        synchronizeBackdrop()
+        backdrop.layoutSubtreeIfNeeded()
+        guard let path = visiblePath, bounds.width >= 1, bounds.height >= 1,
+              let context = CGContext(data: nil, width: Int(bounds.width), height: Int(bounds.height),
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        // The canvas runs top down; the bitmap bottom up.
+        var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: bounds.height)
+        guard let clip = path.copy(using: &flip) else { return nil }
+        let full = CGRect(origin: .zero, size: bounds.size)
+        context.addPath(clip)
+        context.clip()
+        context.setFillColor(layer?.backgroundColor ?? NSColor.black.cgColor)
+        context.fill(full)
+        func draw(_ view: NSView, alpha: CGFloat) {
+            let rect = view.convert(bounds, from: self)
+            guard alpha > 0, let bitmap = view.bitmapImageRepForCachingDisplay(in: rect) else { return }
+            view.cacheDisplay(in: rect, to: bitmap)
+            guard let image = bitmap.cgImage else { return }
+            context.setAlpha(alpha)
+            context.draw(image, in: full)
+        }
+        draw(backdrop, alpha: CGFloat((backdrop.layer?.presentation() ?? backdrop.layer)?.opacity ?? 1))
+        draw(host, alpha: CGFloat(contentProbeOpacity))
+        return context.makeImage()
     }
 #endif
 

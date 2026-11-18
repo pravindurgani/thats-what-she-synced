@@ -6,11 +6,17 @@ import Combine
 import SwiftUI
 
 /// The island's backdrop while it wears the song (see NotchSongMode): the
-/// song's own colours, sized to the island's box and cut to its live outline,
-/// so it opens and closes with the island. It sits beside the glass in the main
-/// island's window background, under the page; mirror windows never draw it.
+/// song's own colours, laid out to the island's box and cut to its live
+/// outline by the island's own silhouette, so it opens and closes with the
+/// island. It sits beside the glass in the main island's window background,
+/// under the page; mirror windows never draw it.
+///
+/// It decides what to draw and hands that to a NotchGlowStage, which alone
+/// follows the island frame by frame: a song's state is read only when it
+/// changes, never on every frame of a resize.
 struct NotchMusicBackdrop: View {
-    @ObservedObject var presentation: NotchBackdropPresentation
+    /// Passed on, not observed: the stage follows the outline.
+    let presentation: NotchBackdropPresentation
     @ObservedObject private var notch = NotchService.shared
     @ObservedObject private var music = NotchMusicService.shared
     /// A black-and-white song's colours follow the companion it borrows them
@@ -18,78 +24,46 @@ struct NotchMusicBackdrop: View {
     @ObservedObject private var colourless = NotchColourlessCompanion.shared
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var mood: NotchMusicMood = .neutral
-    /// The last cover's palette, held while the colour fades out after the
-    /// song, or its cover, goes away, so it leaves with a fade, not a cut.
-    @State private var heldPalette: NotchArtworkPalette?
 
-    /// One aurora for every place the island wears the song. It stays while a
-    /// song is loaded and fades in and out as the island moves between them,
-    /// so no page change, opening or closing cuts it; hidden, it does nothing.
+    /// One aurora for every place the island wears the song. It fades in and
+    /// out as the island moves between them, with the island's own resize, so
+    /// no page change, opening or closing cuts it; gone, it is not drawn at all.
     var body: some View {
-        let box = presentation.contour.boundingRect.integral
         let live = music.playback == nil ? nil : NotchArtworkPalette.song(music.artwork)
         let page = live != nil && NotchSongMode.wearsSong(notch, music)
         let announcing = live != nil && !page && NotchSongMode.announcesSong(notch)
         let glowing = live != nil && !page && !announcing && NotchSongMode.glowsClosed(notch, music)
         let strip = announcing || glowing
-        Group {
-            if !box.isNull, box.width > 0, box.height > 0, let palette = live ?? heldPalette {
-                aurora(palette: palette, box: box, page: page, strip: strip, glowing: glowing)
-            }
-        }
-        // Text and the companion take the same colours while it is worn.
-        .onChange(of: page || strip ? live : nil, initial: true) { _, worn in NotchSongPaint.shared.wear(worn) }
-        .onChange(of: live, initial: true) { _, palette in if let palette { heldPalette = palette } }
-        .task(id: live == nil) {
-            // Gone for good: the fade has run, so the held colours can go too.
-            guard live == nil, heldPalette != nil else { return }
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            if !Task.isCancelled { heldPalette = nil }
-        }
-        .onDisappear { NotchSongPaint.shared.wear(nil) }
-    }
-
-    @ViewBuilder private func aurora(palette: NotchArtworkPalette, box: CGRect, page: Bool, strip: Bool,
-                                     glowing: Bool) -> some View {
         let track = music.playback?.track
         let genreKey = (page || strip) && track != nil
             ? [track?.title, track?.artist, track?.album, track?.appBundleIdentifier]
                 .map { $0 ?? "" }.joined(separator: "\u{1F}") : ""
-        NotchMusicAurora(palette: palette, isPlaying: music.playback?.isPlaying == true, mood: mood,
-                             veil: NotchSongMode.veil(page: page, notch: notch, increasedContrast: contrast == .increased),
-                             // Always in view, the closed island glows and swells
-                             // with the beat but never flares.
-                             quiet: glowing,
-                             shown: page || strip)
-                // Black only around the camera, fading out sideways and down,
-                // so the notch melts into the island and the colour reaches
-                // all the way into its top corners. The strip is the camera's
-                // own row, so it keeps its colour; no notch, no ink.
-                .overlay(alignment: .top) {
-                    if notch.geometry.isNotched {
-                        NotchCameraInk(camera: CGSize(width: notch.geometry.cameraWidth,
-                                                      height: notch.geometry.cameraHeight))
-                            .animation(NotchSongMotion.fade) { $0.opacity(strip ? 0 : 1) }
-                    }
-                }
-                .frame(width: box.width, height: box.height)
-                .mask(NotchBackdropShape(contour: presentation.contour.offsetBy(dx: -box.minX, dy: -box.minY)))
-                .padding(EdgeInsets(top: box.minY, leading: box.minX, bottom: 0, trailing: 0))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                // Only the showing and hiding ease; the shape follows the island
-                // frame by frame. Its own ground keeps it whole over glass, so it
-                // needs no part of the glass's fade.
-                .animation(NotchSongMotion.fade) { $0.opacity(page || strip ? 1 : 0) }
-                // The genre is read only for a song the island shows.
-                .task(id: genreKey) {
-                    guard !genreKey.isEmpty, let track else { return }
-                    let next = await NotchMusicGenre.mood(for: track)
-                    // A reply that arrives after the song changed belongs to the old song.
-                    guard !Task.isCancelled else { return }
-                    mood = next
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+        NotchGlowStage(presentation: presentation, art: (page || strip ? live : nil).map { palette in
+            .aurora(NotchAuroraArt(
+                palette: palette, isPlaying: music.playback?.isPlaying == true, mood: mood,
+                veil: NotchSongMode.veil(page: page, notch: notch, increasedContrast: contrast == .increased),
+                // Always in view, the closed island glows and swells with
+                // the beat but never flares.
+                quiet: glowing,
+                // Black only around the camera, fading out sideways and
+                // down, so the notch melts into the island and the colour
+                // reaches all the way into its top corners. The strip is the
+                // camera's own row, so it keeps its colour; no notch, no ink.
+                camera: notch.geometry.isNotched
+                    ? CGSize(width: notch.geometry.cameraWidth, height: notch.geometry.cameraHeight) : nil,
+                inkShown: !strip))
+        })
+        // Text and the companion take the same colours while it is worn.
+        .onChange(of: page || strip ? live : nil, initial: true) { _, worn in NotchSongPaint.shared.wear(worn) }
+        // The genre is read only for a song the island shows.
+        .task(id: genreKey) {
+            guard !genreKey.isEmpty, let track else { return }
+            let next = await NotchMusicGenre.mood(for: track)
+            // A reply that arrives after the song changed belongs to the old song.
+            guard !Task.isCancelled else { return }
+            mood = next
+        }
+        .onDisappear { NotchSongPaint.shared.wear(nil) }
     }
 }
 
@@ -131,29 +105,55 @@ private extension NotchMascotColor {
 
 /// A soft pool of black around the camera: solid behind the housing, then
 /// fading out sideways and downward, so the island's colour wraps around the
-/// notch instead of stopping at a flat black band.
-struct NotchCameraInk: View {
-    let camera: CGSize
+/// notch instead of stopping at a flat black band. Drawn once per camera into
+/// an image the aurora's own layer shows, rather than as a gradient masked by
+/// another, which cost an offscreen pass on every frame.
+enum NotchCameraInk {
     /// How far the black fades out beyond the camera, sideways and down.
     private static let reach: CGFloat = 84
     private static let depth: CGFloat = 38
     /// Smoothstep from solid to clear, so the pool's edge has no line or corner.
-    private static let falloff: [(at: CGFloat, ink: Double)] = [(0, 1), (0.25, 0.84), (0.5, 0.5), (0.75, 0.16), (1, 0)]
+    private static let falloff: [(at: CGFloat, ink: CGFloat)] = [(0, 1), (0.25, 0.84), (0.5, 0.5), (0.75, 0.16), (1, 0)]
+    /// Main thread only.
+    private static var drawn: [String: CGImage] = [:]
 
-    var body: some View {
-        let width = camera.width + Self.reach * 2
-        let height = camera.height + Self.depth
-        let solid = camera.height / height
-        let side = Self.reach / width
-        LinearGradient(stops: Self.falloff.map {
-                           .init(color: .black.opacity($0.ink), location: solid + (1 - solid) * $0.at)
-                       },
-                       startPoint: .top, endPoint: .bottom)
-            .frame(width: width, height: height)
-            .mask(LinearGradient(stops: Self.falloff.reversed().map { .init(color: .black.opacity($0.ink), location: side * (1 - $0.at)) }
-                                    + Self.falloff.map { .init(color: .black.opacity($0.ink), location: 1 - side * (1 - $0.at)) },
-                                 startPoint: .leading, endPoint: .trailing))
-            .allowsHitTesting(false)
+    static func size(camera: CGSize) -> CGSize {
+        CGSize(width: camera.width + reach * 2, height: camera.height + depth)
+    }
+
+    /// The pool for a camera, at a display's scale. Main thread only.
+    static func image(camera: CGSize, scale: CGFloat) -> CGImage? {
+        let key = "\(camera.width)x\(camera.height)@\(scale)"
+        if let image = drawn[key] { return image }
+        let size = size(camera: camera)
+        let width = Int((size.width * scale).rounded(.up)), height = Int((size.height * scale).rounded(.up))
+        guard width > 0, height > 0, let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let across = CGContext(data: nil, width: width, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                                     space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        // Sideways: clear at the ends, solid across the camera.
+        let side = reach / size.width
+        let sideways = falloff.reversed().map { (location: side * (1 - $0.at), ink: $0.ink) }
+            + falloff.map { (location: 1 - side * (1 - $0.at), ink: $0.ink) }
+        guard let grey = CGGradient(colorSpace: CGColorSpaceCreateDeviceGray(),
+                                    colorComponents: sideways.flatMap { [$0.ink, 1] },
+                                    locations: sideways.map(\.location), count: sideways.count) else { return nil }
+        across.drawLinearGradient(grey, start: .zero, end: CGPoint(x: width, y: 0), options: [])
+        guard let mask = across.makeImage() else { return nil }
+        context.clip(to: CGRect(x: 0, y: 0, width: width, height: height), mask: mask)
+        // Downward: solid over the housing, then fading out below it.
+        let solid = camera.height / size.height
+        let down = falloff.map { (location: solid + (1 - solid) * $0.at, ink: $0.ink) }
+        guard let black = CGGradient(colorSpace: sRGB, colorComponents: down.flatMap { [0, 0, 0, $0.ink] },
+                                     locations: down.map(\.location), count: down.count) else { return nil }
+        // The bitmap runs bottom up: the camera is its last row.
+        context.drawLinearGradient(black, start: CGPoint(x: 0, y: height), end: .zero,
+                                   options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        let image = context.makeImage()
+        drawn[key] = image
+        return image
     }
 }
 
@@ -240,12 +240,21 @@ struct NotchMusicAurora: View {
     /// Settled, as Reduce Motion leaves it: no drift and no listening. The
     /// companion's colours behind the open pages, which have no song to follow.
     var still = false
+    /// The camera's size, for the black pool around it (NotchCameraInk), or
+    /// nil with no camera; and whether the pool shows (not in the strip,
+    /// which is the camera's own row).
+    var camera: CGSize? = nil
+    var inkShown = true
+    /// How strongly it shows (NotchGlowPresence), and whether to ease there.
+    var presence: Double = 1
+    var fades = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NotchMusicAuroraBridge(colors: palette.glow, energy: palette.energy, playing: isPlaying,
                                moves: !reduceMotion && !still,
-                               mood: mood, veil: veil, quiet: quiet, shown: shown)
+                               mood: mood, veil: veil, quiet: quiet, shown: shown, camera: camera, inkShown: inkShown,
+                               presence: presence, fades: fades)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -260,12 +269,16 @@ private struct NotchMusicAuroraBridge: NSViewRepresentable {
     let veil: NotchAuroraVeil
     let quiet: Bool
     let shown: Bool
+    let camera: CGSize?
+    let inkShown: Bool
+    let presence: Double
+    let fades: Bool
 
     func makeNSView(context: Context) -> NotchMusicAuroraView { NotchMusicAuroraView() }
 
     func updateNSView(_ view: NotchMusicAuroraView, context: Context) {
         view.apply(colors: colors, energy: energy, playing: playing, moves: moves, mood: mood, veil: veil, quiet: quiet,
-                   shown: shown)
+                   shown: shown, camera: camera, inkShown: inkShown, presence: presence, fades: fades)
     }
 
     static func dismantleNSView(_ view: NotchMusicAuroraView, coordinator: ()) { view.teardown() }
@@ -303,6 +316,11 @@ final class NotchMusicAuroraView: NSView {
     private var blobs: [CAGradientLayer] = []
     private var bursts: [CAGradientLayer] = []
     private let scrim = CAGradientLayer()
+    /// The black pool around the camera, over everything, drawn once.
+    private let ink = CALayer()
+    private var camera: CGSize?
+    private var inkShown = true
+    private let presence = NotchGlowPresenceLayer()
 
     private var colors: [NSColor] = []
     private var playing = false
@@ -382,6 +400,8 @@ final class NotchMusicAuroraView: NSView {
         scrim.endPoint = CGPoint(x: 0.5, y: 0)
         scrim.locations = [0, 0.55, 1]
         canvas.addSublayer(scrim)
+        ink.isHidden = true
+        canvas.addSublayer(ink)
         paintVeil()
     }
 
@@ -406,8 +426,27 @@ final class NotchMusicAuroraView: NSView {
 
     func apply(colors newColors: [NSColor], energy newEnergy: Double, playing newPlaying: Bool, moves newMoves: Bool,
                mood newMood: NotchMusicMood, veil newVeil: NotchAuroraVeil, quiet newQuiet: Bool,
-               shown newShown: Bool) {
+               shown newShown: Bool, camera newCamera: CGSize? = nil, inkShown newInkShown: Bool = true,
+               presence strength: Double = 1, fades: Bool = false) {
         quiet = newQuiet
+        if newCamera != camera {
+            camera = newCamera
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            let scale = window?.backingScaleFactor ?? 2
+            let image: CGImage? = newCamera.flatMap { NotchCameraInk.image(camera: $0, scale: scale) }
+            ink.contents = image
+            ink.contentsScale = scale
+            ink.isHidden = newCamera == nil
+            CATransaction.commit()
+            needsLayout = true
+        }
+        if newInkShown != inkShown {
+            inkShown = newInkShown
+            // On the song's fade, as the strip takes the camera's row.
+            presence.apply(newInkShown ? 1 : 0, fades: entered, to: ink)
+        }
+        presence.apply(strength, fades: fades, to: canvas)
         if abs(newEnergy - coverEnergy) > 0.01 {
             coverEnergy = newEnergy
             retime(towards: targetRate(), immediately: true)
@@ -538,7 +577,6 @@ final class NotchMusicAuroraView: NSView {
         // whole, so the island never turns see-through over glass.
         let target: Float = (playing ? 1 : Self.pausedOpacity) * veil.strength
         fadeOpacity(of: stage, to: target, duration: entered ? Self.pauseChange : Self.entrance)
-        if !entered { fadeOpacity(of: canvas, to: 1, duration: Self.entrance) }
         entered = true
         syncClock()
     }
@@ -843,6 +881,12 @@ final class NotchMusicAuroraView: NSView {
         clock.position = CGPoint(x: size.width / 2, y: size.height / 2)
         clock.transform = CATransform3DMakeScale(max(size.width, 1) / unit, max(size.height, 1) / unit, 1)
         scrim.frame = canvas.bounds
+        if let camera {
+            // Centred at the top, where SwiftUI hung it over the colour.
+            let inkSize = NotchCameraInk.size(camera: camera)
+            ink.frame = CGRect(x: (size.width - inkSize.width) / 2, y: size.height - inkSize.height,
+                               width: inkSize.width, height: inkSize.height)
+        }
         // The light's resting height follows the island's height as it resizes.
         lift.transform = CATransform3DMakeTranslation(0, riseHeight(beat: bounce), 0)
         CATransaction.commit()
@@ -875,6 +919,17 @@ final class NotchMusicAuroraView: NSView {
             forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
         ) { [weak self] _ in self?.syncClock() }
         scheduleMotion()
+    }
+
+    /// The camera's pool is an image, drawn for the display's scale.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        guard let camera, let scale = window?.backingScaleFactor, ink.contentsScale != scale else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ink.contents = NotchCameraInk.image(camera: camera, scale: scale)
+        ink.contentsScale = scale
+        CATransaction.commit()
     }
 }
 

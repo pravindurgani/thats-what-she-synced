@@ -515,6 +515,31 @@ final class NotchBackdropPresentation: ObservableObject {
     /// opening never settles over a black that then vanishes at once.
     var restingBlack: Double { 1 - openness }
 
+    /// The resize the glows fade along (NotchGlowPresence). Planned once per
+    /// resize, before its first frame, and read with the contour, which
+    /// already redraws the backdrop on every frame: it publishes nothing.
+    private(set) var glowPlan = NotchGlowPlan()
+
+    /// The island moves from `start` to `end`, from what is on screen now.
+    func planGlow(from start: CGSize, to end: CGSize) {
+        glowPlan = NotchGlowPlan(id: glowPlan.id &+ 1, start: start, end: end)
+    }
+
+    /// The island changed size at once, or moved nowhere: anything changing
+    /// with it fades in place.
+    func settleGlow(at size: CGSize) {
+        glowPlan = NotchGlowPlan(id: glowPlan.id &+ 1, start: size, end: size)
+    }
+
+    /// How far the drawn outline has come along the planned resize.
+    var glowProgress: Double {
+        let box = contour.boundingRect
+        guard !box.isNull, box.width > 0 else { return glowPlan.progress(at: .zero) }
+        let surface = floatingGap > 0 ? NotchLayout.capsuleSurface(ofBody: box, gap: floatingGap)
+            : CGSize(width: box.width, height: box.maxY)
+        return glowPlan.progress(at: surface)
+    }
+
     /// Plans a resize from `start` to `end` from what is on screen now.
     func planFade(from start: CGFloat, to end: CGFloat, endsInGlass: Bool) {
         setFade(.plan(from: start, to: end, endsInGlass: endsInGlass,
@@ -539,7 +564,9 @@ struct NotchBackdropShape: Shape {
 }
 
 struct NotchWindowBackground: View {
-    @ObservedObject var presentation: NotchBackdropPresentation
+    /// Passed on, not observed: each layer that follows the outline observes
+    /// it itself, so a resize's frames redraw only those.
+    let presentation: NotchBackdropPresentation
     /// The main island's window draws the music page's colours, and the
     /// agents' and the companion's glows; mirror windows on other displays
     /// leave them out.
