@@ -3,6 +3,7 @@
 
 import CoreGraphics
 import Foundation
+import QuartzCore
 
 /// The companion's model: its preferences, faces, outlines and strolls, and
 /// the drop that carries the Command Bar out of the island.
@@ -30,6 +31,7 @@ enum NotchMascotTests {
         calendarContracts(suite)
         centeringContracts(suite)
         castContracts(suite)
+        castStillContracts(suite)
         shuffleContracts(suite)
         settleContracts(suite)
     }
@@ -71,6 +73,50 @@ enum NotchMascotTests {
 
     /// The cast: five members that each keep two eyes on their own face,
     /// fit their square, and wear a song only where it keeps them accurate.
+    /// While a member idles, its still figure is drawn once and moved as a
+    /// bitmap by the render server, at twice the display's scale; the parts
+    /// that move on their own are kept out of it, behind or in front as
+    /// they were drawn, and a beat that moves a part inside it (Goldenface's
+    /// glint, the Mug's coffee) draws it live again.
+    private static func castStillContracts(_ suite: TestSuite) {
+        for member in NotchMascotStyle.cast {
+            let parts = NotchMascotCastParts()
+            parts.configure(look: NotchMascotLook(style: member, shape: .ball, palette: .pearl), size: 20,
+                            contentsScale: 2)
+            let resting = parts.drawsStill
+            parts.setIdling(true)
+            let idling = parts.drawsStill && parts.drawing.rasterizationScale == 4
+            if [.scarn, .goldenface, .jello].contains(member), !ProcessInfo.processInfo.isLowPowerModeEnabled {
+                let rate = parts.idleStage.animation(forKey: "castIdle")?.preferredFrameRateRange.maximum ?? 0
+                suite.expect(rate > 0 && rate <= 60, "\(member.rawValue)'s idle loop never asks for 120 frames a second")
+            }
+            parts.beat(strength: 1, side: 1)
+            let movesInside = member == .goldenface || member == .mug
+            let afterBeat = parts.drawsStill
+            parts.setIdling(false)
+            suite.expect(!resting && idling && afterBeat == !movesInside && !parts.drawsStill,
+                         "\(member.rawValue) is drawn still only while it idles, and live after a beat inside it")
+        }
+        func drawn(_ member: NotchMascotStyle) -> NotchMascotCastParts {
+            let parts = NotchMascotCastParts()
+            parts.configure(look: NotchMascotLook(style: member, shape: .ball, palette: .pearl), size: 20,
+                            contentsScale: 2)
+            return parts
+        }
+        let scarn = drawn(.scarn), beet = drawn(.beet), mug = drawn(.mug), jello = drawn(.jello)
+        suite.expect(scarn.underlay.sublayers?.count == 2 && beet.underlay.sublayers?.count == 1
+                     && (mug.overlay.sublayers?.count ?? 0) >= 2
+                     && [scarn.overlay, beet.overlay, mug.underlay, jello.underlay, jello.overlay]
+                         .allSatisfy { ($0.sublayers ?? []).isEmpty }
+                     && [scarn, beet, mug, jello].allSatisfy { !($0.drawing.sublayers ?? []).isEmpty },
+                     "Scarn's arms and the Beet's tops move behind the still figure, the Mug's steam and notes in front")
+        let minimal = NotchMascotCastParts()
+        minimal.configure(look: .standard, size: 20, contentsScale: 2)
+        minimal.setIdling(true)
+        suite.expect(!minimal.drawsStill && (minimal.drawing.sublayers ?? []).isEmpty,
+                     "the minimal body draws nothing of the cast's, still or live")
+    }
+
     private static func castContracts(_ suite: TestSuite) {
         suite.expect(NotchMascotStyle.cast == [.scarn, .goldenface, .jello, .mug, .beet]
                      && NotchMascotStyle.cast.allSatisfy(\.isCast)
