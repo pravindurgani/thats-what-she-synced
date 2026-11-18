@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vorssaint
 
 import AppKit
+import Combine
 
 /// Up to three vivid colours read from a cover, in order of how much of the
 /// cover they hold, each toned for one job on the island's dark surface.
@@ -82,11 +83,16 @@ struct NotchArtworkPalette: Equatable {
                      song track: RadialNowPlayingSnapshot? = nil) -> NotchArtworkPalette? {
         if let artwork {
             let palette = of(artwork)
-            if remembers { lastCover = palette.map { ($0, Date()) } }
-            return worn(palette ?? colourless(track ?? NotchMusicService.shared.playback?.track))
+            let song = track ?? NotchMusicService.shared.playback?.track
+            // A black-and-white cover is held too, as the song it belongs
+            // to, so its colours are dealt again as the companion changes.
+            if remembers { lastCover = (palette, song, Date()) }
+            return worn(palette ?? colourless(song))
         }
         // A cover that arrives late (a looked-up one, say) keeps the last
-        // song's colours a moment, rather than passing through the companion's.
+        // song's colours a moment, rather than passing through the
+        // companion's: a black-and-white song's included, so a late cover
+        // after one goes straight from its colours to the next song's.
         if let held = lastCover {
             let left = coverGrace - Date().timeIntervalSince(held.seen)
             if left > 0 {
@@ -99,7 +105,7 @@ struct NotchArtworkPalette: Equatable {
                     graceWake = wake
                     DispatchQueue.main.asyncAfter(deadline: .now() + left, execute: wake)
                 }
-                return worn(held.palette)
+                return worn(held.palette ?? colourless(held.song))
             }
         }
         return worn(castMember().map { cast(NotchColourlessSong.seeds(cast: $0, song: nil)) } ?? coverless())
@@ -113,7 +119,8 @@ struct NotchArtworkPalette: Equatable {
     }
 
     /// The member of the cast the island draws, while the companion is on.
-    private static func castMember() -> NotchMascotStyle? {
+    /// The views that wear a song observe it through NotchColourlessCompanion.
+    static func castMember() -> NotchMascotStyle? {
         guard NotchMascotSupport.isEnabled() else { return nil }
         let drawn = NotchMascotSupport.islandLook().dealing(NotchMascotShuffleService.shared.member).style
         return drawn.isCast ? drawn : nil
@@ -156,7 +163,8 @@ struct NotchArtworkPalette: Equatable {
 
     /// How long a missing cover keeps the last one's colours.
     static let coverGrace: TimeInterval = 3
-    private static var lastCover: (palette: NotchArtworkPalette, seen: Date)?
+    /// The last cover read: its palette, nil for a black-and-white one, and its song.
+    private static var lastCover: (palette: NotchArtworkPalette?, song: RadialNowPlayingSnapshot?, seen: Date)?
     private static var graceWake: DispatchWorkItem?
 
     private static var coverlessPalette: (base: NotchMascotPalette, palette: NotchArtworkPalette)?
@@ -276,6 +284,57 @@ struct NotchArtworkPalette: Equatable {
             if hue < 0 { hue += 1 }
         }
         return (hue, maxC == 0 ? 0 : delta / maxC, maxC)
+    }
+}
+
+/// The companion a song with no colour of its own wears: the member of the
+/// cast the island draws (nil with the companion off or not of the cast),
+/// and the companion's colour, which a song with no cover at all grows its
+/// colours from (NotchArtworkPalette.coverless). The views that wear the
+/// song's palette observe it, so a shuffle dealing another member, or the
+/// companion switched on, off or to another look, recolours a black-and-white
+/// song as it happens, cross-fading as a new cover does, rather than at the
+/// next unrelated update. A deal can land while the island draws, so a
+/// change is read and published on a later turn of the main queue, never
+/// from inside a view update. Main thread only.
+final class NotchColourlessCompanion: ObservableObject {
+    struct Lender: Equatable {
+        let member: NotchMascotStyle?
+        let palette: NotchMascotPalette
+    }
+
+    static let shared = NotchColourlessCompanion()
+    @Published private(set) var lender: Lender
+    private var subscriptions: Set<AnyCancellable> = []
+    private var readPending = false
+
+    private init() {
+        lender = Self.read()
+        NotchMascotShuffleService.shared.$member
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.readAgain() }
+            .store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.readAgain() }
+            .store(in: &subscriptions)
+    }
+
+    private static func read() -> Lender {
+        Lender(member: NotchArtworkPalette.castMember(), palette: NotchMascotSupport.look().palette)
+    }
+
+    /// Once for a burst of changes, on the next turn of the main queue.
+    private func readAgain() {
+        guard !readPending else { return }
+        readPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.readPending = false
+            let next = Self.read()
+            if next != self.lender { self.lender = next }
+        }
     }
 }
 

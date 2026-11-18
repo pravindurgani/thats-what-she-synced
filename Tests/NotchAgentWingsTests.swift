@@ -59,8 +59,9 @@ enum NotchAgentWingsTests {
                             && stops[1].luminance < stops[2].luminance,
                          "\(provider.rawValue)'s gradient grows from its own colour toward a highlight")
         }
-        // The closed strip's veil is lightest, 0.12, in its middle, where the readings sit.
-        let lightestVeil = 0.12
+        // The agents' wings lie under the wing glow's veil (`open`, not the
+        // music strip's), lightest in its middle, where the readings sit.
+        let lightestVeil = Double(NotchAuroraVeil.open.stops.min() ?? 0)
         let worstGlow = NotchRGB(red: 0.18, green: 0.18, blue: 0.18).toned(maxLuminance: 0.18, minLuminance: 0.18)
         for provider in AgentProvider.allCases {
             let reading = provider.readingColor

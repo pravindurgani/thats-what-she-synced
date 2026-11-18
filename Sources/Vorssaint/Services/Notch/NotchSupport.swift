@@ -794,10 +794,14 @@ enum NotchMusicStripLayout {
     /// The floor `routine` dances on in this strip: at full size where its
     /// wing allows, else as large as the wing holds up to the stepped-down
     /// size, and nil, for the bars, where even the smallest does not fit.
+    /// A floating capsule, its body 20 points tall, and any strip shorter
+    /// than NotchDanceFloor.shortestStrip keep the bars, as the figures and
+    /// their keyline would not stay clear of the edges.
     static func danceFloor(_ geometry: NotchGeometry, routine: NotchDanceRoutine) -> NotchDanceLayout? {
         let wing = geometry.compactActivityWingWidth
-        guard wing >= NotchDanceFloor.steppedWing - 0.5 else { return nil }
         let height = geometry.compactActivityContentHeight
+        guard !geometry.floats, height >= NotchDanceFloor.shortestStrip,
+              wing >= NotchDanceFloor.steppedWing - 0.5 else { return nil }
         let full = NotchDanceFloor.scale(height: height)
         let fullWing = routine.wing * full
         let cap = wing >= fullWing - 0.5 ? full : min(full, NotchDanceFloor.steppedScale)
