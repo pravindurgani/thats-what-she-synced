@@ -30,15 +30,11 @@ struct NotchOfficeEditionBubble: View {
 
     private var calm: Bool { reduceMotion || lowPower.isOn }
 
-    /// The Office's own colours, for a lit mug with no song and no companion.
-    private static let office = NotchArtworkPalette(pure: [NotchOfficeInk.jelly, NotchOfficeInk.mustard,
-                                                           NotchOfficeInk.beet].map { NSColor($0) })
-
-    /// The song's colours, else the companion's while it is out, else the Office's.
+    /// The song's colours, else the companion's while it is out, else the
+    /// Office's: the one resolver every moment's props and glow read
+    /// (NotchMomentPaint), with the song its neighbours wear.
     private var lit: NotchArtworkPalette {
-        if let song { return song }
-        if NotchMascotSupport.isEnabled() { return NotchIdlePalette.current() }
-        return Self.office
+        song ?? NotchMomentPaint.palette(NotchMascotSupport.isEnabled() ? .companion : .office)
     }
 
     var body: some View {
@@ -55,7 +51,7 @@ struct NotchOfficeEditionBubble: View {
                                      : .white.opacity(contrast == .increased ? 0.7 : 0.4))
                 // From the cup, left of the handle, up into the bubble, as
                 // white as the battery mug's steam.
-                NotchOfficeSteamPuff(trigger: brews > 0 ? "\(brews)" : nil, delay: 0.04)
+                NotchOfficeSteamPuff(trigger: brews > 0 ? "\(brews)" : nil, delay: NotchSongMotion.blink / 2)
                     .frame(width: 8, height: 7)
                     .offset(x: -1.5, y: -14)
             }
@@ -114,14 +110,12 @@ struct NotchOfficeEditionReading: View {
     }
 }
 
-/// The title and its lower third, as every edition notice writes them.
+/// The title and its lower third, as every moment writes them: the title
+/// out of its blur, the caption on the family's beat after it.
 private struct NotchOfficeEditionWords: View {
     let title: String
     let caption: String?
     let trigger: String?
-    /// The caption follows the title by about a third of a second.
-    static let titleDelay = 0.1
-    static let captionDelay = titleDelay + 0.32
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -130,15 +124,15 @@ private struct NotchOfficeEditionWords: View {
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .fixedSize()
-                .notchArrival(trigger, delay: Self.titleDelay)
+                .notchArrival(trigger)
             if let caption {
-                NotchLowerThird(caption: caption, trigger: trigger, delay: Self.captionDelay)
+                NotchLowerThird(caption: caption, trigger: trigger)
             }
         }
     }
 }
 
-/// The far side's state, On or Off, as a notice's reading.
+/// The far side's state, On or Off, as every moment's reading.
 struct NotchOfficeEditionStateText: View {
     let state: String
     let trigger: String?
@@ -146,10 +140,10 @@ struct NotchOfficeEditionStateText: View {
     var body: some View {
         Text(state)
             .font(Font(NotchOfficeMoments.editionStateFont as CTFont))
-            .foregroundStyle(.white.opacity(0.8))
+            .foregroundStyle(.white.opacity(NotchOfficeMoments.detailOpacity))
             .lineLimit(1)
             .fixedSize()
-            .notchPunchIn(trigger, delay: 0.05)
+            .notchArrival(trigger, delay: NotchOfficeMoments.readingBeat)
     }
 }
 
@@ -188,8 +182,21 @@ struct NotchOfficeCapsuleEditionMug: View {
     let trigger: String
 
     var body: some View {
+        NotchOfficeCapsuleMug(mug: NotchOfficeMug.edition(on, coffee: NotchOfficeInk.coffee(), trigger: trigger),
+                              geometry: geometry, trigger: trigger)
+    }
+}
+
+/// A mug, the edition's or a battery's, in a floating capsule's symbol slot,
+/// as every moment's prop takes it, no taller than the capsule's body.
+struct NotchOfficeCapsuleMug: View {
+    let mug: NotchOfficeMug
+    let geometry: NotchGeometry
+    let trigger: String
+
+    var body: some View {
         let scale = NotchOfficeMoments.capsuleMugScale(geometry)
-        NotchOfficeMug.edition(on, coffee: NotchOfficeInk.coffee(), trigger: trigger)
+        mug
             .scaleEffect(scale, anchor: .topLeading)
             .frame(width: (NotchOfficeMoments.mugSide * scale).rounded(.up),
                    height: NotchOfficeMoments.mugHeight * scale, alignment: .topLeading)

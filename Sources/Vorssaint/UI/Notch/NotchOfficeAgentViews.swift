@@ -35,7 +35,7 @@ struct NotchOfficeAgentBadge: View {
 
     /// The ring closing, as the wing's ring closes when a turn ends, on the
     /// settling curve the island's arrivals share.
-    static let close = Animation.timingCurve(0.16, 1, 0.3, 1, duration: NotchAgentWings.closing)
+    static let close = NotchSongMotion.settle(NotchAgentWings.closing)
 
     var body: some View {
         let ring = Moments.agentRing(beat, provider: provider).map { Color(nsColor: $0.nsColor) }
@@ -52,19 +52,20 @@ struct NotchOfficeAgentBadge: View {
                 .keyframeAnimator(initialValue: CGFloat(0), trigger: shakes) { content, sway in
                     content.offset(x: sway).rotationEffect(.degrees(Double(sway) * 3))
                 } keyframes: { _ in
-                    // One shake of the head, as the battery running out gives its mug.
+                    // One shake of the head, as the battery running out gives
+                    // its mug: each swing a blink, dying away.
                     KeyframeTrack {
-                        CubicKeyframe(-2.4, duration: 0.07)
-                        CubicKeyframe(2.2, duration: 0.09)
-                        CubicKeyframe(-1.5, duration: 0.09)
-                        CubicKeyframe(0.7, duration: 0.08)
-                        CubicKeyframe(0, duration: 0.07)
+                        CubicKeyframe(-2.4, duration: NotchSongMotion.blink)
+                        CubicKeyframe(2.2, duration: NotchSongMotion.blink)
+                        CubicKeyframe(-1.5, duration: NotchSongMotion.blink)
+                        CubicKeyframe(0.7, duration: NotchSongMotion.blink)
+                        CubicKeyframe(0, duration: NotchSongMotion.blink)
                     }
                 }
             if beat == .finished {
                 NotchOfficeTrophy()
                     .frame(width: Moments.trophySize.width, height: Moments.trophySize.height)
-                    .notchGlint(trigger, delay: NotchAgentWings.closing + 0.3)
+                    .notchGlint(trigger, delay: NotchAgentWings.closing + NotchSongMotion.fadeDuration)
                     .scaleEffect(awarded || calm ? 1 : 0.2, anchor: .bottom)
                     .rotationEffect(.degrees(awarded || calm ? 0 : -24), anchor: .bottom)
                     .opacity(awarded || calm ? 1 : 0)
@@ -95,7 +96,8 @@ struct NotchOfficeAgentBadge: View {
         reset.disablesAnimations = true
         withTransaction(reset) { closed = 0; bloom = false; awarded = false }
         guard !calm else { return }
-        try? await Task.sleep(nanoseconds: 60_000_000)
+        // A blink after the punch-in starts, the ring begins to close.
+        try? await Task.sleep(nanoseconds: UInt64(NotchSongMotion.blink * 1_000_000_000))
         guard !Task.isCancelled else { return }
         withAnimation(Self.close) { closed = 1 }
         withAnimation(NotchSongMotion.glow.delay(NotchAgentWings.closing * 0.8)) { bloom = true }
@@ -254,14 +256,14 @@ struct NotchOfficeAgentWords: View {
             if let caption {
                 NotchLowerThird(caption: caption,
                                 accent: beat == .budgetReached ? NotchOfficeInk.beet : NotchOfficeInk.mustard,
-                                trigger: trigger, delay: 0.32)
+                                trigger: trigger)
             }
         }
     }
 }
 
 /// The far side: the turn's time and cost, the share of the limit, or what
-/// the budget came to, as large as the title.
+/// the budget came to, as every moment's reading.
 struct NotchOfficeAgentReading: View {
     let detail: String
     let trigger: String
@@ -269,9 +271,9 @@ struct NotchOfficeAgentReading: View {
     var body: some View {
         Text(detail)
             .font(Font(NotchOfficeMoments.agentDetailFont as CTFont))
-            .foregroundStyle(.white.opacity(0.88))
+            .foregroundStyle(.white.opacity(NotchOfficeMoments.detailOpacity))
             .lineLimit(1)
-            .notchArrival(trigger, delay: 0.2)
+            .notchArrival(trigger, delay: NotchOfficeMoments.readingBeat)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }

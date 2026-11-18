@@ -22,16 +22,14 @@ enum NotchOfficeInk {
     /// Coffee with no song or companion to colour it.
     static let latte = Color(red: 0xC8 / 255, green: 0x91 / 255, blue: 0x5A / 255)
 
-    /// The moment's colours: the loaded song's, else the companion's, else
-    /// the Office's own jelly yellow and mustard, never fewer than two. The island
-    /// is never left grey for want of a song.
-    static func colors() -> [Color] {
-        guard let paint = NotchLevelPaint.volume(), !paint.isEmpty else { return [jelly, mustard] }
-        return paint.count > 1 ? paint : paint + paint
-    }
+    /// The moment's colours: the playing song's, else the companion's, else
+    /// the Office's own accents, never fewer than two, from the one resolver
+    /// the glow under them reads too (NotchMomentPaint). The island is never
+    /// left grey for want of a song.
+    static func colors() -> [Color] { NotchMomentPaint.marks() }
 
-    /// The coffee in the mug: the moment's lead colour, or a latte.
-    static func coffee() -> Color { NotchLevelPaint.volume()?.first ?? latte }
+    /// The coffee in the mug: the moment's lead colour.
+    static func coffee() -> Color { colors()[0] }
 }
 
 // MARK: - The punch-in
@@ -51,14 +49,14 @@ struct NotchPunchIn: ViewModifier {
     func body(content: Content) -> some View {
         content
             .opacity(arrived ? 1 : 0)
-            .animation(calm ? NotchSongMotion.reduced : .easeOut(duration: 0.16).delay(delay), value: arrived)
+            .animation(calm ? NotchSongMotion.reduced : NotchSongMotion.punchFade.delay(delay), value: arrived)
             .scaleEffect(arrived || calm ? 1 : 0.9)
             .animation(calm ? nil : NotchSongMotion.spring.delay(delay), value: arrived)
             .task(id: trigger) {
                 var reset = Transaction(animation: nil)
                 reset.disablesAnimations = true
                 withTransaction(reset) { arrived = false }
-                try? await Task.sleep(nanoseconds: 16_000_000)
+                try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
                 arrived = true
             }
     }
@@ -90,7 +88,8 @@ struct NotchLowerThird: View {
     /// around the camera continues the line without one.
     var rule = true
     var trigger: String? = nil
-    var delay: Double = 0.22
+    /// A beat after the title, as every moment's lower third arrives.
+    var delay: Double = NotchOfficeMoments.captionBeat
 
     var body: some View {
         let font = size == .strip ? NotchOfficeMoments.stripCaptionFont : NotchOfficeMoments.cardCaptionFont
@@ -124,7 +123,7 @@ struct NotchOfficeSteamPuff: View {
     /// Changes once per puff; nil keeps it still and unseen.
     let trigger: String?
     /// How long after the trigger the wisps leave the brim.
-    var delay: Double = 0.08
+    var delay: Double = NotchSongMotion.blink
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var lowPower = NotchLowPowerMode.shared
     @State private var risen = false
@@ -146,7 +145,8 @@ struct NotchOfficeSteamPuff: View {
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 guard !Task.isCancelled else { return }
                 withAnimation(NotchSongMotion.arrive) { risen = true; shown = true }
-                try? await Task.sleep(nanoseconds: 150_000_000)
+                // Most of the way up, it fades as it rises on.
+                try? await Task.sleep(nanoseconds: UInt64(NotchSongMotion.punch * 1_000_000_000))
                 guard !Task.isCancelled else { return }
                 withAnimation(NotchSongMotion.fade) { shown = false }
             }
@@ -254,10 +254,11 @@ struct NotchOfficeConfetti: View {
             reset.disablesAnimations = true
             withTransaction(reset) { burst = false; settled = false }
             guard !calm else { return }
-            try? await Task.sleep(nanoseconds: UInt64(max(0.016, delay) * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: max(NotchSongMotion.oneFrame, UInt64(delay * 1_000_000_000)))
             guard !Task.isCancelled else { return }
             withAnimation(NotchSongMotion.arrive) { burst = true }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            // Out on the arrival, then falling as it fades.
+            try? await Task.sleep(nanoseconds: UInt64(NotchSongMotion.fadeDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
             withAnimation(NotchSongMotion.fade) { settled = true }
         }
@@ -314,7 +315,7 @@ struct NotchOfficeGlint: ViewModifier {
                 reset.disablesAnimations = true
                 withTransaction(reset) { pass = -1 }
                 guard !calm else { return }
-                try? await Task.sleep(nanoseconds: UInt64(max(0.016, delay) * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: max(NotchSongMotion.oneFrame, UInt64(delay * 1_000_000_000)))
                 guard !Task.isCancelled else { return }
                 withAnimation(NotchSongMotion.sweep) { pass = 1 }
             }
@@ -417,9 +418,11 @@ final class NotchOfficeRingView: NotchOfficeLoopView {
     private var symbol: String?
     private var side: CGFloat = 40
     private var glyphSize: CGFloat = 16
-    /// One ring, a beat, the second, then the rest of the pause.
+    /// One ring, a ring's gap, the second, then the rest of the pause. Each
+    /// spreads and fades as every sound-wave ring on the island does.
     static let period: CFTimeInterval = 1.6
-    static let secondRing: CFTimeInterval = 0.22
+    static let secondRing: CFTimeInterval = NotchSongMotion.ringGap
+    static let ringSpread: CFTimeInterval = NotchSongMotion.ringSpread.strip
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -526,13 +529,13 @@ final class NotchOfficeRingView: NotchOfficeLoopView {
             let spread = CABasicAnimation(keyPath: "transform.scale")
             spread.fromValue = 0.92
             spread.toValue = 1.8
-            spread.duration = 0.85
-            spread.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            spread.duration = Self.ringSpread
+            spread.timingFunction = NotchSongMotion.rippleCurve
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 0.95
             fade.toValue = 0
-            fade.duration = 0.85
-            fade.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            fade.duration = Self.ringSpread
+            fade.timingFunction = NotchSongMotion.rippleCurve
             let group = CAAnimationGroup()
             group.animations = [spread, fade]
             group.duration = Self.period
@@ -629,7 +632,7 @@ final class NotchOfficeSteamView: NotchOfficeLoopView {
             for animation in group.animations ?? [] { animation.duration = Self.period }
             group.duration = Self.period
             group.repeatCount = .infinity
-            group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            group.timingFunction = NotchSongMotion.fadeCurve
             group.beginTime = now + Double(index) * Self.period / 2
             wisp.add(group, forKey: "steam")
         }

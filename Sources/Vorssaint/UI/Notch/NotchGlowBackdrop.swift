@@ -85,6 +85,16 @@ extension NotchSongMode {
             && notch.departingMusic == nil && notch.lingeringMusic == nil
     }
 
+    /// The closed island's countdown strip carrying the Office caption five
+    /// minutes before a meeting, read as the strip reads it
+    /// (NotchCalendarStrip.officeCaption).
+    static func countdownCarriesCaption(_ notch: NotchService, _ calendar: NotchCalendarService) -> Bool {
+        guard notch.compactActivity == .calendar, closedStripShows(notch), notch.compactCompanion == nil,
+              calendar.countdown != nil else { return false }
+        return NotchCalendarStrip.officeCaption(geometry: notch.compactActivityGeometry, meeting: calendar.meeting,
+                                                now: Date(), language: L10n.shared.language) != nil
+    }
+
     private static func closedStripShows(_ notch: NotchService) -> Bool {
         !notch.expanded && !notch.peeking && notch.notice == nil && !notch.dragPlaceholder
             && notch.captureControls == nil && !notch.fullscreenCompact
@@ -132,6 +142,8 @@ struct NotchGlowBackdrop: View {
     /// A shuffle dealing another member recolours the companion's glow,
     /// cross-faded as the member is.
     @ObservedObject private var shuffle = NotchMascotShuffleService.shared
+    /// The meeting five minutes out, whose caption the countdown strip carries.
+    @ObservedObject private var calendar = NotchCalendarService.shared
     @Environment(\.colorSchemeContrast) private var contrast
     /// The agents' colours, held while their strip still shows its last
     /// reading after the last agent stopped (NotchStripHold), so the strip
@@ -142,17 +154,23 @@ struct NotchGlowBackdrop: View {
         let idleAllowed = NotchIslandGlow.idleAllowed(enabled: NotchSongMode.idleGlowEnabled, lowPower: lowPower.isOn)
         let playing = music.playback?.isPlaying == true
         let songGlows = playing && (NotchSongMode.announcesSong(notch) || NotchSongMode.glowsClosed(notch, music))
+        let closedNotice = NotchSongMode.closedNotice(notch)
+        // The countdown strip carrying the Office caption glows as the
+        // moment's notice does.
+        let countdown = NotchSongMode.countdownCarriesCaption(notch, calendar)
+            ? NotchIslandGlow.notice(office: true, agent: nil, colours: NotchMomentPaint.source(),
+                                     idleAllowed: idleAllowed) : nil
         let closed = NotchIslandGlow.closed(
             agentStrip: NotchSongMode.showsAgentStrip(notch), songGlows: songGlows,
             companionRests: NotchSongMode.companionRests(notch), idleAllowed: idleAllowed,
-            notice: NotchSongMode.closedNotice(notch).flatMap { noticeGlow($0, idleAllowed: idleAllowed) })
+            notice: closedNotice.flatMap { noticeGlow($0, idleAllowed: idleAllowed) } ?? countdown)
         let open: NotchIslandGlow = notch.expanded
             ? NotchIslandGlow.open(wearsSong: NotchSongMode.wearsSong(notch, music),
                                    plainPage: notch.showingCommandBar || NotchSongMode.showsPlainPage(notch),
                                    companionOn: notch.mascotOn, idleAllowed: idleAllowed)
             : NotchSongMode.openNotice(notch).flatMap { noticeGlow($0, idleAllowed: idleAllowed) }.map { .notice($0) } ?? .none
         let liveAgents = agentColors
-        let wings = wingColors(for: closed, agents: liveAgents)
+        let wings = wingColors(for: closed, agents: liveAgents, mood: NotchMomentMood.of(closedNotice?.office?.kind))
         let palette = openPalette(for: open)
         let increased = contrast == .increased
         let camera = notch.geometry.isNotched
@@ -189,8 +207,10 @@ struct NotchGlowBackdrop: View {
 
     /// Each side's colours: the agents' own while their strip shows; the
     /// companion's at rest, its lead colour on the side it rests on; a
-    /// notice's own, toned for words as the song's strip is.
-    private func wingColors(for glow: NotchIslandGlow, agents: NotchWingGlowColors?) -> NotchWingGlowColors? {
+    /// notice's own, toned for words as the song's strip is, and leaned
+    /// toward beet or gold by what the moment means (`mood`).
+    private func wingColors(for glow: NotchIslandGlow, agents: NotchWingGlowColors?,
+                            mood: NotchMomentMood?) -> NotchWingGlowColors? {
         switch glow {
         case .agents:
             return agents ?? heldAgents
@@ -200,17 +220,27 @@ struct NotchGlowBackdrop: View {
             let near = [glow[0], glow[2], glow[1]], far = [glow[1], glow[2], glow[0]]
             let left = notch.mascotSide == .left
             return NotchWingGlowColors(left: left ? near : far, right: left ? far : near, fadesEdges: true)
-        case .notice(.agent(let agent)):
-            return NotchWingGlowColors(left: agent.wingGlow, right: agent.wingGlow, fadesEdges: false)
         case .notice(let source):
-            let glow = palette(for: source).glow.map(NotchRGB.init)
-            guard let first = glow.first else { return nil }
-            let three = [first, glow.count > 1 ? glow[1] : first, glow.count > 2 ? glow[2] : first]
-            return NotchWingGlowColors(left: [three[0], three[2], three[1]], right: [three[1], three[2], three[0]],
-                                       fadesEdges: false)
+            return Self.noticeWings(palette(for: source), agent: source.agent, mood: mood)
         case .song, .none:
             return nil
         }
+    }
+
+    /// A notice's wings: an agent's own glow, or the palette's deep colours
+    /// spread across both sides, leaned by the moment's mood.
+    static func noticeWings(_ palette: NotchArtworkPalette, agent: AgentProvider?,
+                            mood: NotchMomentMood?) -> NotchWingGlowColors? {
+        func leaned(_ colors: [NotchRGB]) -> [NotchRGB] { mood?.leaned(colors) ?? colors }
+        if let agent {
+            let glow = leaned(agent.wingGlow)
+            return NotchWingGlowColors(left: glow, right: glow, fadesEdges: false)
+        }
+        let glow = leaned(palette.glow.map(NotchRGB.init))
+        guard let first = glow.first else { return nil }
+        let three = [first, glow.count > 1 ? glow[1] : first, glow.count > 2 ? glow[2] : first]
+        return NotchWingGlowColors(left: [three[0], three[2], three[1]], right: [three[1], three[2], three[0]],
+                                   fadesEdges: false)
     }
 
     /// The open island's colours: the companion's behind its pages, or a
@@ -223,18 +253,27 @@ struct NotchGlowBackdrop: View {
         }
     }
 
+    /// The same palette the moment's props wear (NotchMomentPaint), or the agent's.
     private func palette(for source: NotchNoticeGlow) -> NotchArtworkPalette {
         switch source {
-        case .song: return NotchArtworkPalette.song(music.artwork) ?? NotchIdlePalette.current()
+        case .song: return NotchMomentPaint.palette(.song)
         case .agent(let agent): return NotchAgentPalette.of(agent)
-        case .companion: return NotchIdlePalette.current()
+        case .companion: return NotchMomentPaint.palette(.companion)
+        case .office: return NotchMomentPaint.palette(.office)
         }
     }
 
     private func noticeGlow(_ notice: NotchNotice, idleAllowed: Bool) -> NotchNoticeGlow? {
-        NotchIslandGlow.notice(office: notice.office != nil, agent: notice.agent,
-                               songWorn: NotchSongMode.enabled && music.playback?.isPlaying == true,
+        NotchIslandGlow.notice(office: notice.office != nil, agent: notice.agent, colours: NotchMomentPaint.source(),
                                idleAllowed: idleAllowed)
+    }
+}
+
+extension NotchNoticeGlow {
+    /// The agent a notice glows for, if any.
+    var agent: AgentProvider? {
+        if case .agent(let agent) = self { return agent }
+        return nil
     }
 }
 

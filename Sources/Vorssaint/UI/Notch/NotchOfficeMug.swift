@@ -3,14 +3,16 @@
 
 import SwiftUI
 
-/// The battery's gauge on the Office moments: a white boss-style mug, two
-/// black bars standing for its printed words, filled with coffee to the
-/// charge. Plugged in, a short pour raises the level and the steam starts;
-/// full, a gold glint crosses it; unplugged, the steam stops and it sets
-/// down with a hop; nearly empty, it tips its last drop out and shakes once.
-/// The coffee wears the moment's colour and the mug always stays white.
-/// Every move plays once on arrival and settles; only the steam loops, on
-/// the render server. Reduce Motion shows the settled mug.
+/// The battery's gauge on the Office moments, in the prop's place by the
+/// island's end: a white boss-style mug, two black bars standing for its
+/// printed words, filled with coffee to the charge. On power its print is a
+/// bolt instead, so the charge state reads at a glance. Plugged in, a short
+/// pour raises the level and the steam starts; full, a gold glint crosses
+/// it; unplugged, the steam stops and it sets down with a hop; nearly empty,
+/// it tips its last drop out and shakes once. The coffee wears the moment's
+/// colour and the mug always stays white. Every move plays once on arrival
+/// and settles; only the steam loops, on the render server. Reduce Motion
+/// and Low Power Mode show the settled mug.
 struct NotchOfficeMug: View {
     let state: NotchOfficeBattery
     /// The charge, 0 to 1.
@@ -118,15 +120,31 @@ struct NotchOfficeMug: View {
         .offset(x: inner.minX, y: inner.maxY - height)
     }
 
-    /// The printed words, as two short black bars across the front.
-    private func bars(_ cup: CGRect) -> some View {
-        ZStack(alignment: .topLeading) {
-            Capsule().fill(NotchOfficeInk.ink).frame(width: 7, height: 1.4)
-                .offset(x: cup.midX - 3.5, y: cup.minY + 4.6)
-            Capsule().fill(NotchOfficeInk.ink).frame(width: 5, height: 1.4)
-                .offset(x: cup.midX - 2.5, y: cup.minY + 7.4)
+    /// The printed words, as two short black bars across the front, or on
+    /// power a bolt, keylined in the mug's white so it reads over the coffee.
+    @ViewBuilder private func bars(_ cup: CGRect) -> some View {
+        if brews && edition == nil {
+            let bolt = CGRect(x: cup.midX - Self.bolt.width / 2, y: cup.minY + 2.6,
+                              width: Self.bolt.width, height: Self.bolt.height)
+            ZStack(alignment: .topLeading) {
+                NotchOfficeBolt()
+                    .stroke(NotchOfficeInk.mug, style: StrokeStyle(lineWidth: 1.6, lineJoin: .round))
+                NotchOfficeBolt().fill(NotchOfficeInk.ink)
+            }
+            .frame(width: bolt.width, height: bolt.height)
+            .offset(x: bolt.minX, y: bolt.minY)
+        } else {
+            ZStack(alignment: .topLeading) {
+                Capsule().fill(NotchOfficeInk.ink).frame(width: 7, height: 1.4)
+                    .offset(x: cup.midX - 3.5, y: cup.minY + 4.6)
+                Capsule().fill(NotchOfficeInk.ink).frame(width: 5, height: 1.4)
+                    .offset(x: cup.midX - 2.5, y: cup.minY + 7.4)
+            }
         }
     }
+
+    /// The bolt printed on a mug on power.
+    private static let bolt = CGSize(width: 5.6, height: 8.4)
 
     /// One pass of light across the mug: white as it starts to fill, gold
     /// as a full one earns its title.
@@ -170,45 +188,51 @@ struct NotchOfficeMug: View {
         if let edition { await playEdition(edition); return }
         var reset = Transaction(animation: nil)
         reset.disablesAnimations = true
+        // Low Power Mode calms it as Reduce Motion does: the settled mug.
+        let calm = reduceMotion || lowPower.isOn
         withTransaction(reset) {
-            fill = reduceMotion || !brews ? settled : state == .charged ? max(0, settled - 0.1) : max(0, settled - 0.28)
+            fill = calm || !brews ? settled : state == .charged ? max(0, settled - 0.1) : max(0, settled - 0.28)
             pourIn = 0; pourOut = 0; hop = 0; tilt = 0; drop = 0; dropShown = false; glint = -1
             steamShown = brews || state == .onBattery
         }
-        guard !reduceMotion else {
+        guard !calm else {
             if state == .onBattery { steamShown = false }
             return
         }
+        typealias Motion = NotchSongMotion
         func pause(_ seconds: Double) async { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
-        await pause(0.03)
+        // One frame, so the reset lands before the move, as every entrance waits.
+        try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
+        guard !Task.isCancelled else { return }
         switch state {
         case .pluggedIn, .charging:
-            withAnimation(.easeOut(duration: 0.16)) { pourIn = 1 }
-            withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: 1.0).delay(0.12)) { fill = settled }
-            withAnimation(.easeInOut(duration: 0.8).delay(0.35)) { glint = 1 }
-            await pause(0.62)
-            withAnimation(.easeIn(duration: 0.2)) { pourOut = 1 }
+            withAnimation(Motion.punchFade) { pourIn = 1 }
+            withAnimation(Motion.glow.delay(Motion.step)) { fill = settled }
+            withAnimation(Motion.sweep.delay(Motion.fadeDuration)) { glint = 1 }
+            // The stream runs while most of the coffee goes in.
+            await pause(Motion.step + Motion.arriveDuration)
+            withAnimation(Motion.runOut) { pourOut = 1 }
         case .charged:
-            withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: 0.7)) { fill = settled }
-            withAnimation(.easeInOut(duration: 0.95).delay(0.2)) { glint = 1 }
+            withAnimation(Motion.glow) { fill = settled }
+            withAnimation(Motion.sweep.delay(Motion.swap)) { glint = 1 }
         case .onBattery:
             // The steam stops as the mug is set down.
-            withAnimation(.easeOut(duration: 0.5)) { steamShown = false }
-            withAnimation(.easeOut(duration: 0.14)) { hop = -3 }
-            await pause(0.14)
-            withAnimation(NotchSongMotion.spring) { hop = 0 }
+            withAnimation(Motion.fade) { steamShown = false }
+            withAnimation(Motion.stepEase) { hop = -3 }
+            await pause(Motion.step)
+            withAnimation(Motion.spring) { hop = 0 }
         case .low:
-            withAnimation(.timingCurve(0.3, 0, 0.2, 1, duration: 0.35)) { tilt = -22 }
-            await pause(0.3)
+            withAnimation(Motion.fade) { tilt = -22 }
+            await pause(Motion.fadeDuration)
             dropShown = true
-            withAnimation(.easeIn(duration: 0.45)) { drop = 1 }
-            withAnimation(.easeOut(duration: 0.2).delay(0.35)) { dropShown = false }
-            await pause(0.3)
-            withAnimation(.easeInOut(duration: 0.08)) { tilt = -12 }
-            await pause(0.08)
-            withAnimation(.easeInOut(duration: 0.08)) { tilt = -22 }
-            await pause(0.08)
-            withAnimation(NotchSongMotion.spring) { tilt = 0 }
+            withAnimation(Motion.fall) { drop = 1 }
+            withAnimation(Motion.swapEase.delay(Motion.fadeDuration)) { dropShown = false }
+            await pause(Motion.fadeDuration)
+            withAnimation(Motion.jiggle) { tilt = -12 }
+            await pause(Motion.blink)
+            withAnimation(Motion.jiggle) { tilt = -22 }
+            await pause(Motion.blink)
+            withAnimation(Motion.spring) { tilt = 0 }
         }
     }
 
@@ -227,8 +251,27 @@ struct NotchOfficeMug: View {
             hop = on || calm ? 0 : -3
         }
         guard !on, !calm else { return }
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        // One frame, so the lift lands before the set-down.
+        try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
         guard !Task.isCancelled else { return }
         withAnimation(NotchSongMotion.spring) { hop = 0 }
+    }
+}
+
+/// A lightning bolt, drawn to its frame: the charge's mark on the mug.
+struct NotchOfficeBolt: Shape {
+    func path(in rect: CGRect) -> Path {
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
+        }
+        var path = Path()
+        path.move(to: point(0.66, 0))
+        path.addLine(to: point(0, 0.57))
+        path.addLine(to: point(0.44, 0.57))
+        path.addLine(to: point(0.3, 1))
+        path.addLine(to: point(1, 0.4))
+        path.addLine(to: point(0.54, 0.4))
+        path.closeSubpath()
+        return path
     }
 }

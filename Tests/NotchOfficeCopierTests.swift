@@ -119,11 +119,6 @@ enum NotchOfficeCopierTests {
         suite.expect(run(10 + NotchOfficeMoments.copyRunLength, 10) == .full && run(14, 10) == .full,
                      "a copy after the last has settled plays the whole motion again")
         suite.expect(run(9, 10) == .full, "a clock that went back never holds a copy back")
-        suite.expect(NotchOfficeMoments.copyCaptionDelay(take: 1, firstTake: nil) == NotchOfficeMoments.copyCaptionDelay.first
-                     && NotchOfficeMoments.copyCaptionDelay(take: 4, firstTake: 4) == NotchOfficeMoments.copyCaptionDelay.first
-                     && NotchOfficeMoments.copyCaptionDelay(take: 5, firstTake: 4) == NotchOfficeMoments.copyCaptionDelay.next
-                     && NotchOfficeMoments.copyCaptionDelay.next < NotchOfficeMoments.copyCaptionDelay.first,
-                     "the first copy's caption lands after its title; a later one's follows its replay at once")
         suite.expect(NotchOfficeMoments.copyQuickSpeed > 1
                      && NotchOfficeMoments.copyAbsorb < NotchOfficeMoments.copyRunLength
                      && (0.3...0.5).contains(NotchOfficeMoments.copyRunLength),

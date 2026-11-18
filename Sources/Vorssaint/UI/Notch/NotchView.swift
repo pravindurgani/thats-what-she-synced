@@ -201,7 +201,10 @@ struct NotchView: View {
                 .accessibilityAction { service.activateNotice(notice) }
                 .accessibilityHint(text.open)
                 .id(notice.clickTarget)
-                .transition(.opacity)
+                // An Office moment fades out under the next one rather than
+                // leaving the island empty for its first frames (NotchNoticeView).
+                .transition(notice.office != nil ? .opacity.animation(NotchSongMotion.reduced) : .opacity)
+                .transaction { if notice.office != nil { $0.disablesAnimations = false } }
             }
         } else if service.peeking {
             HStack {
