@@ -249,6 +249,14 @@ enum NotchDancerTests {
         suite.expect(NotchDanceTiming.settleTimes.last == 1
                         && zip(NotchDanceTiming.settleTimes, NotchDanceTiming.settleTimes.dropFirst()).allSatisfy { $0 < $1 },
                      "the settle's frames run in order to its end")
+        // A step plays at 60 frames a second to the settle's first fifth, at
+        // 30 on, and at 15 once it has come 93 % of its way: each slice
+        // starts on one of its poses, so it carries only its own.
+        suite.expect(NotchDanceTiming.settleTimes.contains(NotchDanceTiming.quickShare)
+                        && NotchDanceTiming.settleTimes.contains(NotchDanceTiming.calmShare)
+                        && NotchDanceTiming.quickShare < NotchDanceTiming.calmShare
+                        && NotchDanceTiming.settleProgress(NotchDanceTiming.calmShare) >= 0.92,
+                     "a step's frame rates change on its settle's poses, the last once it is nearly still")
         suite.expect(NotchDanceTiming.heldStepPlays(beat: 6, generation: 3, latestBeat: 6, latestGeneration: 3),
                      "a move held back half a beat plays while its beat is still the latest")
         suite.expect(!NotchDanceTiming.heldStepPlays(beat: 6, generation: 3, latestBeat: 7, latestGeneration: 3),
@@ -583,6 +591,7 @@ enum NotchDancerTests {
         suite.expect(NotchDancer.beads(along: 3.1, radius: 0.96) >= 3 && NotchDancer.beads(along: 0, radius: 1) == 1
                         && NotchDancer.beads(along: .nan, radius: 1) == 1,
                      "a limb's keyline takes enough beads that its edge dips by a hair at most")
+        keylineFillContracts(suite)
         // A beat's move starts from where the last one has the figure,
         // worked out rather than read from the screen: every outline of a
         // figure is drawn alike in every pose, so it blends as the render
@@ -644,11 +653,101 @@ enum NotchDancerTests {
         return path
     }
 
-    /// Whether `keyline`, stroked as the stage strokes it, covers the band
+    /// The keyline and the ring are filled, grown a line wide round what
+    /// they outline, which the render server draws for about half of what
+    /// stroking took. Filled, they must hold where their shapes overlap:
+    /// every shape winds the same way, in every pose, a turn and a mirrored
+    /// move included. And the line is where a stroke's outer edge was: half
+    /// a line out from a head or a shoe is on it, a line and a half is not.
+    private static func keylineFillContracts(_ suite: TestSuite) {
+        for routine in NotchDanceRoutine.allCases {
+            let floor = NotchDanceLayout(routine: routine, height: 32)
+            for (index, dancer) in routine.dancers.enumerated() {
+                let wound = reachablePoses(routine, index).allSatisfy { pose in
+                    let drawing = dancer.drawing(pose, floor: floor)
+                    let areas = subpathAreas(drawing.keyline) + subpathAreas(drawing.ring)
+                    return !areas.isEmpty && areas.allSatisfy { $0 > 0 }
+                }
+                suite.expect(wound, "\(routine.rawValue) dancer \(index): every keyline shape winds one way round")
+
+                // Standing at rest: nothing over the head, the box hung low on the right.
+                let pose = routine.rest(index)
+                let drawing = dancer.drawing(pose, floor: floor)
+                let paths = dancer.paths(pose, floor: floor)
+                let line = NotchDancer.keyline(floor)
+                func box(_ shape: NotchDancerLayer.Shape) -> CGRect? {
+                    dancer.layers.firstIndex { $0.shape == shape }.map { paths[$0].boundingBoxOfPath }
+                }
+                guard let head = box(.head), let shoes = box(.shoes) else {
+                    suite.expect(false, "\(routine.rawValue) dancer \(index) has a head and shoes")
+                    continue
+                }
+                let crown = { (out: CGFloat) in CGPoint(x: head.midX, y: head.maxY + out) }
+                let sole = { (out: CGFloat) in CGPoint(x: shoes.minX + shoes.height * 0.5, y: shoes.minY - out) }
+                let ring = line * NotchDancer.ringShare
+                suite.expect(drawing.keyline.contains(crown(line * 0.5)) && !drawing.keyline.contains(crown(line * 1.5))
+                                && drawing.keyline.contains(sole(line * 0.5)) && !drawing.keyline.contains(sole(line * 1.5))
+                                && drawing.ring.contains(crown(ring * 0.5)) && !drawing.ring.contains(crown(ring * 1.5)),
+                             "\(routine.rawValue) dancer \(index): the keyline runs a line wide outside the head and shoes, "
+                                + "and the ring a share of it")
+            }
+        }
+    }
+
+    /// Each closed shape's signed area in `path`, its curves followed closely:
+    /// positive winds counterclockwise.
+    private static func subpathAreas(_ path: CGPath) -> [CGFloat] {
+        var areas: [CGFloat] = []
+        var points: [CGPoint] = []
+        var current = CGPoint.zero
+        func close() {
+            defer { points = [] }
+            guard points.count > 2 else { return }
+            var area: CGFloat = 0
+            for (p, q) in zip(points, Array(points.dropFirst()) + [points[0]]) { area += p.x * q.y - q.x * p.y }
+            areas.append(area / 2)
+        }
+        path.applyWithBlock { pointer in
+            let element = pointer.pointee
+            switch element.type {
+            case .moveToPoint:
+                close()
+                current = element.points[0]
+                points = [current]
+            case .addLineToPoint:
+                current = element.points[0]
+                points.append(current)
+            case .addQuadCurveToPoint:
+                let c = element.points[0], end = element.points[1], start = current
+                for step in 1...8 {
+                    let t = CGFloat(step) / 8, u = 1 - t
+                    points.append(CGPoint(x: u * u * start.x + 2 * u * t * c.x + t * t * end.x,
+                                          y: u * u * start.y + 2 * u * t * c.y + t * t * end.y))
+                }
+                current = end
+            case .addCurveToPoint:
+                let a = element.points[0], b = element.points[1], end = element.points[2], start = current
+                for step in 1...8 {
+                    let t = CGFloat(step) / 8, u = 1 - t
+                    points.append(CGPoint(x: u * u * u * start.x + 3 * u * u * t * a.x + 3 * u * t * t * b.x + t * t * t * end.x,
+                                          y: u * u * u * start.y + 3 * u * u * t * a.y + 3 * u * t * t * b.y + t * t * t * end.y))
+                }
+                current = end
+            case .closeSubpath:
+                close()
+            @unknown default:
+                break
+            }
+        }
+        close()
+        return areas
+    }
+
+    /// Whether `keyline`, filled as the stage fills it, covers the band
     /// half a keyline wide just outside each segment of the stroked part
     /// `path`, `halfWidth` either side of its centre line.
     private static func covers(_ keyline: CGPath, around path: CGPath, halfWidth: CGFloat, keyline line: CGFloat) -> Bool {
-        let band = keyline.copy(strokingWithWidth: line * 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
+        let band = keyline
         var lines: [[CGPoint]] = []
         path.applyWithBlock { element in
             switch element.pointee.type {
