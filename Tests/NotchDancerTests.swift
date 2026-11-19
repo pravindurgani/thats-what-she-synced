@@ -808,8 +808,10 @@ enum NotchDancerTests {
                 suite.expect(inset >= geometry.compactMusicDancersInset(scale: floor.scale) - 0.01
                                 && inset + floor.width <= geometry.compactActivityWingWidth + 0.01,
                              "\(routine.rawValue)'s floor reaches no closer to the end than its gap, nor past the camera")
-                suite.expect(inset <= max(NotchMusicStripLayout.coverInset(geometry),
-                                          geometry.compactMusicDancersInset(scale: floor.scale)) + 0.01,
+                let fits = geometry.compactActivityWingWidth - NotchMusicStripLayout.innerInset(geometry) - floor.width
+                let mirrored = max(geometry.compactMusicDancersInset(scale: floor.scale),
+                                   min(NotchMusicStripLayout.coverInset(geometry), fits))
+                suite.expect(abs(inset - mirrored) < 0.01,
                              "\(routine.rawValue) stands as far from its end as the cover from its own, so the sides mirror")
             }
             suite.expect(shuffle.compactActivitySize.height == bars.compactActivitySize.height
