@@ -811,10 +811,7 @@ enum NotchMusicStripLayout {
         return NotchDanceLayout(routine: routine, height: height, scale: scale)
     }
 
-    /// From the strip's end to the floor: the floor centred between the
-    /// camera's edge and the end's even gap, so a solo in a wing fitted to
-    /// the three stands in the middle of its side.
-    /// The dancers stand as far from their end of the strip as the cover does
+    /// From the strip's end to the floor. The dancers stand as far from their end of the strip as the cover does
     /// from its own, so the two sides mirror; whatever room is left lies
     /// toward the camera. Never closer to the curved end than the figures clear.
     static func dancersInset(_ geometry: NotchGeometry, floor: NotchDanceLayout) -> CGFloat {

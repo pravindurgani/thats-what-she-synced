@@ -573,7 +573,7 @@ final class NotchMascotCastParts {
         case .goldenface:
             // A gold glint sweeps across the face, in place of one an idle
             // burst may have under way.
-            if let glint, let sheen, let pass = glintPass(duration: 0.48, rate: NotchSongMotion.beatFrames) {
+            if let glint, let sheen, let pass = glintPass(duration: 0.48, rate: NotchSongMotion.slowFrames) {
                 for part in [glint, sheen] { part.removeAnimation(forKey: "castIdle") }
                 glint.add(pass.band, forKey: "castBeat")
                 sheen.add(pass.window, forKey: "castBeat")
@@ -623,7 +623,9 @@ final class NotchMascotCastParts {
             float.animations = [show, rise]
             float.duration = 0.8
             float.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            note.add(Self.atBeatRate(float), forKey: "castBeat")
+            // A slow rise, so it floats at the slow rate, not the hit's.
+            float.preferredFrameRateRange = NotchSongMotion.slowFrames
+            note.add(float, forKey: "castBeat")
             let clear = CAKeyframeAnimation(keyPath: "opacity")
             clear.values = [1, 0, 0, 1]
             clear.keyTimes = [0, 0.12, 0.8, 1]
@@ -722,12 +724,6 @@ final class NotchMascotCastParts {
         let first = (animation.keyTimes?.count ?? 0) > 1 ? animation.keyTimes?[1].doubleValue ?? 1 : 1
         NotchSongMotion.play(animation, attack: min(animation.duration * first, NotchDanceTiming.attack), on: layer,
                              key: "castBeat", at: now)
-    }
-
-    /// A beat's move, at the song's beat frame rate (NotchSongMotion.beatFrames).
-    private static func atBeatRate(_ animation: CAAnimation) -> CAAnimation {
-        animation.preferredFrameRateRange = NotchSongMotion.beatFrames
-        return animation
     }
 
     /// Moved by `x` and `y` points, grown by `scale`, and squashed by

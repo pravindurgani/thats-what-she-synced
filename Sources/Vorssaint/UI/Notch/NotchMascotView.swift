@@ -1446,6 +1446,10 @@ struct NotchMascotActivityVisit: ViewModifier {
     /// The island's own strip, the only one that names its song.
     var ownStrip = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The cut-out is mounted only while the companion stands in its wing and
+    /// for its fade either side, so the strip is never masked otherwise.
+    @State private var cutMounted = false
+    @State private var cutShown = false
 
     func body(content: Content) -> some View {
         // A lap or a homecoming ends where it rests, which an activity's
@@ -1478,7 +1482,7 @@ struct NotchMascotActivityVisit: ViewModifier {
             .opacity(stepsAside ? 0 : 1)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: stepsAside)
             .mask(alignment: .top) {
-                if cutsOut, let track, let hidden {
+                if cutsOut, cutMounted, let track, let hidden {
                     GeometryReader { proxy in
                         // The same box the black would take: the companion's
                         // track, centred on the strip.
@@ -1489,7 +1493,7 @@ struct NotchMascotActivityVisit: ViewModifier {
                                 .frame(width: rightWing ? track.width - hidden.upperBound : max(0, hidden.lowerBound - clearance),
                                        height: track.height)
                                 .offset(x: origin + (rightWing ? hidden.upperBound : clearance))
-                                .opacity(covers ? 1 : 0)
+                                .opacity(cutShown ? 1 : 0)
                                 .blendMode(.destinationOut)
                         }
                         .compositingGroup()
@@ -1498,7 +1502,22 @@ struct NotchMascotActivityVisit: ViewModifier {
                     Rectangle()
                 }
             }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: covers)
+            // Only the cut's opacity animates, never its place, so a companion
+            // on the right fades its hole in where it stands rather than sliding.
+            .task(id: cutsOut && covers) {
+                let fade = reduceMotion ? nil : Animation.easeInOut(duration: NotchSongMotion.swap)
+                if cutsOut && covers {
+                    cutMounted = true
+                    try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
+                    guard !Task.isCancelled else { return }
+                    withAnimation(fade) { cutShown = true }
+                } else {
+                    withAnimation(fade) { cutShown = false }
+                    try? await Task.sleep(nanoseconds: UInt64((NotchSongMotion.swap + 0.05) * 1_000_000_000))
+                    guard !Task.isCancelled else { return }
+                    cutMounted = false
+                }
+            }
             .overlay(alignment: .top) {
                 // Handed back with the strip, halfway home, so what it covered
                 // returns as it goes behind the camera. Laid out on the
