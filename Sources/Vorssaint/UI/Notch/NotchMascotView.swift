@@ -1463,15 +1463,43 @@ struct NotchMascotActivityVisit: ViewModifier {
         // end, which the cover's inset leaves less room before than spacing.
         let clearance = ownStrip && !rightWing && service.namedMusicWings != nil
             ? max(0, NotchMusicStripLayout.coverInset(service.compactActivityGeometry) - NotchMusicStripLayout.spacing) : 0
+        let covers = ownWing && service.mascotStepsAside
+        // With the Office edition on, the island under a strip glows, so the
+        // wing is cut out of what the strip shows rather than painted black:
+        // the companion stands on the glow. Off, it is the island's black, as
+        // it always was.
+        let cutsOut = NotchOfficeEdition.isEnabled()
         content
             .opacity(stepsAside ? 0 : 1)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: stepsAside)
+            .mask(alignment: .top) {
+                if cutsOut, let track, let hidden {
+                    GeometryReader { proxy in
+                        // The same box the black would take: the companion's
+                        // track, centred on the strip.
+                        let origin = (proxy.size.width - track.width) / 2
+                        ZStack(alignment: .topLeading) {
+                            Rectangle()
+                            Rectangle()
+                                .frame(width: rightWing ? track.width - hidden.upperBound : max(0, hidden.lowerBound - clearance),
+                                       height: track.height)
+                                .offset(x: origin + (rightWing ? hidden.upperBound : clearance))
+                                .opacity(covers ? 1 : 0)
+                                .blendMode(.destinationOut)
+                        }
+                        .compositingGroup()
+                    }
+                } else {
+                    Rectangle()
+                }
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: covers)
             .overlay(alignment: .top) {
                 // Handed back with the strip, halfway home, so what it covered
                 // returns as it goes behind the camera. Laid out on the
                 // companion's own track, which stays on the camera however far
                 // a strip reaches to one side.
-                if ownWing, service.mascotStepsAside, let track, let hidden {
+                if !cutsOut, ownWing, service.mascotStepsAside, let track, let hidden {
                     Color.black
                         .frame(width: rightWing ? track.width - hidden.upperBound : max(0, hidden.lowerBound - clearance),
                                height: track.height)
