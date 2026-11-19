@@ -1,0 +1,21 @@
+# That’s What She Synced
+
+> A free, open-source Dynamic Island for MacBooks with a notch, themed on The Office (US). It is an unofficial edition of the Vorssaint macOS app: the notch takes the album cover’s colours, moves with the beat, shows original dancers and an Office-style companion beside the camera, gives Claude Code and Codex a wing while they work, and shows Office-style alerts.
+
+Not made by or linked to Vorssaint, NBCUniversal or The Office. Licensed GPL-3.0-or-later. No app builds are distributed: you build it from source on your own Mac.
+
+## Facts
+
+- Needs: an Apple silicon Mac on macOS 14.4 or later, and Apple’s Command Line Tools
+- Music: Apple Music, Spotify, and music playing in Safari, Chrome or Firefox
+- Install: clone the repository, then run `VORSSAINT_DEV_OPTIMIZE=1 ./build.sh --dev --install`
+- Settings: Settings › Dynamic Island › Activity › That’s What She Synced
+- Turn every extra off: tap the mug at the end of the island’s bottom row
+- Battery: nothing moves while the island is hidden or the Mac is in Low Power Mode
+
+## Links
+
+- [Install guide](https://github.com/pravindurgani/thats-what-she-synced#install)
+- [Questions and answers](https://github.com/pravindurgani/thats-what-she-synced#questions)
+- [Source code](https://github.com/pravindurgani/thats-what-she-synced)
+- [Vorssaint, the app it builds on](https://github.com/vorssaint/vorssaint-utils)
