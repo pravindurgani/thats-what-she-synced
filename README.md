@@ -3,7 +3,7 @@
 <p align="center"><strong>Your MacBook's notch, in sync with your music.</strong><br>
 It wears the album cover's colours, dances on the beat, and hands Claude Code a trophy when it finishes.</p>
 
-<p align="center"><img src="docs/thats-what-she-synced/demo.gif" width="720" alt="Demo on a real MacBook: the notch glows in the colours of a Pink Floyd album while a dancer moves to the beat"></p>
+<p align="center"><img src="docs/thats-what-she-synced/demo.gif" width="720" alt="Demo on a real MacBook: the notch glows in a song's red while three dancers move to the beat, then a volume alert reads Threat level: mid-tempo"></p>
 
 <p align="center"><a href="#install"><strong>Install</strong></a> · <a href="https://pravindurgani.github.io/thats-what-she-synced/"><strong>Try it in your browser</strong></a><br>
 <sub>If it made you smile, a ⭐ helps other fans find it.</sub></p>
