@@ -394,3 +394,53 @@ private struct NotchWingGlowBridge: NSViewRepresentable {
         view.apply(colors: colors, camera: camera, veil: veil, presence: presence, fades: fades)
     }
 }
+
+/// The fork's colours wait out the lock screen's padlock. Unlocking,
+/// Vorssaint keeps its lock-screen island over the island for a moment, the
+/// padlock opening, while the island comes back underneath a few points
+/// wider. Plain Vorssaint's island is black there; this one already glows,
+/// so its colours showed as slivers around the padlock and then snapped on.
+/// Held back until that island has gone, they open behind the companion.
+final class NotchUnlockReveal: ObservableObject {
+    static let shared = NotchUnlockReveal()
+    @Published private(set) var holding = false
+    private var safety: DispatchWorkItem?
+    /// Longer than the padlock's handoff (its 0.55 s and 0.2 s fade), so a
+    /// handoff that never reports back cannot keep the colours away.
+    private static let longest: TimeInterval = 1.5
+
+    private init() {}
+
+    /// The lock-screen island starts leaving over the returning island.
+    func hold() {
+        guard NotchOfficeEdition.isEnabled() else { return }
+        safety?.cancel()
+        if !holding { holding = true }
+        let work = DispatchWorkItem { [weak self] in self?.release() }
+        safety = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.longest, execute: work)
+    }
+
+    /// The lock-screen island has gone, or will not hand over.
+    func release() {
+        safety?.cancel()
+        safety = nil
+        if holding { holding = false }
+    }
+}
+
+/// Hidden at once while the unlock holds them, and opened as a glow opens
+/// behind something arriving once it lets go; a plain short fade under
+/// Reduce Motion and in Low Power Mode.
+struct NotchUnlockRevealed: ViewModifier {
+    @ObservedObject private var reveal = NotchUnlockReveal.shared
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(reveal.holding ? 0 : 1)
+            .animation(reveal.holding ? nil : (reduceMotion || lowPower.isOn ? NotchSongMotion.reduced : NotchSongMotion.glow),
+                       value: reveal.holding)
+    }
+}

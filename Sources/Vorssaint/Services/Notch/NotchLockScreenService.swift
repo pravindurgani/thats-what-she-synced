@@ -196,6 +196,7 @@ final class NotchLockScreenService {
         guard unlocking else {
             (scene + [island].compactMap { $0 }).forEach { $0.orderOut(nil) }
             space.close()
+            NotchUnlockReveal.shared.release()
             return
         }
         // The lock screen is gone about 0.3 s after the unlock is announced;
@@ -206,10 +207,14 @@ final class NotchLockScreenService {
         scene.forEach { Self.fadeOut($0, after: 0, completion: finished) }
         if let island {
             model.padlockOpen = true
+            // The island's own colours wait until this island has gone.
+            NotchUnlockReveal.shared.hold()
             // The island comes back on this turn and holds the main thread, so
             // the padlock is first seen opening once that is done. Its time
             // starts there, or the island would fade while the padlock opens.
-            DispatchQueue.main.async { Self.fadeOut(island, after: 0.55, completion: finished) }
+            DispatchQueue.main.async {
+                Self.fadeOut(island, after: 0.55, completion: { NotchUnlockReveal.shared.release(); finished() })
+            }
         }
     }
 
