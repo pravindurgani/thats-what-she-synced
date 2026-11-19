@@ -1450,6 +1450,9 @@ struct NotchMascotActivityVisit: ViewModifier {
     /// for its fade either side, so the strip is never masked otherwise.
     @State private var cutMounted = false
     @State private var cutShown = false
+    /// The wing the cut stands in, kept from its mount until it unmounts, so
+    /// a visit ending mid-fade never slides it across the camera.
+    @State private var cutOnRight = false
 
     func body(content: Content) -> some View {
         // A lap or a homecoming ends where it rests, which an activity's
@@ -1490,9 +1493,9 @@ struct NotchMascotActivityVisit: ViewModifier {
                         ZStack(alignment: .topLeading) {
                             Rectangle()
                             Rectangle()
-                                .frame(width: rightWing ? track.width - hidden.upperBound : max(0, hidden.lowerBound - clearance),
+                                .frame(width: cutOnRight ? track.width - hidden.upperBound : max(0, hidden.lowerBound - clearance),
                                        height: track.height)
-                                .offset(x: origin + (rightWing ? hidden.upperBound : clearance))
+                                .offset(x: origin + (cutOnRight ? hidden.upperBound : clearance))
                                 .opacity(cutShown ? 1 : 0)
                                 .blendMode(.destinationOut)
                         }
@@ -1507,6 +1510,7 @@ struct NotchMascotActivityVisit: ViewModifier {
             .task(id: cutsOut && covers) {
                 let fade = reduceMotion ? nil : Animation.easeInOut(duration: NotchSongMotion.swap)
                 if cutsOut && covers {
+                    cutOnRight = rightWing
                     cutMounted = true
                     try? await Task.sleep(nanoseconds: NotchSongMotion.oneFrame)
                     guard !Task.isCancelled else { return }
