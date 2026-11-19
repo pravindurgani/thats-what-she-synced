@@ -98,6 +98,7 @@ struct NotchMusicStrip: View {
                         // Circular corners, like the strip's, so the two stay parallel.
                         NotchMusicCover(artwork: artwork, side: artworkSide, radius: artworkRadius,
                                         source: playback?.track)
+                            .modifier(NotchCoverRing(radius: artworkRadius, lit: playing))
                     }
                 }
                 .padding(.leading, named == nil ? artworkInset : Layout.endInset)
