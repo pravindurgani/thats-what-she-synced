@@ -580,8 +580,12 @@ struct NotchWindowBackground: View {
             // The music page's colours, over the glass and under the page,
             // over the glow that colours the island when no song does.
             if showsMusic {
-                NotchGlowBackdrop(presentation: presentation)
-                NotchMusicBackdrop(presentation: presentation)
+                Group {
+                    NotchGlowBackdrop(presentation: presentation)
+                    NotchMusicBackdrop(presentation: presentation)
+                }
+                // Held while the lock screen's padlock hands back the island.
+                .modifier(NotchUnlockRevealed())
             }
         }
     }

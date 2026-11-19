@@ -394,3 +394,66 @@ private struct NotchWingGlowBridge: NSViewRepresentable {
         view.apply(colors: colors, camera: camera, veil: veil, presence: presence, fades: fades)
     }
 }
+
+/// The fork's colours wait out the lock screen's padlock. Unlocking,
+/// Vorssaint keeps its lock-screen island over the island for a moment, the
+/// padlock opening, while the island comes back underneath a few points
+/// wider. Plain Vorssaint's island is black there; this one already glows,
+/// so its colours showed as slivers around the padlock and then snapped on.
+/// Held back until that island has gone, they open behind the companion.
+final class NotchUnlockReveal: ObservableObject {
+    static let shared = NotchUnlockReveal()
+    @Published private(set) var holding = false
+    private var safety: DispatchWorkItem?
+    /// Each handoff's own, so one that ends late never lets go of the next.
+    private var generation = 0
+    /// Longer than the padlock's handoff (its 0.55 s and 0.2 s fade), so a
+    /// handoff that never reports back cannot keep the colours away.
+    private static let longest: TimeInterval = 1.5
+
+    private init() {}
+
+    /// The lock-screen island starts leaving over the returning island; the
+    /// handoff's token, for its release.
+    @discardableResult func hold() -> Int {
+        guard NotchOfficeEdition.isEnabled() else { return generation }
+        generation += 1
+        let token = generation
+        safety?.cancel()
+        safety = nil
+        if !holding { holding = true }
+        // The padlock's time starts once the island has come back on this
+        // turn, so the safety's does too.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.generation == token, self.holding else { return }
+            let work = DispatchWorkItem { [weak self] in self?.release(token) }
+            self.safety = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.longest, execute: work)
+        }
+        return token
+    }
+
+    /// That handoff's lock-screen island has gone.
+    func release(_ token: Int) {
+        guard token == generation else { return }
+        safety?.cancel()
+        safety = nil
+        if holding { holding = false }
+    }
+}
+
+/// Hidden at once while the unlock holds them, and opened as a glow opens
+/// behind something arriving once it lets go; a plain short fade under
+/// Reduce Motion and in Low Power Mode.
+struct NotchUnlockRevealed: ViewModifier {
+    @ObservedObject private var reveal = NotchUnlockReveal.shared
+    @ObservedObject private var lowPower = NotchLowPowerMode.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(reveal.holding ? 0 : 1)
+            .animation(reveal.holding ? nil : (reduceMotion || lowPower.isOn ? NotchSongMotion.reduced : NotchSongMotion.glow),
+                       value: reveal.holding)
+    }
+}
