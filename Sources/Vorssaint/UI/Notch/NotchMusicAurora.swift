@@ -313,15 +313,17 @@ final class NotchMusicAuroraView: NSView {
     // the view's own layer, which AppKit owns. The stage runs in real time and
     // carries the beat's swell, the colour cross-fade and the bursts; only the
     // clock beneath it pauses, and it holds nothing but the pools' drift.
+    // The base, the pools, the bursts and the veil are glows drawn once
+    // into images (NotchGlowImage) that the layers move and fade.
     private let canvas = CALayer()
     private let ground = CALayer()
     private let stage = CALayer()
-    private let base = CAGradientLayer()
+    private let base = CALayer()
     private let lift = CALayer()
     private let clock = CALayer()
-    private var blobs: [CAGradientLayer] = []
-    private var bursts: [CAGradientLayer] = []
-    private let scrim = CAGradientLayer()
+    private var blobs: [CALayer] = []
+    private var bursts: [CALayer] = []
+    private let scrim = CALayer()
     /// The black pool around the camera, over everything, drawn once.
     private let ink = CALayer()
     private var camera: CGSize?
@@ -376,6 +378,8 @@ final class NotchMusicAuroraView: NSView {
     /// The quick part of a burst, its bloom, at 60 frames a second; it
     /// fades at 30.
     private static let burstAttack: CFTimeInterval = 0.1
+    /// The share of a burst's time after which what is left plays at 15.
+    private static let burstCalm: CFTimeInterval = 0.38
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -395,9 +399,6 @@ final class NotchMusicAuroraView: NSView {
         ground.backgroundColor = NSColor(srgbRed: 0.035, green: 0.035, blue: 0.05, alpha: 0.94).cgColor
         canvas.addSublayer(ground)
 
-        base.type = .axial
-        base.startPoint = CGPoint(x: 0, y: 1)
-        base.endPoint = CGPoint(x: 1, y: 0)
         stage.addSublayer(base)
         for pool in Self.pools {
             let blob = Self.pool()
@@ -418,23 +419,21 @@ final class NotchMusicAuroraView: NSView {
 
         // A dark veil over the colour, its strength set by what sits over it
         // (see NotchAuroraVeil): the player's text keeps WCAG AA on any cover.
-        scrim.type = .axial
-        scrim.startPoint = CGPoint(x: 0.5, y: 1)
-        scrim.endPoint = CGPoint(x: 0.5, y: 0)
-        scrim.locations = [0, 0.55, 1]
         canvas.addSublayer(scrim)
         ink.isHidden = true
         canvas.addSublayer(ink)
         paintVeil()
     }
 
-    private static func pool() -> CAGradientLayer {
-        let layer = CAGradientLayer()
-        layer.type = .radial
-        layer.startPoint = CGPoint(x: 0.5, y: 0.5)
-        layer.endPoint = CGPoint(x: 1, y: 1)
-        return layer
+    private static func pool() -> CALayer { CALayer() }
+
+    /// A pool of `color`, `strength` at its middle and gone at its edge.
+    private static func pool(_ color: NSColor, strength: CGFloat) -> CGImage? {
+        NotchGlowImage.radial([color.withAlphaComponent(strength).cgColor, color.withAlphaComponent(0).cgColor])
     }
+
+    /// The veil from top to bottom: its stops are for 0, 0.55 and 1 of the way down.
+    private static let veilLocations: [CGFloat] = [0, 0.55, 1]
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -554,12 +553,13 @@ final class NotchMusicAuroraView: NSView {
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        base.colors = [lead.withAlphaComponent(0.55).cgColor,
-                       second.withAlphaComponent(0.42).cgColor,
-                       third.withAlphaComponent(0.50).cgColor]
+        // Corner to corner, top left to bottom right.
+        base.contents = NotchGlowImage.axial([lead.withAlphaComponent(0.55).cgColor,
+                                              second.withAlphaComponent(0.42).cgColor,
+                                              third.withAlphaComponent(0.50).cgColor],
+                                             from: CGPoint(x: 0, y: 1), to: CGPoint(x: 1, y: 0))
         for (index, blob) in blobs.enumerated() {
-            blob.colors = [poolColors[index].withAlphaComponent(poolStrength[index]).cgColor,
-                           poolColors[index].withAlphaComponent(0).cgColor]
+            blob.contents = Self.pool(poolColors[index], strength: poolStrength[index])
         }
         CATransaction.commit()
     }
@@ -569,12 +569,22 @@ final class NotchMusicAuroraView: NSView {
     /// Contrast and behind lyrics or the queue.
     private func paintVeil(animated: Bool = false) {
         let stops = veil.stops
+        let image = NotchGlowImage.axial(stops.map { NSColor.black.withAlphaComponent($0).cgColor },
+                                         locations: Self.veilLocations, from: CGPoint(x: 0.5, y: 1),
+                                         to: CGPoint(x: 0.5, y: 0), width: 4, height: 256)
+        guard (scrim.contents as AnyObject?) !== (image as AnyObject?) else { return }
+        if animated {
+            // On the same timing as the colour's strength, which changes with
+            // it: one veil fading into the next, as its stops easing would.
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = Self.pauseChange
+            fade.timingFunction = Self.settle
+            scrim.add(fade, forKey: "veil")
+        }
         CATransaction.begin()
-        CATransaction.setDisableActions(!animated)
-        // On the same timing as the colour's strength, which changes with it.
-        CATransaction.setAnimationDuration(Self.pauseChange)
-        CATransaction.setAnimationTimingFunction(Self.settle)
-        scrim.colors = stops.map { NSColor.black.withAlphaComponent($0).cgColor }
+        CATransaction.setDisableActions(true)
+        scrim.contents = image
         CATransaction.commit()
     }
 
@@ -688,7 +698,10 @@ final class NotchMusicAuroraView: NSView {
             drift.duration = pool.drift
             drift.repeatCount = .infinity
             drift.beginTime = begin
-            drift.preferredFrameRateRange = NotchSongMotion.slowFrames
+            // The pools are soft all the way out: at 15 frames a second the
+            // drift steps a point or so, which no edge shows. A beat's
+            // swell, at 30 and 60, shares those frames.
+            drift.preferredFrameRateRange = NotchSongMotion.gentleFrames
             blob.add(drift, forKey: "drift")
 
             let breath = CABasicAnimation(keyPath: "transform.scale")
@@ -701,7 +714,7 @@ final class NotchMusicAuroraView: NSView {
             // Each pool starts part-way into its breath, so they never pulse together.
             breath.timeOffset = pool.breath * Double(index) / 3
             breath.beginTime = begin
-            breath.preferredFrameRateRange = NotchSongMotion.slowFrames
+            breath.preferredFrameRateRange = NotchSongMotion.gentleFrames
             blob.add(breath, forKey: "breath")
         }
         CATransaction.commit()
@@ -890,27 +903,42 @@ final class NotchMusicAuroraView: NSView {
         if !quiet || thinning.moves(at: now) {
             let thinnest = 1 - veil.thinnest, closed = quiet
             let thin = thinning.start(moves { closed ? 0 : -min(thinnest, $0 * 0.55) }, at: now)
-            NotchSongMotion.play(thin.animation("opacity", additive: true), attack: attack, on: scrim, key: "beat",
-                                 at: now)
+            NotchSongMotion.play(thin.animation("opacity", additive: true), attack: attack,
+                                 tail: thin.calm(within: stillness("opacity")), on: scrim, key: "beat", at: now)
         }
         let swell = swelling.start(moves { 0.07 * $0 }, at: now)
-        NotchSongMotion.play(swell.animation("transform.scale", additive: true), attack: attack, on: stage,
-                             key: "beat", at: now)
+        NotchSongMotion.play(swell.animation("transform.scale", additive: true), attack: attack,
+                             tail: swell.calm(within: stillness("transform.scale")), on: stage, key: "beat", at: now)
         let reach = beatRise
         let rise = rising.start(moves { reach * min(1, $0) }, at: now)
-        NotchSongMotion.play(rise.animation("transform.translation.y", additive: true), attack: attack, on: lift,
-                             key: "beat", at: now)
+        NotchSongMotion.play(rise.animation("transform.translation.y", additive: true), attack: attack,
+                             tail: rise.calm(within: stillness("transform.translation.y")), on: lift, key: "beat",
+                             at: now)
         CATransaction.commit()
         NotchMusicPulse.shared.beat.send(NotchMusicBeat(push: bounce, previous: previous))
     }
 
     /// Eases what `track` set going on `layer` back to rest over the beat's
-    /// return, from where it stands, at 30 frames a second.
+    /// return, from where it stands, at 30 frames a second, or 15 when it
+    /// stands too near rest for more to show.
     private func settle(_ track: inout NotchBeatTrack, _ keyPath: String, on layer: CALayer, at now: CFTimeInterval) {
         let from = track.value(at: now)
         guard from != 0 || track.moves(at: now) else { return }
         let back = track.start([.init(target: 0, duration: NotchSongMotion.beatReturn, curve: Self.settle)], at: now)
-        NotchSongMotion.play(back.animation(keyPath, additive: true), attack: 0, on: layer, key: "beat", at: now)
+        NotchSongMotion.play(back.animation(keyPath, additive: true), attack: 0,
+                             tail: back.calm(within: stillness(keyPath)), on: layer, key: "beat", at: now)
+    }
+
+    /// How near rest a beat's move on `keyPath` stands once what is left of
+    /// it moves well under a point a frame at 15 frames a second
+    /// (NotchBeatFall.stillPoints): that far of travel, measured at the
+    /// island's edge for the swell, or a few hundredths of the veil.
+    private func stillness(_ keyPath: String) -> Double {
+        switch keyPath {
+        case "opacity": return NotchBeatFall.stillOpacity
+        case "transform.scale": return NotchBeatFall.stillPoints / Double(max(1, max(bounds.width, bounds.height) / 2))
+        default: return NotchBeatFall.stillPoints
+        }
     }
 
     /// A soft burst of one of the cover's colours, blooming from where its
@@ -929,7 +957,7 @@ final class NotchMusicAuroraView: NSView {
         CATransaction.setDisableActions(true)
         burst.bounds = CGRect(x: 0, y: 0, width: side, height: side * 0.7)
         burst.position = CGPoint(x: size.width * pool.rest.x, y: size.height * pool.rest.y)
-        burst.colors = [color.withAlphaComponent(0.85).cgColor, color.withAlphaComponent(0).cgColor]
+        burst.contents = Self.pool(color, strength: 0.85)
         CATransaction.commit()
         let grow = CABasicAnimation(keyPath: "transform.scale")
         grow.fromValue = 0.45
@@ -941,7 +969,10 @@ final class NotchMusicAuroraView: NSView {
         group.animations = [grow, fade]
         group.duration = 0.45
         group.timingFunction = Self.settle
-        NotchSongMotion.play(group, attack: Self.burstAttack, on: burst, key: "kick", at: CACurrentMediaTime())
+        // On the settle curve it has gone 93 % of its way two fifths of the
+        // way in: the faint rest of its fade plays at 15 frames a second.
+        NotchSongMotion.play(group, attack: Self.burstAttack, tail: group.duration * Self.burstCalm, on: burst,
+                             key: "kick", at: CACurrentMediaTime())
     }
 
     /// The light's rest pose, eased back to when the music stops answering.
@@ -1249,12 +1280,16 @@ final class NotchAuroraBubbleView: NSView {
         guard !beat.settles || swelling.value(at: now) != 0 || thinning.value(at: now) != 0 else { return }
         CATransaction.begin()
         defer { CATransaction.commit() }
+        // Each falls at 30 frames a second until it is near rest, a point
+        // from the rim or a few hundredths of the veil, then at 15.
         let swell = swelling.start(beat.moves { 0.12 * min(1, max(0, $0)) }, at: now)
+        let rim = Double(max(1, max(bounds.width, bounds.height) / 2))
         NotchSongMotion.play(swell.animation("sublayerTransform.scale", additive: true), attack: beat.attack,
-                             on: canvas, key: "beat", at: now)
-        let thin = thinning.start(beat.moves { -0.35 * min(1, max(0, $0)) }, at: now)
-        NotchSongMotion.play(thin.animation("opacity", additive: true), attack: beat.attack, on: veil, key: "beat",
+                             tail: swell.calm(within: NotchBeatFall.stillPoints / 2 / rim), on: canvas, key: "beat",
                              at: now)
+        let thin = thinning.start(beat.moves { -0.35 * min(1, max(0, $0)) }, at: now)
+        NotchSongMotion.play(thin.animation("opacity", additive: true), attack: beat.attack,
+                             tail: thin.calm(within: NotchBeatFall.stillOpacity), on: veil, key: "beat", at: now)
     }
 
     override func layout() {

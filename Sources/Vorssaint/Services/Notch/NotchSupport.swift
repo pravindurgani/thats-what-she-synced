@@ -814,10 +814,13 @@ enum NotchMusicStripLayout {
     /// From the strip's end to the floor: the floor centred between the
     /// camera's edge and the end's even gap, so a solo in a wing fitted to
     /// the three stands in the middle of its side.
+    /// The dancers stand as far from their end of the strip as the cover does
+    /// from its own, so the two sides mirror; whatever room is left lies
+    /// toward the camera. Never closer to the curved end than the figures clear.
     static func dancersInset(_ geometry: NotchGeometry, floor: NotchDanceLayout) -> CGFloat {
         let end = geometry.compactMusicDancersInset(scale: floor.scale)
-        let space = geometry.compactActivityWingWidth - innerInset(geometry) - end
-        return max(0, end + max(0, space - floor.width) / 2)
+        let fits = geometry.compactActivityWingWidth - innerInset(geometry) - floor.width
+        return max(0, end, min(coverInset(geometry), fits))
     }
 
     private static var measuredWords: (title: String, artist: String?, width: CGFloat)?
