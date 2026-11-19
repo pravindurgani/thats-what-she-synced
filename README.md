@@ -1,7 +1,13 @@
-<a href="https://pravindurgani.github.io/thats-what-she-synced/"><img src="docs/thats-what-she-synced/banner.jpg" alt="That's What She Synced: the MacBook notch, with an Office character beside the camera"></a>
+<a href="https://pravindurgani.github.io/thats-what-she-synced/"><img src="docs/thats-what-she-synced/banner.jpg" alt="That's What She Synced: a Dynamic Island for the MacBook notch, with an Office character beside the camera"></a>
 
 <p align="center"><strong>Your MacBook's notch, in sync with your music.</strong><br>
-<a href="https://pravindurgani.github.io/thats-what-she-synced/">See it in action →</a></p>
+It wears the album cover's colours, dances on the beat, and hands Claude Code a trophy when it finishes.</p>
+
+<p align="center"><img src="docs/thats-what-she-synced/demo.gif" width="720" alt="Demo on a real MacBook: the notch glows in the colours of a Pink Floyd album while a dancer moves to the beat"><br>
+<sub><em>Assistant to the Regional Menu Bar.</em></sub></p>
+
+<p align="center"><a href="#install"><strong>Install</strong></a> · <a href="https://pravindurgani.github.io/thats-what-she-synced/"><strong>Try it in your browser</strong></a><br>
+<sub>If it made you smile, a ⭐ helps other fans find it.</sub></p>
 
 | Genesis | Pink Floyd | Pink Floyd, one colour |
 |:---:|:---:|:---:|
@@ -11,12 +17,15 @@
 
 ## What you get
 
+**That's What She Synced** is a free, open-source Dynamic Island for MacBooks with a notch, themed on *The Office* (US). It's an unofficial edition of the Vorssaint app for Apple silicon Macs on macOS 14.4 or later.
+
 - 🎨 The notch takes the **colours of the album cover**
 - 🥁 It **moves with the beat** and your volume
 - 🕺 **Dancers** move to the music beside the camera
 - ☕ An **Office character** keeps it company when nothing's playing
 - 🤖 **Claude Code and Codex** each get a side while they work, and a trophy when they finish
 - 📼 **Office-style alerts** for volume, charging, copying, headphones, messages, calls and meetings
+- 🔋 **Easy on the battery**: nothing moves while the island is hidden or your Mac is in Low Power Mode
 
 Works with Apple Music, Spotify, and music in Safari, Chrome or Firefox.
 
@@ -88,6 +97,29 @@ To undo one, run the same line with `vivid` or `true` at the end.
 ```bash
 git pull && VORSSAINT_DEV_OPTIMIZE=1 ./build.sh --dev --install
 ```
+
+## Questions
+
+**Is it free?**
+Yes. It's open source under GPL-3.0, and you build it on your own Mac with one command.
+
+**Which Macs does it work on?**
+Apple silicon Macs on macOS 14.4 or later. It's made for MacBooks with a notch.
+
+**Does it work with Spotify?**
+Yes. Apple Music, Spotify, and music playing in Safari, Chrome or Firefox.
+
+**Will it drain my battery?**
+Nothing moves while the island is hidden or your Mac is in Low Power Mode, and the ☕ mug turns every extra off in one tap.
+
+**What does it do with Claude Code and Codex?**
+Each one gets a side of the notch while it works, and a trophy when it finishes. Turn on **AI Agents** on the app's **Features** page.
+
+**How is it different from Vorssaint?**
+It's Vorssaint plus the Office edition: song colours, dancers, a cast, Office-style alerts and agent wings. Switch Office edition off and you're back to plain Vorssaint.
+
+**Is it official?**
+No. It's a fan project, not made by or linked to Vorssaint, NBCUniversal or *The Office*.
 
 ## Credits
 
