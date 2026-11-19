@@ -112,18 +112,48 @@ enum NotchOfficeFamilyTests {
         defer { CATransaction.commit() }
         let layer = CALayer()
         let animation = curve.animation("transform.scale", additive: true)
+        let values = animation.values as? [Double] ?? []
         NotchSongMotion.play(animation, attack: 0.05, on: layer, key: "beat", at: 100)
-        let hit = layer.animation(forKey: "beat"), fall = layer.animation(forKey: "beatFall")
-        suite.expect(animation.isAdditive && (animation.values as? [Double])?.count == curve.values.count
-                        && hit?.repeatDuration == 0.05 && hit?.preferredFrameRateRange.preferred == 60
-                        && fall?.timeOffset == 0.05 && fall?.repeatDuration == animation.duration - 0.05
+        let hit = layer.animation(forKey: "beat") as? CAKeyframeAnimation
+        let fall = layer.animation(forKey: "beatFall") as? CAKeyframeAnimation
+        func drawn(_ slices: [CAKeyframeAnimation?]) -> [Double] {
+            slices.compactMap { $0?.values as? [Double] }.enumerated().flatMap { $0.offset == 0 ? $0.element : Array($0.element.dropFirst()) }
+        }
+        suite.expect(animation.isAdditive && values.count == curve.values.count
+                        && abs((hit?.duration ?? 0) - 0.05) < 1e-9 && hit?.preferredFrameRateRange.preferred == 60
+                        && abs((fall?.duration ?? 0) - (animation.duration - 0.05)) < 1e-9
                         && abs((fall?.beginTime ?? 0) - (hit?.beginTime ?? 0) - 0.05) < 1e-9
-                        && fall?.preferredFrameRateRange.preferred == 30,
-                     "a hit plays its first reading at 60 frames a second and its fall, picked up there, at 30")
+                        && fall?.preferredFrameRateRange.preferred == 30 && fall?.isAdditive == true
+                        && drawn([hit, fall]) == values && hit?.keyTimes?.last == 1 && fall?.keyTimes?.first == 0,
+                     "a hit plays its first reading at 60 frames a second and its fall, picked up there, at 30, "
+                        + "each with only its own knots")
+        let calm = curve.calm(within: 0.07 * 0.1)
+        let calmIndex = curve.times.firstIndex(of: calm) ?? 0
+        suite.expect(calmIndex > 1 && curve.values[calmIndex...].allSatisfy { abs($0 - curve.end) <= 0.07 * 0.1 }
+                        && abs(curve.values[calmIndex - 1] - curve.end) > 0.07 * 0.1
+                        && NotchBeatCurve(from: 0.001, moves: Array(moves.suffix(1))).calm(within: 0.01) == 0,
+                     "a fall is calm from the first knot after which it keeps within reach of rest")
+        NotchSongMotion.play(animation, attack: 0.05, tail: calm, on: layer, key: "beat", at: 100)
+        let tail = layer.animation(forKey: "beatTail") as? CAKeyframeAnimation
+        let calmFall = layer.animation(forKey: "beatFall") as? CAKeyframeAnimation
+        suite.expect(tail?.preferredFrameRateRange.preferred == 15
+                        && abs((tail?.beginTime ?? 0) - (layer.animation(forKey: "beat")?.beginTime ?? 0) - calm) < 1e-9
+                        && abs((calmFall?.duration ?? 0) - (calm - 0.05)) < 1e-9
+                        && drawn([layer.animation(forKey: "beat") as? CAKeyframeAnimation, calmFall, tail]) == values,
+                     "once it is calm the rest of a fall plays at 15 frames a second, picked up where the 30 left off")
+        let between = CABasicAnimation(keyPath: "opacity")
+        between.duration = 0.5
+        NotchSongMotion.play(between, attack: 0.07, on: layer, key: "beat", at: 100)
+        suite.expect(layer.animation(forKey: "beat")?.repeatDuration == 0.07
+                        && layer.animation(forKey: "beatFall")?.timeOffset == 0.07
+                        && abs((layer.animation(forKey: "beatFall")?.repeatDuration ?? 0) - 0.43) < 1e-9
+                        && layer.animation(forKey: "beatTail") == nil,
+                     "a move cut between its knots plays its slices from copies of the whole")
         NotchSongMotion.play(animation, attack: 0, on: layer, key: "beat", at: 100)
         suite.expect(layer.animation(forKey: "beat") == nil && layer.animation(forKey: "beatFall")?.repeatDuration
                         == animation.duration,
                      "a settle plays whole at 30 frames a second")
+        NotchSongMotion.play(animation, attack: 0.05, tail: calm, on: layer, key: "beat", at: 100)
         NotchSongMotion.stop("beat", on: layer)
         suite.expect(layer.animationKeys() == nil || layer.animationKeys()?.isEmpty == true, "a move stops whole")
         var track = NotchBeatTrack()

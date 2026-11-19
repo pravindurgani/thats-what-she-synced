@@ -569,7 +569,7 @@ final class NotchMascotCastParts {
             shake.keyTimes = [0, 0.22, 0.38, 0.52, 0.68, 1]
             shake.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             shake.duration = 0.62
-            arm?.add(Self.atBeatRate(shake), forKey: "castBeat")
+            if let arm { Self.playBeat(shake, on: arm) }
         case .goldenface:
             // A gold glint sweeps across the face, in place of one an idle
             // burst may have under way.
@@ -583,7 +583,7 @@ final class NotchMascotCastParts {
                 flare.values = [1, 0.4, 1]
                 flare.keyTimes = [0, 0.3, 1]
                 flare.duration = 0.45
-                rim.add(Self.atBeatRate(flare), forKey: "castBeat")
+                Self.playBeat(flare, on: rim)
             }
             move(beatStage, [Self.at(x: 0, y: 0, scale: 1 + 0.04 * push), CATransform3DIdentity],
                  times: [0.35, 1], duration: 0.36)
@@ -608,7 +608,7 @@ final class NotchMascotCastParts {
                 slosh.keyTimes = [0, 0.2, 0.45, 0.72, 1]
                 slosh.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 slosh.duration = 0.62
-                coffee.add(Self.atBeatRate(slosh), forKey: "castBeat")
+                Self.playBeat(slosh, on: coffee)
             }
             guard !notes.isEmpty else { return }
             let note = notes[nextNote % notes.count]
@@ -628,7 +628,7 @@ final class NotchMascotCastParts {
             clear.values = [1, 0, 0, 1]
             clear.keyTimes = [0, 0.12, 0.8, 1]
             clear.duration = 0.8
-            steam.add(Self.atBeatRate(clear), forKey: "castBeat")
+            Self.playBeat(clear, on: steam)
         case .beet:
             // The leaves flick and the bulb bounces.
             if let tops {
@@ -638,7 +638,7 @@ final class NotchMascotCastParts {
                 flick.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 flick.isAdditive = true
                 flick.duration = 0.52
-                tops.add(Self.atBeatRate(flick), forKey: "castBeat")
+                Self.playBeat(flick, on: tops)
             }
             move(beatStage, [Self.at(x: 0, y: -size * 0.09 * push, squash: -0.05),
                              Self.at(x: 0, y: 0, squash: 0.08), Self.at(x: 0, y: 0, squash: -0.02),
@@ -651,7 +651,7 @@ final class NotchMascotCastParts {
 
     /// Takes off every move the cast plays, as the rig resets.
     func stopMoving() {
-        for layer in movingParts { layer.removeAnimation(forKey: "castBeat") }
+        for layer in movingParts { NotchSongMotion.stop("castBeat", on: layer) }
         stopIdling()
         if idling { scheduleIdle(after: 1) }
     }
@@ -681,7 +681,7 @@ final class NotchMascotCastParts {
         move.keyTimes = ([0] + times).map { NSNumber(value: $0) }
         move.timingFunctions = Array(repeating: Self.moveCurve, count: frames.count)
         move.duration = duration
-        layer.add(Self.atBeatRate(move), forKey: "castBeat")
+        Self.playBeat(move, on: layer, at: now)
         if layer === beatStage { stageMove = (now, [0] + times, poses, duration) }
     }
 
@@ -698,7 +698,7 @@ final class NotchMascotCastParts {
     /// blends them; the Jello's slight shear blends within a hair of it.
     private func standingStage(at time: CFTimeInterval) -> CATransform3D {
         guard let move = stageMove, move.duration > 0, move.poses.count == move.times.count, move.times.count > 1,
-              beatStage.animation(forKey: "castBeat") != nil else { return beatStage.transform }
+              NotchSongMotion.isPlaying("castBeat", on: beatStage) else { return beatStage.transform }
         let elapsed = (time - move.begin) / move.duration
         guard elapsed < 1 else { return beatStage.transform }
         var span = 0
@@ -711,6 +711,17 @@ final class NotchMascotCastParts {
                              m21: mix(a.m21, b.m21), m22: mix(a.m22, b.m22), m23: mix(a.m23, b.m23), m24: mix(a.m24, b.m24),
                              m31: mix(a.m31, b.m31), m32: mix(a.m32, b.m32), m33: mix(a.m33, b.m33), m34: mix(a.m34, b.m34),
                              m41: mix(a.m41, b.m41), m42: mix(a.m42, b.m42), m43: mix(a.m43, b.m43), m44: mix(a.m44, b.m44))
+    }
+
+    /// Plays a beat's move on `layer`: its hit, up to its first pose but no
+    /// longer than the dancers' (NotchDanceTiming.attack), at the beat's 60
+    /// frames a second, with the light's and the dancers' hits, and on from
+    /// there at 30, as every move on the beat plays (NotchSongMotion.play).
+    private static func playBeat(_ animation: CAKeyframeAnimation, on layer: CALayer,
+                                 at now: CFTimeInterval = CACurrentMediaTime()) {
+        let first = (animation.keyTimes?.count ?? 0) > 1 ? animation.keyTimes?[1].doubleValue ?? 1 : 1
+        NotchSongMotion.play(animation, attack: min(animation.duration * first, NotchDanceTiming.attack), on: layer,
+                             key: "castBeat", at: now)
     }
 
     /// A beat's move, at the song's beat frame rate (NotchSongMotion.beatFrames).

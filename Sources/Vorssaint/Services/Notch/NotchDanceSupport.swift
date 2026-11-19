@@ -232,6 +232,51 @@ struct NotchDanceLayout: Equatable {
 /// out as Core Animation draws it: each point of one moved its share of the
 /// way to the matching point of the other. So a beat's move can start from
 /// where the last one has the figure without reading it off the screen.
+/// The dancers' keyline shapes, every one wound the same way round, so
+/// filled together under the non-zero rule they make one outline, never a
+/// hole where two overlap, whichever way the figure faces. Each is drawn
+/// with the same elements every time, so it blends between two poses point
+/// for point (NotchPathBlend).
+enum NotchKeylineShapes {
+    /// A quarter circle's handles, as a share of its radius.
+    private static let kappa: CGFloat = 0.552_284_749_8
+
+    /// An oval `radii` wide and tall either side of `centre`.
+    static func oval(_ centre: CGPoint, radii: CGSize, into path: CGMutablePath) {
+        let a = radii.width, b = radii.height, k = kappa, x = centre.x, y = centre.y
+        path.move(to: CGPoint(x: x + a, y: y))
+        path.addCurve(to: CGPoint(x: x, y: y + b), control1: CGPoint(x: x + a, y: y + b * k),
+                      control2: CGPoint(x: x + a * k, y: y + b))
+        path.addCurve(to: CGPoint(x: x - a, y: y), control1: CGPoint(x: x - a * k, y: y + b),
+                      control2: CGPoint(x: x - a, y: y + b * k))
+        path.addCurve(to: CGPoint(x: x, y: y - b), control1: CGPoint(x: x - a, y: y - b * k),
+                      control2: CGPoint(x: x - a * k, y: y - b))
+        path.addCurve(to: CGPoint(x: x + a, y: y), control1: CGPoint(x: x + a * k, y: y - b),
+                      control2: CGPoint(x: x + a, y: y - b * k))
+        path.closeSubpath()
+    }
+
+    /// A box `half` its size either side of `centre`, its width along
+    /// `axis`, a unit vector, its corners rounded `corner` each way.
+    static func roundedBox(_ centre: CGPoint, axis: CGVector, half: CGSize, corner: CGSize, into path: CGMutablePath) {
+        let w = half.width, h = half.height, k = kappa
+        let rx = min(max(0, corner.width), w), ry = min(max(0, corner.height), h)
+        func at(_ u: CGFloat, _ v: CGFloat) -> CGPoint {
+            CGPoint(x: centre.x + axis.dx * u - axis.dy * v, y: centre.y + axis.dy * u + axis.dx * v)
+        }
+        path.move(to: at(-w + rx, -h))
+        path.addLine(to: at(w - rx, -h))
+        path.addCurve(to: at(w, -h + ry), control1: at(w - rx + rx * k, -h), control2: at(w, -h + ry - ry * k))
+        path.addLine(to: at(w, h - ry))
+        path.addCurve(to: at(w - rx, h), control1: at(w, h - ry + ry * k), control2: at(w - rx + rx * k, h))
+        path.addLine(to: at(-w + rx, h))
+        path.addCurve(to: at(-w, h - ry), control1: at(-w + rx - rx * k, h), control2: at(-w, h - ry + ry * k))
+        path.addLine(to: at(-w, -h + ry))
+        path.addCurve(to: at(-w + rx, -h), control1: at(-w, -h + ry - ry * k), control2: at(-w + rx - rx * k, -h))
+        path.closeSubpath()
+    }
+}
+
 enum NotchPathBlend {
     private struct Element: Equatable {
         let type: CGPathElementType
@@ -322,6 +367,15 @@ enum NotchDanceTiming {
     /// a pose of its own, so a limb swinging back keeps its length instead
     /// of shrinking along a straight line between two outlines.
     static let settleTimes: [Double] = [0.08, 0.2, 0.38, 0.65, 1]
+
+    /// The share of a settle the stage plays at the beat's 60 frames a
+    /// second: the settle curve's first fifth, three quarters of the way.
+    static let quickShare: Double = 0.2
+    /// The share after which what is left of a settle plays at 15: by then
+    /// it has come 93 % of its way, and the rest moves a tenth of a point a
+    /// frame at most. Both are knots of the settle (settleTimes), so each of
+    /// the stage's slices starts on a pose and carries only its own.
+    static let calmShare: Double = 0.38
 
     /// How far the settle has gone by `time`, a share of its duration, on
     /// the island's settle curve (0.16, 1, 0.3, 1): quick to start, long and gentle to land.
@@ -790,35 +844,42 @@ extension NotchDancer {
 
     /// The figure in `pose` as the stage draws it (NotchDancerDrawing). The
     /// keyline is one path for the whole figure, so it fades as one without
-    /// a group pass and never darkens twice where two parts' lines cross: a
-    /// filled part's own outline, and around a stroked part a chain of beads
-    /// along its centre line, each as wide as the part. Stroked a keyline
-    /// wide, the beads' rims merge into one line a point outside the part,
-    /// dipping a hair at most between two beads (keylineTolerance). Being
-    /// circles, they follow a limb through any swing, where an outline
-    /// offset from the limb would fold flat as it turned over.
+    /// a group pass and never darkens twice where two parts' lines cross:
+    /// every part it runs round, grown a keyline wide and filled, behind the
+    /// parts, which cover all of it but the line a point outside their edge.
+    /// A filled part is grown in its own shape. Around a stroked part runs a
+    /// chain of beads along its centre line, each as wide as the part and a
+    /// keyline more; their rims merge into one edge, dipping a hair at most
+    /// between two beads (keylineTolerance). Being circles, they follow a
+    /// limb through any swing, where an outline offset from the limb would
+    /// fold flat as it turned over. Filled, not stroked, the render server
+    /// draws it for about half of what stroking the same edge took, on every
+    /// frame the figure moves; on screen the two are the same line. Every
+    /// shape in it, and in the ring, winds the same way (NotchKeylineShapes),
+    /// so where two overlap the fill holds.
     func drawing(_ pose: NotchDancerPose, floor: NotchDanceLayout) -> NotchDancerDrawing {
         let (rig, place) = solve(pose, floor: floor)
         let paths = layers.map { path(for: $0.shape, rig: rig, pose: pose, place: place) }
+        let line = Self.keyline(floor)
         let keyline = CGMutablePath()
         let ring = CGMutablePath()
-        for (index, layer) in layers.enumerated() {
-            if layer.keylineInFront { ring.addPath(paths[index]) }
+        for layer in layers {
+            if layer.keylineInFront { grown(layer.shape, rig: rig, place: place, by: line * Self.ringShare, into: ring) }
             guard layer.keyline else { continue }
             guard let width = lineWidth(layer, floor: floor) else {
-                keyline.addPath(paths[index])
+                grown(layer.shape, rig: rig, place: place, by: line, into: keyline)
                 continue
             }
             let radius = width / 2
             let units = radius / scale(floor)
-            for line in centreLines(layer.shape, rig: rig, place: place) {
-                for (segment, (start, end)) in zip(line.points, line.points.dropFirst()).enumerated() {
-                    let count = Self.beads(along: line.longest[segment], radius: units)
+            for centreLine in centreLines(layer.shape, rig: rig, place: place) {
+                for (segment, (start, end)) in zip(centreLine.points, centreLine.points.dropFirst()).enumerated() {
+                    let count = Self.beads(along: centreLine.longest[segment], radius: units)
                     for step in (segment == 0 ? 0 : 1)...count {
                         let share = CGFloat(step) / CGFloat(count)
                         let centre = CGPoint(x: start.x + (end.x - start.x) * share, y: start.y + (end.y - start.y) * share)
-                        keyline.addEllipse(in: CGRect(x: centre.x - radius, y: centre.y - radius,
-                                                      width: radius * 2, height: radius * 2))
+                        NotchKeylineShapes.oval(centre, radii: CGSize(width: radius + line, height: radius + line),
+                                                into: keyline)
                     }
                 }
             }
@@ -832,12 +893,64 @@ extension NotchDancer {
         return NotchDancerDrawing(keyline: keyline, ring: ring, parts: parts)
     }
 
+    /// The fine ring a head or hand keeps over the body: a share of the
+    /// keyline, outside its edge.
+    static let ringShare: CGFloat = 0.55
+
+    /// A filled part with a keyline, grown by `outset` points all round
+    /// and added to `path`, wound as every keyline shape is: its edge where
+    /// a stroke `outset` wide either side of the part's own edge would end.
+    /// Heads and hands are circles; a shoe is round-ended, so beads along
+    /// its middle, squashed with it as the figure turns; the box keeps its
+    /// rounded corners, each grown with it.
+    private func grown(_ shape: NotchDancerLayer.Shape, rig: NotchDancerRig, place: Placement, by outset: CGFloat,
+                       into path: CGMutablePath) {
+        switch shape {
+        case .hands, .head:
+            let radius = (shape == .head ? body.headRadius : body.handRadius) * place.unit + outset
+            for centre in shape == .head ? [rig.head] : rig.hands {
+                NotchKeylineShapes.oval(place(centre), radii: CGSize(width: radius, height: radius), into: path)
+            }
+        case .shoes:
+            let round = body.shoeHeight / 2
+            let half = body.shoeWidth / 2 - round
+            let radii = CGSize(width: round * place.unit * abs(place.facing) + outset, height: round * place.unit + outset)
+            let count = Self.beads(along: half * 2, radius: round)
+            for index in 0..<2 {
+                let out: CGFloat = index == 0 ? -body.toeOut : body.toeOut
+                let foot = rig.feet[index]
+                let y = foot.y - body.footLift + round
+                let start = place(CGPoint(x: foot.x + out - half, y: y)), end = place(CGPoint(x: foot.x + out + half, y: y))
+                for step in 0...count {
+                    let share = CGFloat(step) / CGFloat(count)
+                    NotchKeylineShapes.oval(CGPoint(x: start.x + (end.x - start.x) * share,
+                                                    y: start.y + (end.y - start.y) * share), radii: radii, into: path)
+                }
+            }
+        case .box:
+            let transform = boxTransform(rig, place: place)
+            let centre = CGPoint.zero.applying(transform)
+            let across = CGPoint(x: 1, y: 0).applying(transform), up = CGPoint(x: 0, y: 1).applying(transform)
+            let along = CGVector(dx: across.x - centre.x, dy: across.y - centre.y)
+            let wide = (along.dx * along.dx + along.dy * along.dy).squareRoot()
+            let tall = ((up.x - centre.x) * (up.x - centre.x) + (up.y - centre.y) * (up.y - centre.y)).squareRoot()
+            guard wide > 0, tall > 0 else { return }
+            NotchKeylineShapes.roundedBox(centre, axis: CGVector(dx: along.dx / wide, dy: along.dy / wide),
+                                          half: CGSize(width: NotchBoombox.width / 2 * wide + outset,
+                                                       height: NotchBoombox.height / 2 * tall + outset),
+                                          corner: CGSize(width: NotchBoombox.corner * wide + outset,
+                                                         height: NotchBoombox.corner * tall + outset), into: path)
+        default:
+            return
+        }
+    }
+
     /// The box everything the figure draws in `pose` takes on `floor`, its
     /// keyline included (the ring over heads and hands lies inside it).
     func extent(_ pose: NotchDancerPose, floor: NotchDanceLayout) -> CGRect {
         let drawing = drawing(pose, floor: floor)
-        let line = Self.keyline(floor)
-        var box = drawing.keyline.boundingBoxOfPath.insetBy(dx: -line, dy: -line)
+        // The keyline is drawn grown already: its own edge is the outer one.
+        var box = drawing.keyline.boundingBoxOfPath
         for (group, path) in zip(drawnParts, drawing.parts) {
             let half = group.map { (lineWidth(layers[$0], floor: floor) ?? 0) / 2 }.max() ?? 0
             box = box.union(path.boundingBoxOfPath.insetBy(dx: -half, dy: -half))

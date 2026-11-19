@@ -119,45 +119,179 @@ enum NotchSongMotion {
 
     /// Plays a beat's move on `layer` under `key`, starting at `time` (media
     /// time): its first `attack` seconds, the hit, at the beat's 60 frames a
-    /// second, and the rest, the fall, at 30. The two are slices of the one
-    /// animation, the second picking it up where the first leaves off, so
-    /// the curve is the same as the whole; each replaces the slice its key
-    /// held. An attack of 0 plays it all at 30, as a settle.
-    static func play(_ animation: CAAnimation, attack: CFTimeInterval, on layer: CALayer, key: String,
-                     at time: CFTimeInterval) {
+    /// second, and the rest, the fall, at 30; with a `tail`, the fall's last
+    /// stretch from `tail` seconds on, once it is nearly still, at 15. They
+    /// are slices of the one animation, each picking it up where the last
+    /// leaves off, so the curve is the same as the whole; each replaces the
+    /// slice its key held. An attack of 0 plays it all at 30, as a settle.
+    static func play(_ animation: CAAnimation, attack: CFTimeInterval, tail: CFTimeInterval? = nil, on layer: CALayer,
+                     key: String, at time: CFTimeInterval) {
         let begin = layer.convertTime(time, from: nil)
         let length = animation.duration
         let hit = min(max(0, attack), length)
-        let fallKey = key + "Fall"
+        let calm = min(max(hit, tail ?? length), length)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        if hit > 0 {
-            let slice = animation.copy() as! CAAnimation
-            slice.beginTime = begin
-            if hit < length { slice.repeatDuration = hit }
-            slice.preferredFrameRateRange = beatFrames
-            layer.add(slice, forKey: key)
-        } else if layer.animation(forKey: key) != nil {
-            layer.removeAnimation(forKey: key)
+        let slices: [(key: String, from: CFTimeInterval, to: CFTimeInterval, rate: CAFrameRateRange)] = [
+            (key, 0, hit, beatFrames), (key + "Fall", hit, calm, slowFrames), (key + "Tail", calm, length, gentleFrames),
+        ]
+        for (index, slice) in slices.enumerated() {
+            guard slice.to > slice.from else {
+                if layer.animation(forKey: slice.key) != nil { layer.removeAnimation(forKey: slice.key) }
+                continue
+            }
+            let part: CAAnimation
+            if let trimmed = trim(animation, from: slice.from, to: slice.to) {
+                // Only its own knots: the render server is sent each value once.
+                part = trimmed
+            } else {
+                part = animation.copy() as! CAAnimation
+                if slice.from > 0 { part.timeOffset = slice.from }
+                if index > 0 || slice.to < length { part.repeatDuration = slice.to - slice.from }
+            }
+            part.beginTime = begin + slice.from
+            part.preferredFrameRateRange = slice.rate
+            layer.add(part, forKey: slice.key)
         }
-        if hit < length {
-            let slice = animation.copy() as! CAAnimation
-            slice.beginTime = begin + hit
-            slice.timeOffset = hit
-            slice.repeatDuration = length - hit
-            slice.preferredFrameRateRange = slowFrames
-            layer.add(slice, forKey: fallKey)
-        } else if layer.animation(forKey: fallKey) != nil {
-            layer.removeAnimation(forKey: fallKey)
+    }
+
+    /// The stretch of a keyframe animation from `from` to `to` seconds as
+    /// one of its own, when both fall on its knots, as a beat's hit, its
+    /// calm and a step's settle do: the knots between and their curves, so
+    /// it draws the same and carries none of the rest. Nil otherwise, or
+    /// for the whole of it.
+    private static func trim(_ animation: CAAnimation, from: CFTimeInterval, to: CFTimeInterval) -> CAKeyframeAnimation? {
+        guard let keyframes = animation as? CAKeyframeAnimation, keyframes.timingFunction == nil,
+              keyframes.calculationMode == .linear, keyframes.path == nil, let values = keyframes.values,
+              let keyTimes = keyframes.keyTimes, keyTimes.count == values.count, values.count > 1,
+              keyframes.duration > 0, from > 0 || to < keyframes.duration else { return nil }
+        let length = keyframes.duration
+        func knot(at time: CFTimeInterval) -> Int? {
+            keyTimes.firstIndex { abs($0.doubleValue * length - time) < 1e-6 }
         }
+        guard let first = knot(at: from), let last = knot(at: to), last > first else { return nil }
+        let curves = keyframes.timingFunctions
+        guard curves == nil || curves?.count == values.count - 1 else { return nil }
+        let part = keyframes.copy() as! CAKeyframeAnimation
+        part.values = Array(values[first...last])
+        part.keyTimes = keyTimes[first...last].map { NSNumber(value: ($0.doubleValue * length - from) / (to - from)) }
+        if let curves { part.timingFunctions = Array(curves[first..<last]) }
+        part.duration = to - from
+        part.timeOffset = 0
+        part.repeatCount = 0
+        part.repeatDuration = 0
+        return part
     }
 
     /// Takes a move `play` set going off `layer`, whichever slice is on.
     static func stop(_ key: String, on layer: CALayer) {
-        for name in [key, key + "Fall"] where layer.animation(forKey: name) != nil {
+        for name in [key, key + "Fall", key + "Tail"] where layer.animation(forKey: name) != nil {
             layer.removeAnimation(forKey: name)
         }
+    }
+
+    /// Whether a move `play` set going on `layer` under `key` is still on it, in any slice.
+    static func isPlaying(_ key: String, on layer: CALayer) -> Bool {
+        [key, key + "Fall", key + "Tail"].contains { layer.animation(forKey: $0) != nil }
+    }
+}
+
+// MARK: - Glows drawn once
+
+/// The island's soft glows drawn once into small images that layers show
+/// and move, in place of gradient layers: the aurora's pools, base, bursts
+/// and veil, and the dancers' floor and halos. A gradient layer is drawn
+/// again on every frame anything over or under it moves; an image is only
+/// placed again, and the island's glows sit under everything that moves.
+/// Each is drawn in the layer's unit space, as a gradient layer draws its
+/// own, so shown stretched to the layer's bounds it is the same glow: a
+/// radial one fills the ellipse inside them. Smooth all through, a few
+/// hundred pixels of it scale up without a step. Main thread only.
+enum NotchGlowImage {
+    private struct Key: Hashable {
+        let radial: Bool
+        let colors: [[CGFloat]]
+        let locations: [CGFloat]
+        let from: CGPoint
+        let to: CGPoint
+        let width: Int
+        let height: Int
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(radial)
+            hasher.combine(colors)
+            hasher.combine(locations)
+            hasher.combine(width)
+            hasher.combine(height)
+        }
+
+        static func == (lhs: Key, rhs: Key) -> Bool {
+            lhs.radial == rhs.radial && lhs.colors == rhs.colors && lhs.locations == rhs.locations
+                && lhs.from == rhs.from && lhs.to == rhs.to && lhs.width == rhs.width && lhs.height == rhs.height
+        }
+    }
+
+    private static var drawn: [Key: CGImage] = [:]
+    /// Enough for every glow of two songs and the companion's; past it the
+    /// oldest are let go together and drawn again if asked for.
+    private static let kept = 48
+    private static let space = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    /// A radial glow from the middle out to the edge of the ellipse its
+    /// layer's bounds hold, as a gradient layer from (0.5, 0.5) to (1, 1)
+    /// draws it, `colors` at `locations` (evenly spread when nil), the last
+    /// carried on into the corners.
+    static func radial(_ colors: [CGColor], locations: [CGFloat]? = nil, side: Int = 256) -> CGImage? {
+        image(Key(radial: true, colors: components(colors), locations: spread(locations, colors.count),
+                  from: CGPoint(x: 0.5, y: 0.5), to: CGPoint(x: 1, y: 1), width: side, height: side))
+    }
+
+    /// A straight gradient from `from` to `to` in the layer's unit space,
+    /// (0, 0) its bottom left, as a gradient layer of that start and end
+    /// point draws it, its end colours carried on past both ends.
+    static func axial(_ colors: [CGColor], locations: [CGFloat]? = nil, from: CGPoint, to: CGPoint,
+                      width: Int = 128, height: Int = 128) -> CGImage? {
+        image(Key(radial: false, colors: components(colors), locations: spread(locations, colors.count),
+                  from: from, to: to, width: width, height: height))
+    }
+
+    private static func spread(_ locations: [CGFloat]?, _ count: Int) -> [CGFloat] {
+        if let locations, locations.count == count { return locations }
+        return count > 1 ? (0..<count).map { CGFloat($0) / CGFloat(count - 1) } : [0]
+    }
+
+    private static func components(_ colors: [CGColor]) -> [[CGFloat]] {
+        colors.map { color in
+            let srgb = color.converted(to: space, intent: .defaultIntent, options: nil) ?? color
+            return srgb.components ?? [0, 0, 0, 0]
+        }
+    }
+
+    private static func image(_ key: Key) -> CGImage? {
+        if let image = drawn[key] { return image }
+        guard key.width > 0, key.height > 0, !key.colors.isEmpty,
+              let context = CGContext(data: nil, width: key.width, height: key.height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let gradient = CGGradient(colorSpace: space, colorComponents: key.colors.flatMap { $0.count == 4 ? $0 : [0, 0, 0, 0] },
+                                        locations: key.locations, count: key.colors.count) else { return nil }
+        let size = CGSize(width: key.width, height: key.height)
+        let carried: CGGradientDrawingOptions = [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+        if key.radial {
+            // A circle in a square of unit space, stretched to the bounds.
+            context.scaleBy(x: size.width, y: size.height)
+            context.drawRadialGradient(gradient, startCenter: key.from, startRadius: 0, endCenter: key.from,
+                                       endRadius: hypot(key.to.x - key.from.x, key.to.y - key.from.y) / 2.squareRoot(),
+                                       options: carried)
+        } else {
+            context.scaleBy(x: size.width, y: size.height)
+            context.drawLinearGradient(gradient, start: key.from, end: key.to, options: carried)
+        }
+        guard let image = context.makeImage() else { return nil }
+        if drawn.count >= kept { drawn.removeAll() }
+        drawn[key] = image
+        return image
     }
 }
 
@@ -215,6 +349,12 @@ enum NotchBeatFall {
     /// A hit lifting the push less than this above where its fall stands
     /// changes nothing on screen, so nothing is set going again.
     static let deadBand = 0.03
+    /// A fall within this many points of rest, or this much opacity, keeps
+    /// falling at 15 frames a second (NotchBeatCurve.calm): what is left
+    /// loses about a third of itself each of those frames, well under a
+    /// point, and a 30th of a soft glow's strength.
+    static let stillPoints = 2.0
+    static let stillOpacity = 0.03
 
     /// The push at each reading from a hit of `push`: the hit's own, then
     /// each reading's fall, and last the rest, 0.
@@ -288,6 +428,21 @@ struct NotchBeatCurve: Equatable {
     var duration: CFTimeInterval { times.last ?? 0 }
     /// Where it comes to rest.
     var end: Double { values.last ?? 0 }
+
+    /// When it is nearly still: from the first knot after which it never
+    /// again stands more than `within` from where it comes to rest. Each
+    /// span eases one way, so it keeps inside that from there. What is left
+    /// of a fall then moves a fraction of that each frame, and plays at 15
+    /// frames a second (NotchSongMotion.play's tail). Its whole length when
+    /// it never gets that close before it ends.
+    func calm(within: Double) -> CFTimeInterval {
+        var calm = duration
+        for index in values.indices.reversed() {
+            guard abs(values[index] - end) <= within else { break }
+            calm = times[index]
+        }
+        return calm
+    }
 
     /// Where it stands `elapsed` seconds from its start.
     func value(at elapsed: CFTimeInterval) -> Double {

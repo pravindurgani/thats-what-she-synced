@@ -1045,6 +1045,8 @@ final class NotchMascotHostView: NSView {
     /// they stand without reading the screen.
     private var bopSwell = NotchBeatTrack()
     private var bopLean = NotchBeatTrack()
+    /// How near rest the bop's swell and lean stand when it falls on at 15 frames a second.
+    private static let bopStill = 0.02
 
     /// While the island wears a song, the island's companion takes its colours
     /// and bops to the island's beat, swaying the other way on each new hit.
@@ -1100,7 +1102,10 @@ final class NotchMascotHostView: NSView {
         let poses = zip(swell.values, lean.values).map { swell, lean in
             NSValue(caTransform3D: CATransform3DRotate(CATransform3DMakeScale(1 + swell, 1 + swell, 1), lean, 0, 0, 1))
         }
-        NotchSongMotion.play(swell.animation("sublayerTransform", values: poses), attack: beat.attack,
+        // Within a fiftieth of its size and a fiftieth of a radian of rest,
+        // a quarter of a point on the companion, it settles at 15 frames a second.
+        let calm = max(swell.calm(within: Self.bopStill), lean.calm(within: Self.bopStill))
+        NotchSongMotion.play(swell.animation("sublayerTransform", values: poses), attack: beat.attack, tail: calm,
                              on: mascot.root, key: "bop", at: now)
     }
 

@@ -273,7 +273,48 @@ enum NotchMusicPathProbe {
                                    owners: scene.owners, from: start, to: end)]
         lines.append(String(format: "  main thread %.0f ms in %.1f s (%.1f ms a second)", locale: posix,
                             used * 1000, end - start, used * 1000 / max(0.001, end - start)))
+        let drawn = scene.owners.map { "\($0.0) \(drawnLayers(in: $0.1, under: scene.container.layer))" }
+        lines.append("  layers drawn: " + drawn.joined(separator: ", ")
+                     + " (each redrawn on a frame the light under it moves)")
+        if let dancers = scene.dancers?.layer {
+            let outlines = outlineElements(under: dancers)
+            lines.append(String(format: "  dancers' outlines: %d shapes, %d curves and lines, %d of them stroked",
+                                locale: posix, outlines.shapes, outlines.elements, outlines.stroked))
+        }
         return lines.joined(separator: "\n")
+    }
+
+    /// The shapes under `root` with an outline, and the curves and lines
+    /// in them: what the render server draws again for each frame they move.
+    private static func outlineElements(under root: CALayer) -> (shapes: Int, elements: Int, stroked: Int) {
+        var shapes = 0, elements = 0, stroked = 0
+        func visit(_ layer: CALayer) {
+            if let shape = layer as? CAShapeLayer, let path = shape.path {
+                var count = 0
+                path.applyWithBlock { _ in count += 1 }
+                shapes += 1
+                elements += count
+                if shape.strokeColor != nil, shape.lineWidth > 0 { stroked += count }
+            }
+            layer.sublayers?.forEach(visit)
+        }
+        visit(root)
+        return (shapes, elements, stroked)
+    }
+
+    /// The layers under `root` among `owned` that put something on screen
+    /// now: shown, not clear, and drawing a colour, a gradient, an outline
+    /// or an image.
+    private static func drawnLayers(in owned: Set<ObjectIdentifier>, under root: CALayer?) -> Int {
+        guard let root, !root.isHidden, root.opacity > 0 else { return 0 }
+        var count = 0
+        if owned.contains(ObjectIdentifier(root)) {
+            let draws = root.backgroundColor.map { $0.alpha > 0 } ?? false || root.contents != nil
+                || root is CAGradientLayer || (root as? CAShapeLayer)?.path != nil
+            if draws { count += 1 }
+        }
+        for layer in root.sublayers ?? [] { count += drawnLayers(in: owned, under: layer) }
+        return count
     }
 
     /// With the aurora covered, not shown or still as in Low Power Mode,
@@ -494,6 +535,8 @@ private enum Tally {
     private struct Span {
         let layer: ObjectIdentifier
         let area: CGFloat
+        /// A shape's outline, which the render server redraws on every frame it moves.
+        let outline: Bool
         var start: Double
         var end: Double
         let rate: Double
@@ -582,8 +625,12 @@ private enum Tally {
             length = duration * Double(max(1, animation.repeatCount)) * (animation.autoreverses ? 2 : 1)
         }
         let preferred = Double(animation.preferredFrameRateRange.preferred ?? 0)
+        func outline(_ animation: CAAnimation) -> Bool {
+            if let group = animation as? CAAnimationGroup { return group.animations?.contains(where: outline) ?? false }
+            return (animation as? CAPropertyAnimation)?.keyPath == "path"
+        }
         return Span(layer: ObjectIdentifier(layer), area: layer.bounds.width * layer.bounds.height,
-                    start: length.isInfinite ? now : max(now, begin),
+                    outline: outline(animation), start: length.isInfinite ? now : max(now, begin),
                     end: length.isInfinite ? .infinity : begin + length, rate: preferred > 0 ? preferred : 120)
     }
 
@@ -635,6 +682,19 @@ private enum Tally {
 
     static func framesAsked(from start: Double, to end: Double) -> Double { frames(spans, from: start, to: end).total }
 
+    /// Layer updates: for each layer, the frames its own animations ask
+    /// for (two on one layer at once move it once a frame), summed over
+    /// the layers. What the compositor recomposes, layer by layer.
+    private static func layerFrames(_ chosen: [Span], from start: Double, to end: Double) -> Double {
+        Dictionary(grouping: chosen, by: \.layer).values.reduce(0) { $0 + frames($1, from: start, to: end).total }
+    }
+
+    /// Outlines redrawn: layer updates of shapes whose path moves, each
+    /// one a path the render server strokes or fills again.
+    private static func outlineFrames(_ chosen: [Span], from start: Double, to end: Double) -> Double {
+        layerFrames(chosen.filter(\.outline), from: start, to: end)
+    }
+
     /// Animated area: each running animation's layer area times its frames.
     private static func pixelFrames(_ chosen: [Span], from start: Double, to end: Double) -> Double {
         chosen.reduce(0) { sum, span in
@@ -654,15 +714,21 @@ private enum Tally {
                             + "frames asked %.0f (%.1f a second; %@)", locale: posix, title, totalRearms,
                             Double(totalRearms) / length, totalReads, Double(totalReads) / length, all.total,
                             all.total / length, rates.isEmpty ? "none" : rates)]
+        lines.append(String(format: "  layer updates %.0f a second, outlines redrawn %.0f a second", locale: posix,
+                            layerFrames(spans, from: start, to: end) / length,
+                            outlineFrames(spans, from: start, to: end) / length))
         var claimed: Set<ObjectIdentifier> = []
         for (name, layers) in owners {
             claimed.formUnion(layers)
             let own = spans.filter { layers.contains($0.layer) }
             let ownRearms = rearms.filter { layers.contains($0.key) }.values.reduce(0, +)
             let ownReads = reads.filter { layers.contains($0.key) }.values.reduce(0, +)
-            var line = String(format: "  %@ re-arms %5d, reads %5d, frames asked %6.0f", locale: posix,
+            var line = String(format: "  %@ re-arms %5d, reads %5d, frames asked %6.0f, layer updates %5.0f/s, "
+                              + "outlines %5.0f/s", locale: posix,
                               name.padding(toLength: 10, withPad: " ", startingAt: 0),
-                              ownRearms, ownReads, frames(own, from: start, to: end).total)
+                              ownRearms, ownReads, frames(own, from: start, to: end).total,
+                              layerFrames(own, from: start, to: end) / length,
+                              outlineFrames(own, from: start, to: end) / length)
             if areas {
                 line += String(format: ", animated area %.2f Mpt·frames", locale: posix,
                                pixelFrames(own, from: start, to: end) / 1e6)

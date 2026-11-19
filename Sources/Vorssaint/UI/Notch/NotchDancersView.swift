@@ -184,7 +184,8 @@ final class NotchDancersView: NSView {
                           NotchDanceTiming.heldStepPlays(beat: beat, generation: token,
                                                          latestBeat: NotchDanceConductor.shared.beat,
                                                          latestGeneration: self.generation) else { return }
-                    self.stage.play(step, dancer: index)
+                    // Off the beat it hits at 30 frames a second, so it adds no 60s of its own.
+                    self.stage.play(step, dancer: index, onBeat: false)
                 }
             } else {
                 stage.play(step, dancer: index)
