@@ -1328,3 +1328,39 @@ final class NotchAuroraBubbleView: NSView {
     }
 }
 
+/// The closed strip's cover, ringed in the song's own colours while the
+/// island wears them, so it is set into the strip as the dancers are across
+/// the camera. One stroke inside the cover's edge, drawn once: the layout
+/// does not move and nothing redraws while the song plays. It softens while
+/// the song is paused, and a new song's ring fades in over the last's.
+struct NotchCoverRing: ViewModifier {
+    @ObservedObject private var paint = NotchSongPaint.shared
+    let radius: CGFloat
+    /// Whether the song is playing.
+    let lit: Bool
+    static let width: CGFloat = 1.25
+
+    func body(content: Content) -> some View {
+        let colours = NotchOfficeEdition.isEnabled() ? paint.palette.map(Self.colours) : nil
+        content
+            .overlay {
+                if let colours {
+                    RoundedRectangle(cornerRadius: radius, style: .circular)
+                        .strokeBorder(LinearGradient(colors: colours, startPoint: .topLeading, endPoint: .bottomTrailing),
+                                      lineWidth: Self.width)
+                        .opacity(lit ? 0.95 : 0.45)
+                        .id(colours)
+                        .transition(.opacity)
+                }
+            }
+            .animation(NotchSongMotion.colour, value: colours)
+            .animation(NotchSongMotion.swapEase, value: lit)
+    }
+
+    /// The palette's marks, light enough to read on the island's dark: the
+    /// lead colour into the next, never fewer than two.
+    static func colours(_ palette: NotchArtworkPalette) -> [Color] {
+        let marks = palette.marks.prefix(2).map { Color(nsColor: $0) }
+        return marks.count > 1 ? marks : marks + marks
+    }
+}
