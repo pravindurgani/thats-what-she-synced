@@ -42,8 +42,9 @@ struct NotchOfficeCue: Equatable {
         case message
         case call
         case meeting
-        /// An event starting in five minutes, where no countdown strip
-        /// carries the caption: a notice in the strip, never a card.
+        /// An event starting in five minutes: a notice in the strip, never
+        /// a card, with or without a countdown strip, so the line is whole
+        /// and said once, while it is true.
         case meetingSoon
         /// "Cafe Disco": the volume keys, with a boombox and a VU meter.
         case volume
@@ -382,47 +383,13 @@ enum NotchOfficeMoments {
     }
 
     /// The event whose five minutes just opened as the meeting followed went
-    /// from `before` to `after`, which an island without a countdown strip
-    /// announces with a notice. Only in the first minute of the five, so an
+    /// from `before` to `after`, which the island announces with a notice. Only in the first minute of the five, so an
     /// event added just before it starts, or a Mac that wakes late, is no news.
     static func meetingSoonArrived(from before: NotchCalendarCountdown?, to after: NotchCalendarCountdown?,
                                    at now: Date) -> NotchCalendarEvent? {
         guard let after, meetingSoon(after, now: now), before?.event.id != after.event.id,
               after.event.start.timeIntervalSince(now) > meetingSoonLead - 60 else { return nil }
         return after.event
-    }
-
-    /// The countdown's caption, in two halves that sit either side of the
-    /// camera, under the title and under the clock: the wings are too narrow
-    /// for it whole, and it reads straight across the camera.
-    static func meetingSoonHalves(_ countdown: NotchCalendarCountdown?, now: Date,
-                                  language: AppLanguage) -> (leading: String, trailing: String)? {
-        guard showsCaptions(in: language), meetingSoon(countdown, now: now) else { return nil }
-        return halves(meetingSoonCaption)
-    }
-
-    /// The countdown strip's caption halves, where the strip carries them:
-    /// the Office moments on, five minutes out, a strip `contentHeight` tall
-    /// enough for a second line, and each half inside its wing's `room`. The
-    /// strip draws them and the island glows under them on the same answer.
-    static func countdownCaption(enabled: Bool, meeting: NotchCalendarCountdown?, now: Date, language: AppLanguage,
-                                 contentHeight: CGFloat, room: CGFloat) -> (leading: String, trailing: String)? {
-        guard enabled, contentHeight >= 24,
-              let halves = meetingSoonHalves(meeting, now: now, language: language) else { return nil }
-        guard captionWidth(halves.leading) <= room, captionWidth(halves.trailing, rule: false) <= room else { return nil }
-        return halves
-    }
-
-    /// Split after the comma nearest the middle, else the space nearest it.
-    static func halves(_ caption: String) -> (leading: String, trailing: String) {
-        let characters = Array(caption)
-        let middle = characters.count / 2
-        let breaks = characters.indices.filter { characters[$0] == " " && $0 > 0 }
-        let commas = breaks.filter { characters[$0 - 1] == "," }
-        guard let cut = (commas.isEmpty ? breaks : commas).min(by: { abs($0 - middle) < abs($1 - middle) }) else {
-            return (caption, "")
-        }
-        return (String(characters[..<cut]), String(characters[(cut + 1)...]))
     }
 
     /// The event that began as a countdown went from `before` to `after` at
@@ -459,8 +426,8 @@ enum NotchOfficeMoments {
                               accent: event.color, place: place.isEmpty ? nil : place)
     }
 
-    /// Five minutes out with no countdown strip to carry the caption: the
-    /// event's own notice, its title with the caption under it.
+    /// Five minutes out: the event's own notice, its title with the whole
+    /// caption under it, countdown strip or not.
     static func meetingSoonCue(_ event: NotchCalendarEvent, language: AppLanguage) -> NotchOfficeCue {
         NotchOfficeCue(kind: .meetingSoon, caption: showsCaptions(in: language) ? meetingSoonCaption : nil,
                        accent: event.color)
@@ -532,11 +499,11 @@ enum NotchOfficeMoments {
     /// A strip shorter than a title and a caption keeps just the title.
     static func stripFitsCaption(_ stripHeight: CGFloat) -> Bool { stripHeight >= 28 }
 
-    static func captionWidth(_ caption: String, font: NSFont = stripCaptionFont, rule: Bool = true) -> CGFloat {
+    static func captionWidth(_ caption: String, font: NSFont = stripCaptionFont) -> CGFloat {
         guard !caption.isEmpty else { return 0 }
         let text = (caption as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
         let marker = font === cardCaptionFont ? cardRule : stripRule
-        return text + (rule ? marker.width + marker.gap : 0) + 1
+        return text + marker.width + marker.gap + 1
     }
 
     static func captionHeight(_ font: NSFont = stripCaptionFont) -> CGFloat {

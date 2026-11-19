@@ -253,15 +253,14 @@ enum NotchOfficeMomentsTests {
                      && NotchOfficeMoments.meetingSoonArrived(from: nil, to: upcoming,
                                                               at: start.addingTimeInterval(-200)) == nil
                      && NotchOfficeMoments.meetingSoonArrived(from: upcoming, to: nil, at: start) == nil,
-                     "a strip-less island says five minutes once, as they open, and never late")
-        let halves = NotchOfficeMoments.meetingSoonHalves(upcoming, now: start.addingTimeInterval(-120), language: .enUS)
-        suite.expect(halves?.leading == "Conference room," && halves?.trailing == "five minutes.",
-                     "the caption splits at its comma, either side of the camera")
-        suite.expect(NotchOfficeMoments.meetingSoonHalves(upcoming, now: start.addingTimeInterval(-120), language: .de) == nil,
-                     "only English gets the caption")
-        let split = NotchOfficeMoments.halves("Head of Sending")
-        suite.expect(split.leading + " " + split.trailing == "Head of Sending" && NotchOfficeMoments.halves("Solo").trailing.isEmpty,
-                     "a caption without a comma splits at the space nearest its middle, and one word stays whole")
+                     "the island says five minutes once, as they open, and never late")
+        suite.expect(NotchOfficeMoments.meetingSoonCue(event, language: .enUS).caption == "Conference room, five minutes."
+                     && NotchOfficeMoments.meetingSoonCue(event, language: .de).caption == nil,
+                     "the line is the notice's, whole, and only in English")
+        suite.expect(NotchOfficeMoments.meetingSoon(upcoming, now: start.addingTimeInterval(-120))
+                     && !NotchOfficeMoments.meetingSoon(upcoming, now: start.addingTimeInterval(-301))
+                     && !NotchOfficeMoments.meetingSoon(ongoing, now: start.addingTimeInterval(1)),
+                     "the five minutes run from five minutes out to the start, and not once it is under way")
         suite.expect(NotchOfficeMoments.meetingBegan(from: upcoming, to: ongoing, at: start.addingTimeInterval(1))
                      && NotchOfficeMoments.meetingBegan(from: upcoming, to: nil, at: start)
                      && !NotchOfficeMoments.meetingBegan(from: upcoming, to: ongoing, at: start.addingTimeInterval(90))
@@ -309,8 +308,7 @@ enum NotchOfficeMomentsTests {
                      "a countdown moving from one event under way to the next announces the next, once and only then")
         let watched = NotchOfficeMoments.meeting(in: events, now: ten.addingTimeInterval(-120))
         suite.expect(watched == NotchCalendarCountdown(event: second, ongoing: false)
-                     && NotchOfficeMoments.meetingSoonHalves(watched, now: ten.addingTimeInterval(-120),
-                                                             language: .enUS) != nil,
+                     && NotchOfficeMoments.meetingSoon(watched, now: ten.addingTimeInterval(-120)),
                      "the next meeting's five minutes are told while the first is still under way")
         let afterWatch = NotchOfficeMoments.meeting(in: events, now: ten.addingTimeInterval(1))
         suite.expect(afterWatch == nil
@@ -395,9 +393,9 @@ enum NotchOfficeMomentsTests {
                      && meeting.readsFromEnds,
                      "a meeting starting opens into the same card, and reads from the ends in the strip")
         suite.expect(NotchOfficeMoments.captionWidth("") == 0
-                     && NotchOfficeMoments.captionWidth("Head of Sending", rule: false)
-                        < NotchOfficeMoments.captionWidth("Head of Sending"),
-                     "the rule's room is only taken with the rule")
+                     && NotchOfficeMoments.captionWidth("Head of Sending")
+                        > ("Head of Sending" as NSString).size(withAttributes: [.font: NotchOfficeMoments.stripCaptionFont]).width,
+                     "an empty caption takes no room, and a caption's room includes its rule")
 
         let role = "Assistant to the Regional Texter"
         let icon = NotchNotificationBannerLayout.iconSize

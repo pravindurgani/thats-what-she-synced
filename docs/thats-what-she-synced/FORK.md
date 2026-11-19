@@ -32,6 +32,7 @@ git merge origin/main                    # or your Vorssaint remote
 ./build.sh && ./build.sh --test          # 0 warnings, TESTS OK
 Tools/bench-notch.sh --rounds 2          # the island's cost, Office edition on vs off
 ./build.sh --dev && ./build/VorssaintDeveloper --music-path-probe   # the beat's cost, no music needed
+./build/VorssaintDeveloper --office-notice-frames /tmp/notices     # the calendar notices, drawn as the island shows them
 ```
 
 ## Next, maybe

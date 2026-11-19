@@ -84,9 +84,6 @@ struct NotchLowerThird: View {
     let caption: String
     var size: Size = .strip
     var accent: Color = NotchOfficeInk.mustard
-    /// Whether the rule leads the words: the second half of a caption split
-    /// around the camera continues the line without one.
-    var rule = true
     var trigger: String? = nil
     /// A beat after the title, as every moment's lower third arrives.
     var delay: Double = NotchOfficeMoments.captionBeat
@@ -95,11 +92,9 @@ struct NotchLowerThird: View {
         let font = size == .strip ? NotchOfficeMoments.stripCaptionFont : NotchOfficeMoments.cardCaptionFont
         let marker = size == .strip ? NotchOfficeMoments.stripRule : NotchOfficeMoments.cardRule
         HStack(spacing: marker.gap) {
-            if rule {
-                RoundedRectangle(cornerRadius: marker.width / 2)
-                    .fill(accent)
-                    .frame(width: marker.width, height: NotchOfficeMoments.captionHeight(font) - 1)
-            }
+            RoundedRectangle(cornerRadius: marker.width / 2)
+                .fill(accent)
+                .frame(width: marker.width, height: NotchOfficeMoments.captionHeight(font) - 1)
             Text(caption)
                 .font(Font(font as CTFont))
                 .foregroundStyle(NotchOfficeInk.paper.opacity(size == .strip ? 0.8 : 0.86))

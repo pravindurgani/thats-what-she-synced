@@ -531,6 +531,7 @@ enum NotchPresentationProbe {
         case quickAccessClicks = "--quick-access-clicks"
         case backdropFrames = "--backdrop-frames"
         case musicPath = "--music-path-probe"
+        case officeNotices = "--office-notice-frames"
     }
 
     /// Any mode selects the probe on its own, so none of them falls through
@@ -560,6 +561,11 @@ enum NotchPresentationProbe {
                 }
                 NotchBackdropFramesProbe.runAndExit(folder: arguments[index + 1])
             case .musicPath: NotchMusicPathProbe.runAndExit(arguments: arguments)
+            case .officeNotices:
+                guard arguments.indices.contains(index + 1) else {
+                    print("OFFICE NOTICE FRAMES FAILED: --office-notice-frames needs a folder"); exit(1)
+                }
+                NotchOfficeNoticeProbe.runAndExit(folder: arguments[index + 1])
             }
         }
         let app = NSApplication.shared
