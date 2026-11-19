@@ -839,15 +839,7 @@ final class NotchService: ObservableObject {
             + NotchCalendarSupport.stripClockSpacing
             + width(NotchCalendarSupport.timeText(countdown, locale: language.formattingLocale()),
                     .monospacedDigitSystemFont(ofSize: 11, weight: .medium))
-        // Five minutes before the next start, the Office caption splits
-        // under both sides, whichever event the strip counts down: an event
-        // under way that ends as the next begins keeps the strip.
-        let caption = NotchOfficeMoments.isEnabled()
-            ? NotchOfficeMoments.meetingSoonHalves(NotchCalendarService.shared.meeting, now: Date(),
-                                                   language: language) : nil
-        let captionSide = caption.map { max(NotchOfficeMoments.captionWidth($0.leading),
-                                            NotchOfficeMoments.captionWidth($0.trailing, rule: false)) } ?? 0
-        return inset + max(titleSide, clockSide, captionSide)
+        return inset + max(titleSide, clockSide)
     }
 
     /// The wider of the two sides, the timer's reading or what shares the
@@ -4517,8 +4509,8 @@ final class NotchService: ObservableObject {
                     self?.refreshPresentation()
                 }.store(in: &subscriptions)
             // The Office moments follow the calendar's events, countdown strip
-            // or not: five minutes out, the strip is measured again for its
-            // caption, or a notice says so; at the start, the meeting card.
+            // or not: five minutes out, a notice says so, the whole line once
+            // while it is true; at the start, the meeting card.
             NotchCalendarService.shared.$meeting.removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
@@ -4878,11 +4870,11 @@ extension NotchService {
     /// The Office moments follow the next timed event from the calendar's
     /// own events (`NotchCalendarService.meeting`), whether or not the
     /// countdown strip is on, and it is off by default. Five minutes before
-    /// it, a strip counting down carries the caption (NotchCalendarStrip);
-    /// with no strip, the event's own notice says it, as a short notice in
-    /// the strip like the island's other ones, never a card that would take
-    /// over the island five minutes early. As it begins, the island opens
-    /// into its meeting card.
+    /// it, the event's own notice says so, whole, as a short notice in the
+    /// strip like the island's other ones, never a card that would take over
+    /// the island five minutes early; a countdown strip comes back after it,
+    /// glowing until the start. As it begins, the island opens into its
+    /// meeting card.
     fileprivate func syncOfficeCalendar() {
         let meeting = NotchCalendarService.shared.meeting
         let saw = officeSawMeeting
@@ -4901,8 +4893,7 @@ extension NotchService {
             showOfficeCard(notice(event, NotchOfficeMoments.meetingCue(event, language: language)))
             return
         }
-        guard NotchCalendarService.shared.countdown == nil,
-              let event = NotchOfficeMoments.meetingSoonArrived(from: saw, to: meeting, at: now) else { return }
+        guard let event = NotchOfficeMoments.meetingSoonArrived(from: saw, to: meeting, at: now) else { return }
         show(notice(event, NotchOfficeMoments.meetingSoonCue(event, language: language)))
     }
 

@@ -297,21 +297,18 @@ enum NotchOfficeFamilyTests {
                      "the edition's mug stands where the boombox does, as the battery's does")
     }
 
-    /// The countdown strip carries the caption, and glows, on one answer.
+    /// "Conference room, five minutes." is said whole, by a notice: the
+    /// countdown strip, Vorssaint's own, never splits it across the camera.
     private static func countdownContracts(_ suite: TestSuite) {
+        let strip = (try? String(contentsOfFile: "Sources/Vorssaint/UI/Notch/NotchCalendarStrip.swift", encoding: .utf8)) ?? ""
+        suite.expect(!strip.isEmpty && !strip.contains("NotchLowerThird") && !strip.contains("Office"),
+                     "the countdown strip carries no Office caption")
         let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
-        let event = NotchCalendarEvent(id: "q", title: "Quarterly", calendar: "Work", start: now.addingTimeInterval(120),
-                                       end: now.addingTimeInterval(3720), allDay: false, location: "")
+        let event = NotchCalendarEvent(id: "q", title: "Quarterly", calendar: "Work", start: now.addingTimeInterval(300),
+                                       end: now.addingTimeInterval(3900), allDay: false, location: "")
         let soon = NotchCalendarCountdown(event: event, ongoing: false)
-        func caption(enabled: Bool = true, meeting: NotchCalendarCountdown? = soon, language: AppLanguage = .enUS,
-                     height: CGFloat = 26, room: CGFloat = 200) -> Bool {
-            NotchOfficeMoments.countdownCaption(enabled: enabled, meeting: meeting, now: now, language: language,
-                                                contentHeight: height, room: room) != nil
-        }
-        suite.expect(caption(), "five minutes out, a tall enough strip with room carries the caption")
-        suite.expect(!caption(enabled: false) && !caption(meeting: nil) && !caption(language: .de)
-                     && !caption(height: 20) && !caption(room: 40),
-                     "off, with no meeting, outside English, in a short strip or a narrow wing it carries none")
+        suite.expect(NotchOfficeMoments.meetingSoonArrived(from: nil, to: soon, at: now.addingTimeInterval(1)) == event,
+                     "as the five minutes open, the notice says so, countdown strip or not")
     }
 
     /// The views follow the family's rules: Low Power Mode wherever Reduce

@@ -84,14 +84,13 @@ extension NotchSongMode {
             && notch.departingMusic == nil && notch.lingeringMusic == nil
     }
 
-    /// The closed island's countdown strip carrying the Office caption five
-    /// minutes before a meeting, read as the strip reads it
-    /// (NotchCalendarStrip.officeCaption).
-    static func countdownCarriesCaption(_ notch: NotchService, _ calendar: NotchCalendarService) -> Bool {
-        guard notch.compactActivity == .calendar, closedStripShows(notch), notch.compactCompanion == nil,
-              calendar.countdown != nil else { return false }
-        return NotchCalendarStrip.officeCaption(geometry: notch.compactActivityGeometry, meeting: calendar.meeting,
-                                                now: Date(), language: L10n.shared.language) != nil
+    /// The closed island's countdown strip in the five minutes before a
+    /// meeting, the Office edition on: the meeting's notice has said so, and
+    /// the strip keeps its glow, never its words, until the meeting starts.
+    static func countdownMeetingSoon(_ notch: NotchService, _ calendar: NotchCalendarService) -> Bool {
+        guard NotchOfficeMoments.isEnabled(), notch.compactActivity == .calendar, closedStripShows(notch),
+              notch.compactCompanion == nil, calendar.countdown != nil else { return false }
+        return NotchOfficeMoments.meetingSoon(calendar.meeting, now: Date())
     }
 
     private static func closedStripShows(_ notch: NotchService) -> Bool {
@@ -141,7 +140,7 @@ struct NotchGlowBackdrop: View {
     /// A shuffle dealing another member recolours the companion's glow,
     /// cross-faded as the member is.
     @ObservedObject private var shuffle = NotchMascotShuffleService.shared
-    /// The meeting five minutes out, whose caption the countdown strip carries.
+    /// The meeting five minutes out, under whose countdown the island glows.
     @ObservedObject private var calendar = NotchCalendarService.shared
     @Environment(\.colorSchemeContrast) private var contrast
     /// The agents' colours, held while their strip still shows its last
@@ -154,9 +153,9 @@ struct NotchGlowBackdrop: View {
         let playing = music.playback?.isPlaying == true
         let songGlows = playing && (NotchSongMode.announcesSong(notch) || NotchSongMode.glowsClosed(notch, music))
         let closedNotice = NotchSongMode.closedNotice(notch)
-        // The countdown strip carrying the Office caption glows as the
-        // moment's notice does.
-        let countdown = NotchSongMode.countdownCarriesCaption(notch, calendar)
+        // In a meeting's last five minutes the countdown strip glows as the
+        // meeting's notice did, after it has said so.
+        let countdown = NotchSongMode.countdownMeetingSoon(notch, calendar)
             ? NotchIslandGlow.notice(office: true, agent: nil, colours: NotchMomentPaint.source(),
                                      idleAllowed: idleAllowed) : nil
         let closed = NotchIslandGlow.closed(

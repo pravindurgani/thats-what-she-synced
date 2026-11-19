@@ -40,8 +40,7 @@ struct NotchCalendarStrip: View {
                                 if usesFullRow {
                                     fullRow(countdown, title: displayTitle, remaining: remaining)
                                 } else {
-                                    wings(countdown, title: displayTitle, remaining: remaining,
-                                          caption: officeCaption(countdown, now: context.date))
+                                    wings(countdown, title: displayTitle, remaining: remaining)
                                 }
                             }
                             .frame(width: geometry.compactActivitySize.width - geometry.compactActivityHorizontalPadding * 2,
@@ -83,59 +82,30 @@ struct NotchCalendarStrip: View {
 
     private var rowInset: CGFloat { max(10, geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)) }
 
-    /// The Office caption five minutes before the next event starts, in two
-    /// halves either side of the camera, while the strip has the height for
-    /// it and each half fits its wing; the countdown is what matters. Read
-    /// from the meeting the moments follow, so an event under way that ends
-    /// as the next one begins still earns it for the next.
-    private func officeCaption(_ countdown: NotchCalendarCountdown,
-                               now: Date) -> (leading: String, trailing: String)? {
-        Self.officeCaption(geometry: geometry, meeting: calendar.meeting, now: now, language: l10n.language)
-    }
-
-    /// The caption's halves where the strip's wings carry them; the island
-    /// glows under the strip on the same answer (NotchGlowBackdrop).
-    static func officeCaption(geometry: NotchGeometry, meeting: NotchCalendarCountdown?, now: Date,
-                              language: AppLanguage) -> (leading: String, trailing: String)? {
-        guard !geometry.compactActivityUsesFooter, geometry.compactActivityWingWidth > 0 else { return nil }
-        return NotchOfficeMoments.countdownCaption(
-            enabled: NotchOfficeMoments.isEnabled(), meeting: meeting, now: now, language: language,
-            contentHeight: geometry.compactActivityContentHeight,
-            room: geometry.compactActivityWingWidth - geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0))
-    }
-
-    private func wings(_ countdown: NotchCalendarCountdown, title: String, remaining: String,
-                       caption: (leading: String, trailing: String)? = nil) -> some View {
+    private func wings(_ countdown: NotchCalendarCountdown, title: String, remaining: String) -> some View {
         let inset = geometry.compactActivityEdgeInset(boxHeight: 9, radius: 0)
-        let key = caption.map { _ in "soon|\(calendar.meeting?.event.id ?? countdown.event.id)" }
         return HStack(spacing: 0) {
-            VStack(alignment: .trailing, spacing: 1) {
-                HStack(spacing: NotchCalendarSupport.stripTitleSpacing) {
-                    Self.dot(countdown.event)
-                    Text(title)
-                        .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1).truncationMode(.tail)
-                }
-                if let caption { NotchLowerThird(caption: caption.leading, trigger: key) }
+            HStack(spacing: NotchCalendarSupport.stripTitleSpacing) {
+                Self.dot(countdown.event)
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1).truncationMode(.tail)
             }
             .padding(.leading, inset)
             .frame(width: geometry.compactActivityWingWidth, alignment: .trailing)
             .clipped()
             Color.clear.frame(width: geometry.compactActivityCameraGap)
-            VStack(alignment: .leading, spacing: 1) {
-                // The start or end time fills the side the clock alone left
-                // mostly empty; a wing narrowed by the menus keeps just the clock.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: NotchCalendarSupport.stripClockSpacing) {
-                        Self.clock(remaining, ongoing: countdown.ongoing)
-                        Text(NotchCalendarSupport.timeText(countdown, locale: l10n.language.formattingLocale()))
-                            .font(.system(size: 11, weight: .medium)).monospacedDigit()
-                            .foregroundStyle(.white.opacity(0.55))
-                            .fixedSize()
-                    }
+            // The start or end time fills the side the clock alone left
+            // mostly empty; a wing narrowed by the menus keeps just the clock.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NotchCalendarSupport.stripClockSpacing) {
                     Self.clock(remaining, ongoing: countdown.ongoing)
+                    Text(NotchCalendarSupport.timeText(countdown, locale: l10n.language.formattingLocale()))
+                        .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.55))
+                        .fixedSize()
                 }
-                if let caption { NotchLowerThird(caption: caption.trailing, rule: false, trigger: key) }
+                Self.clock(remaining, ongoing: countdown.ongoing)
             }
             .padding(.trailing, inset)
             .frame(width: geometry.compactActivityWingWidth, alignment: .leading)
