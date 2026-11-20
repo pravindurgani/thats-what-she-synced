@@ -428,7 +428,7 @@ final class AgentUsageService: ObservableObject {
     /// Reads the logs that grew, were replaced or disappeared since the last
     /// look, among those an agent may still be writing. True when that
     /// changed what is stored.
-    private func pollOpenLogs(within window: TimeInterval) -> Bool {
+    private func pollOpenLogs(within window: TimeInterval, sweepingAll: Bool = false) -> Bool {
         guard readerSession >= 0 else { return false }
         let now = Date()
         // A turn gone quiet, as while it waits for an approval, is noticed
@@ -439,18 +439,16 @@ final class AgentUsageService: ObservableObject {
             if let mark = key.firstIndex(of: "#") { working.insert(String(key[..<mark])) }
         }
         var changed = false
-        for (path, cursor) in cursors
-        where working.contains(path) || now.timeIntervalSince(cursor.modified) < window {
+        for (path, cursor) in cursors {
+            let watches = working.contains(path) || now.timeIntervalSince(cursor.modified) < window
             if cursor.provider == .opencode {
+                guard watches else { continue }
                 // A database changes in place: its write-ahead log grows instead.
                 if let modified = AgentOpenCodeReader.modified(path), modified <= cursor.modified { continue }
                 if read(path, provider: cursor.provider) { changed = true }
                 continue
             }
-            var info = stat()
-            let exists = stat(path, &info) == 0
-            guard !exists || UInt64(max(0, info.st_size)) != cursor.offset
-                    || UInt64(info.st_ino) != cursor.identity else { continue }
+            guard AgentLogReader.shouldPoll(cursor, watches: watches, sweepsAll: sweepingAll) else { continue }
             if read(path, provider: cursor.provider) { changed = true }
         }
         return changed
@@ -591,8 +589,9 @@ final class AgentUsageService: ObservableObject {
             store.closeIdleTurns(now: now, after: NotchAgentSupport.idleTurn)
             store.dropRecords(before: now.addingTimeInterval(-Self.horizon))
             // A log kept open through a long pause reports nothing when work
-            // resumes; the day's logs are looked at less often than recent ones.
-            var changed = pollOpenLogs(within: 86_400)
+            // resumes; the day's logs are looked at less often than recent
+            // ones, and every log that grew, however long it was quiet.
+            var changed = pollOpenLogs(within: 86_400, sweepingAll: true)
             // A folder that appears later, like a first Codex session, is
             // picked up without a restart.
             if now.timeIntervalSince(lastRootCheck) > 300 {
