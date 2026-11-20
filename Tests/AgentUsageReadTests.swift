@@ -113,24 +113,24 @@ enum AgentUsageReadTests {
         let timestamp = now.timeIntervalSince1970
         // A Codex conversation resumed after days of silence: its log was last
         // read long ago and Codex keeps it open, so no file event arrives.
-        // Only the slow sweep, which reads any log that grew, finds the turn.
+        // The sweep's window reaches it; a day-long one never did.
         do {
-            let resumed = folder.appending(path: "resumed.jsonl")
-            let start = [#"{"type":"session_meta","timestamp":\#(timestamp),"payload":{"id":"r","cwd":"/tmp/example"}}"#,
-                         #"{"type":"event_msg","timestamp":\#(timestamp),"payload":{"type":"task_complete","duration_ms":1000}}"#]
+            let host = Host()
+            let resumed = folder.appending(path: "resumed-codex.jsonl")
+            let start = [#"{"type":"session_meta","timestamp":"\#(ISO8601DateFormatter().string(from: now))","payload":{"id":"r","cwd":"/tmp/example"}}"#,
+                         #"{"type":"event_msg","timestamp":"\#(ISO8601DateFormatter().string(from: now))","payload":{"type":"task_complete","duration_ms":1000}}"#]
             try (start.joined(separator: "\n") + "\n").write(to: resumed, atomically: true, encoding: .utf8)
-            let cursor = AgentLogCursor(path: resumed.path, provider: .codex)
-            AgentUsageProductionLogReader.readAppended(cursor, line: { _ in })
-            cursor.modified = now.addingTimeInterval(-6 * 86_400)
-            suite.expect(!AgentUsageProductionLogReader.shouldPoll(cursor, watches: false, sweepsAll: true),
-                         "a quiet old log that has not grown is not read again by the sweep")
+            host.read(resumed.path, provider: .codex)
+            host.cursors[resumed.path]?.modified = now.addingTimeInterval(-6 * 86_400)
             let handle = try FileHandle(forWritingTo: resumed)
             try handle.seekToEnd()
-            try handle.write(contentsOf: Data((#"{"type":"event_msg","timestamp":\#(timestamp),"payload":{"type":"task_started"}}"# + "\n").utf8))
+            try handle.write(contentsOf: Data((#"{"type":"event_msg","timestamp":"\#(ISO8601DateFormatter().string(from: now))","payload":{"type":"task_started"}}"# + "\n").utf8))
             try handle.close()
-            suite.expect(!AgentUsageProductionLogReader.shouldPoll(cursor, watches: false, sweepsAll: false)
-                            && AgentUsageProductionLogReader.shouldPoll(cursor, watches: false, sweepsAll: true),
-                         "a log quiet for days that grows again is read by the slow sweep, not only once it is recent")
+            suite.expect(!host.pollOpenLogs(within: 86_400) && host.store.turns.isEmpty,
+                         "a day-long window misses a log quiet for days that grew again")
+            suite.expect(host.pollOpenLogs(within: AgentUsageProductionLogReader.sweepWindow)
+                            && host.store.turns[resumed.path]?.provider == .codex,
+                         "the slow sweep reads a log quiet for days that grew again, and its Codex turn shows")
         } catch {
             suite.expect(false, "the resumed-log fixture writes: \(error)")
         }

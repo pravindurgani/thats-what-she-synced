@@ -690,18 +690,12 @@ enum AgentLogReader {
     /// usage record; it is skipped rather than held in memory.
     static let maximumLine = 32 << 20
 
-    /// Whether a poll reads the log again: one it `watches`, as working or
-    /// recently written, or on the slow sweep any log at all. An agent that
-    /// keeps its log open, as Codex does, can write for hours without a file
-    /// event, and a conversation resumed after days of silence was otherwise
-    /// never looked at again. Only a log that grew, shrank or was replaced
-    /// is read; the rest cost a `stat` each.
-    static func shouldPoll(_ cursor: AgentLogCursor, watches: Bool, sweepsAll: Bool) -> Bool {
-        guard watches || sweepsAll else { return false }
-        var info = stat()
-        let exists = stat(cursor.path, &info) == 0
-        return !exists || UInt64(max(0, info.st_size)) != cursor.offset || UInt64(info.st_ino) != cursor.identity
-    }
+    /// How far back the slow sweep looks: at every log, however long it was
+    /// quiet. An agent that keeps its log open, as Codex does, can write for
+    /// hours without a file event, and a conversation resumed after days of
+    /// silence was otherwise never read again. A log that has not grown costs
+    /// a `stat`.
+    static let sweepWindow: TimeInterval = .infinity
 
     static func isLog(_ path: String) -> Bool {
         let name = (path as NSString).lastPathComponent

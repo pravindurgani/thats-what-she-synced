@@ -18,7 +18,7 @@ How That's What She Synced sits on top of Vorssaint, so upstream updates stay ea
 ## Rules for new work
 
 1. Put new behaviour in a fork file. Upstream files get a call, not the logic.
-2. Gate every hook on `NotchOfficeEdition`, so with Office edition off the island is plain Vorssaint.
+2. Gate every hook on `NotchOfficeEdition`, so with Office edition off the island is plain Vorssaint. A fix to Vorssaint's own behaviour (such as agent logs a resumed Codex conversation keeps open) is not gated: it belongs upstream, so send it there.
 3. Use the shared pieces (`NotchPunchIn`, `NotchLowerThird`, `NotchMomentPaint`, `NotchSongMotion`) so moments stay one family.
 4. Nothing runs while the island is hidden, still or in Low Power Mode. Slow motion runs at 30 fps or less.
 5. A beat sets one move going per hit, never one per reading: the hit at 60 fps, its fall at 30, and once it is nearly still (`NotchBeatCurve.calm`) the rest at 15 (`NotchBeatCurve`, `NotchSongMotion.play`). Each move starts from where the last one stands, worked out, not read from a presentation layer.
